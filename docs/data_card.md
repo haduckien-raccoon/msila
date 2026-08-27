@@ -52,27 +52,17 @@ Trong nghiên cứu MS-ILA, dataset được sử dụng để đánh giá:
 | TESTpriv     |  2,045 | Có abnormal   | Hidden     | Official server         |
 | TESTpriv,mix |  2,045 | Có abnormal   | Hidden     | Illumination robustness |
 
-## Research split
+## Official Dataset Splits
 
-Official TRAIN được chia deterministic thành:
+The MVTec AD 2 dataset is used with its official directory structure.
 
-- TRAIN-core: 80%
-- DEV-synthetic: 20%
+- `train/`: normal images used for model training.
+- `validation/`: official normal validation images used for model validation and calibration.
+- `test_public/`: public test set with accessible ground truth.
+- `test_private/`: private benchmark test set.
+- `test_private_mixed/`: private test set containing mixed illumination conditions.
 
-Splitting method:
-SHA-256 hash of relative image path.
-
-Random seed:
-Không sử dụng random split trực tiếp.
-
-Split version:
-split_v1
-
-Split manifest:
-configs/splits/split_v1.csv
-
-Split checksum:
-configs/splits/split_v1.sha256
+No additional random train/validation split is created.
 
 ## Image properties
 
