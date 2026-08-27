@@ -1,0 +1,44 @@
+experiment:
+  name:
+  seed:
+
+dataset:
+  name: mvtec_ad2
+  category:
+  split_version:
+  split_hash:
+
+input:
+  tile_size:
+  context_size:
+  overlap:
+
+backbone:
+  name:
+  blocks:
+  frozen:
+
+adapter:
+  enabled:
+  bottleneck:
+
+illumination:
+  enabled:
+  lambda_illum:
+
+training:
+  optimizer:
+  learning_rate:
+  weight_decay:
+  batch_size:
+  precision:
+  num_updates:
+
+evaluation:
+  au_pro_005:
+  seg_f1:
+  boundary_f1:
+
+output:
+  run_dir:
+  checkpoint_interval:
