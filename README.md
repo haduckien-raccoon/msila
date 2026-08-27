@@ -1,7 +1,3 @@
-Bạn có thể thay README rất ngắn kiểu này để đúng project và ghi rõ **Python 3.12**:
-
-````bash
-cat > README.md <<'EOF'
 # MS-ILA
 
 **Multi-Scale Illumination-Invariant Lightweight Adapters for Industrial Anomaly Segmentation on MVTec AD 2**
