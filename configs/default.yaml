@@ -1,0 +1,50 @@
+project:
+  name: msila
+  protocol_version: "1.0"
+
+environment:
+  python: "3.12"
+
+dataset:
+  name: mvtec_ad2
+  category: null
+  root: null
+
+input:
+  preserve_aspect_ratio: true
+  tile_size: 512
+  context_size: 768
+  overlap: 128
+
+backbone:
+  name: dinov3_vitb16
+  frozen: true
+  feature_blocks: [4, 8, 12]
+
+adapter:
+  enabled: false
+  bottleneck: null
+
+fusion:
+  type: null
+
+illumination:
+  enabled: false
+  lambda_illum: 0.0
+
+training:
+  seed: 42
+  num_updates: null
+  batch_size: null
+  learning_rate: null
+  precision: null
+
+evaluation:
+  primary_metric: au_pro_0.05
+  seg_f1: true
+  boundary_f1: true
+
+logging:
+  save_environment: true
+  save_config: true
+  save_checkpoint: true
