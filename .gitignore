@@ -1,0 +1,45 @@
+
+# ==========================================
+# MS-ILA local datasets
+# ==========================================
+
+src/data/*/train/
+src/data/*/validation/
+src/data/*/test_public/
+src/data/*/test_private/
+src/data/*/test_private_mixed/
+
+*.tar.gz
+*.zip
+
+# ==========================================
+# Model checkpoints / weights
+# ==========================================
+
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# ==========================================
+# Python cache
+# ==========================================
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ==========================================
+# OS / editor temporary files
+# ==========================================
+
+.DS_Store
+*.swp
+*.swo
+
+# ==========================================
+# Local runtime folders
+# ==========================================
+
+msila_archives/

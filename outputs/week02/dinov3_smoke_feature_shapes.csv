@@ -1,0 +1,4 @@
+layer,shape,dtype,finite,runtime_pair_s,peak_vram_mb
+8,"(2, 1029, 384)",torch.float32,True,1.3027220599997236,137.5830078125
+10,"(2, 1029, 384)",torch.float32,True,1.3027220599997236,137.5830078125
+11,"(2, 1029, 384)",torch.float32,True,1.3027220599997236,137.5830078125
