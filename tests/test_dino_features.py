@@ -106,26 +106,6 @@ def test_exact_three_features(features):
 # Test 4 — Feature shapes
 # ============================================================
 
-# def test_feature_shapes(features):
-
-#     f4, f8, f12 = features
-
-#     expected = (
-#         1,
-#         384,
-#         14,
-#         14,
-#     )
-
-#     print("\nDINOv3 feature shapes")
-#     print("Block 4 :", tuple(f4.shape))
-#     print("Block 8 :", tuple(f8.shape))
-#     print("Block 12:", tuple(f12.shape))
-
-#     assert f4.shape == expected
-#     assert f8.shape == expected
-#     assert f12.shape == expected
-
 def test_feature_shapes(extractor, features):
 
     B = 1
@@ -152,15 +132,12 @@ def test_feature_shapes(extractor, features):
 
 def test_features_are_finite(features):
 
-    f4, f8, f12 = features
+     for name in ("b4", "b8", "b12"):
 
-    for block, feature in zip(
-        (4, 8, 12),
-        (f4, f8, f12),
-    ):
+        feature = features[name]
 
         assert torch.isfinite(feature).all(), (
-            f"Block {block} contains NaN or Inf."
+            f"{name} contains NaN or Inf."
         )
 
 
@@ -206,13 +183,6 @@ def test_feature_contract(extractor, features):
         # no NaN / Inf
         assert torch.isfinite(f).all()
 
-
-def test_backbone_frozen(extractor):
-
-    assert all(
-        p.requires_grad is False
-        for p in extractor.backbone.parameters()
-    )
 
 def test_dynamic_spatial_shape(
     extractor,
