@@ -1,6 +1,6 @@
 import torch
 
-from models.residual_adapter import ResidualAdapter2d
+from src.models.residual_adapter import ResidualAdapter2d
 
 
 def test_adapter_preserves_shape():

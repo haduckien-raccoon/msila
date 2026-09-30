@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from models.dinov3_extractor import DINOv3FeatureExtractor
+from src.models.dinov3_extractor import DINOv3FeatureExtractor
 
 
 DINOV3_REPO = "/content/dinov3"
