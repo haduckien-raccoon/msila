@@ -106,26 +106,45 @@ def test_exact_three_features(features):
 # Test 4 — Feature shapes
 # ============================================================
 
-def test_feature_shapes(features):
+# def test_feature_shapes(features):
 
-    f4, f8, f12 = features
+#     f4, f8, f12 = features
+
+#     expected = (
+#         1,
+#         384,
+#         14,
+#         14,
+#     )
+
+#     print("\nDINOv3 feature shapes")
+#     print("Block 4 :", tuple(f4.shape))
+#     print("Block 8 :", tuple(f8.shape))
+#     print("Block 12:", tuple(f12.shape))
+
+#     assert f4.shape == expected
+#     assert f8.shape == expected
+#     assert f12.shape == expected
+
+def test_feature_shapes(extractor, features):
+
+    B = 1
+    H = 224
+    W = 224
+
+    C = extractor.out_channels
+    P = extractor.patch_size
 
     expected = (
-        1,
-        384,
-        14,
-        14,
+        B,
+        C,
+        H // P,
+        W // P,
     )
 
-    print("\nDINOv3 feature shapes")
-    print("Block 4 :", tuple(f4.shape))
-    print("Block 8 :", tuple(f8.shape))
-    print("Block 12:", tuple(f12.shape))
-
-    assert f4.shape == expected
-    assert f8.shape == expected
-    assert f12.shape == expected
-
+    assert features["b4"].shape == expected
+    assert features["b8"].shape == expected
+    assert features["b12"].shape == expected
 
 # ============================================================
 # Test 5 — No NaN / Inf
@@ -163,3 +182,55 @@ def test_train_does_not_unfreeze_dino(extractor):
 
     # Restore state because fixture is shared.
     extractor.eval()
+
+def test_feature_keys(features):
+
+    assert set(features.keys()) == {
+        "b4",
+        "b8",
+        "b12",
+    }
+
+
+def test_feature_contract(extractor, features):
+
+    for name in ("b4", "b8", "b12"):
+
+        f = features[name]
+
+        # [B,C,h,w]
+        assert f.ndim == 4
+
+        assert f.shape[1] == extractor.out_channels
+
+        # no NaN / Inf
+        assert torch.isfinite(f).all()
+
+
+def test_backbone_frozen(extractor):
+
+    assert all(
+        p.requires_grad is False
+        for p in extractor.backbone.parameters()
+    )
+
+def test_dynamic_spatial_shape(
+    extractor,
+    features,
+):
+
+    H = 224
+    W = 224
+
+    P = extractor.patch_size
+    C = extractor.out_channels
+
+    expected = (
+        1,
+        C,
+        H // P,
+        W // P,
+    )
+
+    for f in features.values():
+        assert f.shape == expected

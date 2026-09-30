@@ -341,7 +341,7 @@ class DINOv3FeatureExtractor(nn.Module):
     def forward(
         self,
         x: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
+    ) -> dict[str, Tensor]:
         """
         Extract dense features from blocks 4, 8 and 12.
 
@@ -405,7 +405,11 @@ class DINOv3FeatureExtractor(nn.Module):
             features=(f4, f8, f12),
         )
 
-        return f4, f8, f12
+        return {
+            "b4": f4,
+            "b8": f8,
+            "b12": f12,
+        }
 
     # =================================================================
     # Output validation
