@@ -1,0 +1,89 @@
+{
+  "timestamp_utc": "2026-09-30T12:55:13.862218+00:00",
+  "scope": "Day-1 Architecture QA only; no training/AU-PRO",
+  "device": "cpu",
+  "dinov3_repo": "/content/dinov3",
+  "checkpoint": "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/dinov3_vits16_pretrain_lvd1689m.pth",
+  "model_name": "dinov3_vits16",
+  "checks": {
+    "dino_load": true,
+    "correct_blocks_4_8_12": true,
+    "dino_frozen": true,
+    "gamma_init_zero": true,
+    "adapter_identity": true,
+    "mean_fusion_decoder": true,
+    "full_forward": true
+  },
+  "status": "PASS",
+  "input_shape": [
+    2,
+    3,
+    512,
+    512
+  ],
+  "dino_shapes": {
+    "b4": [
+      2,
+      384,
+      32,
+      32
+    ],
+    "b8": [
+      2,
+      384,
+      32,
+      32
+    ],
+    "b12": [
+      2,
+      384,
+      32,
+      32
+    ]
+  },
+  "adapter_shapes": {
+    "b4": [
+      2,
+      384,
+      32,
+      32
+    ],
+    "b8": [
+      2,
+      384,
+      32,
+      32
+    ],
+    "b12": [
+      2,
+      384,
+      32,
+      32
+    ]
+  },
+  "mean_fusion_shape": [
+    2,
+    384,
+    32,
+    32
+  ],
+  "decoder_output_shape": [
+    2,
+    1,
+    512,
+    512
+  ],
+  "nan": false,
+  "inf": false,
+  "dino_frozen": true,
+  "adapter_gamma": {
+    "b4": 0.0,
+    "b8": 0.0,
+    "b12": 0.0
+  },
+  "adapter_identity_max_abs_error": {
+    "b4": 0.0,
+    "b8": 0.0,
+    "b12": 0.0
+  }
+}
