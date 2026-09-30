@@ -7,7 +7,7 @@ from src.models.dinov3_extractor import DINOv3FeatureExtractor
 DINOV3_REPO = "/content/dinov3"
 
 CHECKPOINT = (
-    "/content/checkpoints/"
+    "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/"
     "dinov3_vits16_pretrain_lvd1689m.pth"
 )
 

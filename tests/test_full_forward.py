@@ -24,7 +24,7 @@ DINOV3_REPO = Path(os.getenv("DINOV3_REPO", "/content/dinov3"))
 DINOV3_CHECKPOINT = Path(
     os.getenv(
         "DINOV3_CHECKPOINT",
-        "/content/checkpoints/dinov3_vits16_pretrain_lvd1689m.pth",
+        "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/dinov3_vits16_pretrain_lvd1689m.pth",
     )
 )
 

@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint",
         type=Path,
         default=Path(
-            "/content/checkpoints/dinov3_vits16_pretrain_lvd1689m.pth"
+            "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/dinov3_vits16_pretrain_lvd1689m.pth"
         ),
     )
     p.add_argument("--model-name", default="dinov3_vits16")
