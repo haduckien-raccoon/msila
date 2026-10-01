@@ -1,123 +1,90 @@
 """
-Frozen DINOv3 Multi-Layer Feature Extractor
-============================================
+Frozen DINOv3 multi-layer feature extractor for paired Local/Context views.
 
-Purpose
--------
-Extract exactly three dense feature maps from DINOv3 ViT:
+Project contract
+----------------
+Upstream preprocessing provides two normalized RGB tensors:
 
-    block 4
-    block 8
-    block 12
+    x_local   : [B, 3, 512, 512]
+    x_context : [B, 3, 512, 512]
 
-Human block numbering is 1-based.
+Although both tensors have the same network input size, ``x_context`` represents a
+larger source-image field of view (FOV). This module extracts DINOv3 dense patch
+features from human-readable Transformer blocks 4, 8 and 12:
 
-DINOv3's official get_intermediate_layers() API uses 0-based
-block indices, therefore:
+    L4, L8, L12  for Local
+    C4, C8, C12  for Context
 
-    block 4  -> index 3
-    block 8  -> index 7
-    block 12 -> index 11
+For DINOv3 ViT-S/16 and 512x512 inputs, every returned tensor is
+[B, 384, 32, 32]. The implementation itself does not hard-code C=384 and works
+with compatible DINOv3 ViT backbones that expose the official
+``get_intermediate_layers`` API.
 
-Output
-------
-For DINOv3 ViT-S/16:
-
-    input:
-        x: [B, 3, H, W]
-
-    output:
-        f4 : [B, 384, H/16, W/16]
-        f8 : [B, 384, H/16, W/16]
-        f12: [B, 384, H/16, W/16]
-
-assuming H and W are divisible by 16.
-
-The backbone is completely frozen:
-
-    param.requires_grad = False
-    backbone.eval()
+Important implementation choices
+--------------------------------
+1. Human block numbers (4, 8, 12) are converted to official zero-based indices
+   (3, 7, 11).
+2. ``reshape=True`` asks the official DINOv3 API for dense [B,C,H/P,W/P] maps.
+3. The backbone is permanently frozen and kept in eval mode.
+4. ``torch.no_grad()`` is used instead of ``torch.inference_mode()`` because the
+   frozen features are intended to feed trainable adapters/fusion/decoder layers.
+5. Paired Local/Context extraction defaults to a *single concatenated backbone
+   pass* for better throughput. A sequential mode is provided for lower peak
+   memory.
 
 References
 ----------
-DINOv3:
-    Siméoni et al., "DINOv3", 2025.
+DINOv3 paper:
+    Siméoni et al., "DINOv3", 2025, arXiv:2508.10104.
     https://arxiv.org/abs/2508.10104
 
-Official implementation:
+Official implementation / API:
     https://github.com/facebookresearch/dinov3
+    dinov3/models/vision_transformer.py::get_intermediate_layers
 
-Official API:
-    VisionTransformer.get_intermediate_layers()
+PyTorch autograd modes:
+    https://docs.pytorch.org/docs/stable/generated/torch.no_grad
+    https://docs.pytorch.org/docs/stable/generated/torch.autograd.grad_mode.inference_mode.html
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Literal, Sequence
 
 import torch
 from torch import Tensor, nn
 
 
-# ---------------------------------------------------------------------
-# Human-readable block numbers.
-#
-# IMPORTANT:
-# DINOv3 get_intermediate_layers() uses zero-based indices.
-#
-# block 4, 8, 12
-#       ↓
-# index 3, 7, 11
-# ---------------------------------------------------------------------
-
 DEFAULT_BLOCKS: tuple[int, int, int] = (4, 8, 12)
+PairStrategy = Literal["concat", "sequential"]
 
 
 class DINOv3FeatureExtractor(nn.Module):
-    """
-    Frozen DINOv3 ViT feature extractor.
-
-    Extracts normalized dense patch features from exactly three
-    Transformer blocks.
+    """Frozen DINOv3 ViT feature extractor for Local/Context multi-view input.
 
     Parameters
     ----------
     repo_dir:
-        Local path to the official facebookresearch/dinov3 repository.
-
+        Local checkout of the official ``facebookresearch/dinov3`` repository.
+        Loading with ``source='local'`` makes the source revision explicit and
+        prevents silently changing the implementation during experiments.
     weights:
-        Path or URL to the official DINOv3 checkpoint.
-
+        Local checkpoint path or a weight argument accepted by the official
+        DINOv3 torch.hub entrypoint.
     model_name:
-        Official torch.hub model name.
-
-        Default:
-            dinov3_vits16
-
+        Official DINOv3 ViT torch.hub model name, e.g. ``dinov3_vits16``.
     blocks:
-        Human-readable 1-based Transformer block numbers.
-
-        Default:
-            (4, 8, 12)
-
+        Exactly three human-readable, one-based Transformer block numbers.
+        Project default: ``(4, 8, 12)``.
     norm:
-        Whether DINOv3's official final normalization should be
-        applied to each extracted intermediate representation.
-
-        Recommended:
-            True
+        Forwarded to DINOv3 ``get_intermediate_layers``. ``True`` applies the
+        official final normalization to the selected intermediate features.
+    check_finite:
+        If ``True``, check input/output tensors for NaN/Inf. Useful for smoke
+        tests and debugging, but disabled by default because repeated GPU
+        finite checks cause synchronization overhead in the training loop.
     """
-
-    SUPPORTED_VIT_MODELS = {
-        "dinov3_vits16",
-        "dinov3_vits16plus",
-        "dinov3_vitb16",
-        "dinov3_vitl16",
-        "dinov3_vitl16plus",
-        "dinov3_vith16plus",
-        "dinov3_vit7b16",
-    }
 
     def __init__(
         self,
@@ -126,25 +93,20 @@ class DINOv3FeatureExtractor(nn.Module):
         model_name: str = "dinov3_vits16",
         blocks: Sequence[int] = DEFAULT_BLOCKS,
         norm: bool = True,
+        check_finite: bool = False,
     ) -> None:
         super().__init__()
 
         self.repo_dir = Path(repo_dir).expanduser().resolve()
         self.weights = str(weights)
-        self.model_name = model_name
+        self.model_name = str(model_name)
         self.blocks = tuple(int(b) for b in blocks)
         self.norm = bool(norm)
+        self.check_finite = bool(check_finite)
 
         self._validate_config()
 
-        # -------------------------------------------------------------
-        # Load backbone using the OFFICIAL DINOv3 torch.hub interface.
-        #
-        # We intentionally use source="local":
-        # - reproducible repository version
-        # - works with local checkpoint
-        # - avoids silently changing source code
-        # -------------------------------------------------------------
+        # Reproducible source: use the user's pinned local DINOv3 checkout.
         self.backbone = torch.hub.load(
             repo_or_dir=str(self.repo_dir),
             model=self.model_name,
@@ -154,24 +116,14 @@ class DINOv3FeatureExtractor(nn.Module):
 
         self._validate_backbone()
 
-        # Convert human block numbering -> Python/DINOv3 indexing.
-        #
-        # block 4  -> index 3
-        # block 8  -> index 7
-        # block 12 -> index 11
-        self.block_indices = tuple(
-            block - 1
-            for block in self.blocks
-        )
+        # Official get_intermediate_layers() consumes zero-based indices.
+        self.block_indices = tuple(block - 1 for block in self.blocks)
 
-        # -------------------------------------------------------------
-        # Freeze DINOv3.
-        # -------------------------------------------------------------
         self.freeze_backbone()
 
-    # =================================================================
-    # Validation
-    # =================================================================
+    # ------------------------------------------------------------------
+    # Configuration / backbone validation
+    # ------------------------------------------------------------------
 
     def _validate_config(self) -> None:
         if not self.repo_dir.exists():
@@ -179,210 +131,171 @@ class DINOv3FeatureExtractor(nn.Module):
                 f"DINOv3 repository not found: {self.repo_dir}"
             )
 
-        if not (self.repo_dir / "hubconf.py").exists():
+        if not (self.repo_dir / "hubconf.py").is_file():
             raise FileNotFoundError(
-                f"{self.repo_dir} does not look like the official "
-                "DINOv3 repository: hubconf.py was not found."
+                f"{self.repo_dir} does not look like a DINOv3 torch.hub "
+                "repository: hubconf.py was not found."
             )
 
-        if self.model_name not in self.SUPPORTED_VIT_MODELS:
-            raise ValueError(
-                f"Unsupported model '{self.model_name}'. "
-                "This extractor is designed for DINOv3 ViT backbones. "
-                f"Supported: {sorted(self.SUPPORTED_VIT_MODELS)}"
-            )
+        if not self.model_name:
+            raise ValueError("model_name must be non-empty.")
 
         if len(self.blocks) != 3:
             raise ValueError(
-                "Exactly 3 blocks must be requested. "
-                f"Received: {self.blocks}"
+                "Exactly 3 blocks are required by the project contract; "
+                f"received {self.blocks}."
             )
 
         if len(set(self.blocks)) != 3:
-            raise ValueError(
-                f"Block numbers must be unique: {self.blocks}"
-            )
+            raise ValueError(f"Block numbers must be unique: {self.blocks}.")
 
         if any(block <= 0 for block in self.blocks):
             raise ValueError(
-                "Block numbers use human 1-based indexing and "
-                "must therefore be > 0."
+                "Block numbers are human-readable 1-based indices and must be > 0."
             )
 
         if tuple(sorted(self.blocks)) != self.blocks:
             raise ValueError(
-                "Block numbers must be in increasing order. "
-                f"Received: {self.blocks}"
+                f"Block numbers must be strictly increasing; received {self.blocks}."
             )
 
     def _validate_backbone(self) -> None:
         if not hasattr(self.backbone, "blocks"):
             raise TypeError(
-                "Loaded model does not expose Transformer blocks. "
-                "A DINOv3 ViT backbone is required."
+                "Loaded backbone does not expose Transformer blocks; "
+                "a DINOv3 ViT backbone is required."
             )
 
-        if not hasattr(
-            self.backbone,
-            "get_intermediate_layers",
-        ):
+        if not callable(getattr(self.backbone, "get_intermediate_layers", None)):
             raise TypeError(
-                "Loaded backbone does not implement "
-                "get_intermediate_layers()."
+                "Loaded backbone does not implement get_intermediate_layers()."
             )
+
+        if not hasattr(self.backbone, "patch_size"):
+            raise TypeError("Loaded backbone does not expose patch_size.")
 
         depth = len(self.backbone.blocks)
-
         if max(self.blocks) > depth:
             raise ValueError(
-                f"Requested block {max(self.blocks)}, "
-                f"but backbone depth is only {depth}."
+                f"Requested block {max(self.blocks)}, but backbone depth is only {depth}."
             )
 
-    # =================================================================
-    # Freeze
-    # =================================================================
+    # ------------------------------------------------------------------
+    # Frozen-backbone behavior
+    # ------------------------------------------------------------------
 
     def freeze_backbone(self) -> None:
-        """
-        Completely freeze the pretrained DINOv3 backbone.
-        """
-
+        """Freeze all DINOv3 parameters and force evaluation mode."""
         self.backbone.requires_grad_(False)
         self.backbone.eval()
 
     def train(self, mode: bool = True):
-        """
-        Allow parent model to enter training mode while DINOv3 remains
-        permanently in eval mode.
-
-        Example:
-
-            full_model.train()
-
-        must NOT accidentally switch the frozen DINO backbone back
-        into training mode.
-        """
-
+        """Keep DINOv3 in eval mode even if a parent model calls ``train()``."""
         super().train(mode)
-
         self.backbone.eval()
-
         return self
 
-    # =================================================================
-    # Properties
-    # =================================================================
+    # ------------------------------------------------------------------
+    # Backbone metadata
+    # ------------------------------------------------------------------
 
     @property
     def depth(self) -> int:
-        """Number of Transformer blocks."""
-
         return len(self.backbone.blocks)
 
     @property
     def patch_size(self) -> int:
-        """DINOv3 patch size."""
-
         patch_size = self.backbone.patch_size
 
-        if isinstance(patch_size, tuple):
-            if patch_size[0] != patch_size[1]:
+        if isinstance(patch_size, (tuple, list)):
+            if len(patch_size) != 2 or patch_size[0] != patch_size[1]:
                 raise RuntimeError(
-                    "Only square patch size is expected."
+                    f"Expected square patch size, received {patch_size}."
                 )
-
             return int(patch_size[0])
 
         return int(patch_size)
 
     @property
     def out_channels(self) -> int:
-        """Feature dimensionality C."""
-
         if hasattr(self.backbone, "embed_dim"):
             return int(self.backbone.embed_dim)
 
         raise AttributeError(
-            "Cannot determine DINOv3 embed dimension."
+            "Cannot determine DINOv3 feature dimension: backbone.embed_dim missing."
         )
 
-    # =================================================================
-    # Input validation
-    # =================================================================
+    def backbone_is_frozen(self) -> bool:
+        return all(not p.requires_grad for p in self.backbone.parameters())
 
-    def _validate_input(self, x: Tensor) -> None:
+    # ------------------------------------------------------------------
+    # Tensor validation
+    # ------------------------------------------------------------------
+
+    def _validate_input(self, x: Tensor, *, name: str = "x") -> None:
+        if not isinstance(x, Tensor):
+            raise TypeError(f"{name} must be torch.Tensor, got {type(x)!r}.")
+
         if x.ndim != 4:
             raise ValueError(
-                "Expected input shape [B, 3, H, W], "
-                f"received {tuple(x.shape)}."
+                f"{name}: expected [B,3,H,W], received {tuple(x.shape)}."
             )
+
+        if x.shape[0] <= 0:
+            raise ValueError(f"{name}: batch dimension must be > 0.")
 
         if x.shape[1] != 3:
             raise ValueError(
-                "DINOv3 expects RGB input with C=3, "
-                f"received C={x.shape[1]}."
+                f"{name}: DINOv3 expects RGB input with C=3, got C={x.shape[1]}."
+            )
+
+        if not x.is_floating_point():
+            raise TypeError(
+                f"{name}: expected a normalized floating-point tensor; got {x.dtype}."
             )
 
         h, w = x.shape[-2:]
-
         p = self.patch_size
-
         if h % p != 0 or w % p != 0:
             raise ValueError(
-                f"Input H,W should be divisible by patch_size={p}. "
-                f"Received H={h}, W={w}."
+                f"{name}: H and W must be divisible by patch_size={p}; "
+                f"received H={h}, W={w}."
             )
 
-    # =================================================================
-    # Forward
-    # =================================================================
+        if self.check_finite and not bool(torch.isfinite(x).all()):
+            raise ValueError(f"{name}: input contains NaN or Inf.")
 
-    def forward(
-        self,
-        x: Tensor,
-    ) -> dict[str, Tensor]:
-        """
-        Extract dense features from blocks 4, 8 and 12.
+    def _validate_pair(self, x_local: Tensor, x_context: Tensor) -> None:
+        self._validate_input(x_local, name="x_local")
+        self._validate_input(x_context, name="x_context")
 
-        Parameters
-        ----------
-        x:
-            Normalized RGB tensor:
+        if x_local.shape != x_context.shape:
+            raise ValueError(
+                "Local and Context must have the same network-input shape for "
+                "the paired project contract. "
+                f"Got local={tuple(x_local.shape)}, context={tuple(x_context.shape)}."
+            )
 
-                [B, 3, H, W]
+        if x_local.device != x_context.device:
+            raise ValueError(
+                f"Local/Context device mismatch: {x_local.device} vs {x_context.device}."
+            )
 
-        Returns
-        -------
-        tuple:
-            (f4, f8, f12)
+        if x_local.dtype != x_context.dtype:
+            raise ValueError(
+                f"Local/Context dtype mismatch: {x_local.dtype} vs {x_context.dtype}."
+            )
 
-        Each feature has shape:
+    # ------------------------------------------------------------------
+    # Core extraction
+    # ------------------------------------------------------------------
 
-            [B, C, H/P, W/P]
-
-        where:
-            C = backbone embedding dimension
-            P = patch size
-        """
-
+    def _extract(self, x: Tensor) -> dict[str, Tensor]:
         self._validate_input(x)
 
-        # -------------------------------------------------------------
-        # IMPORTANT:
-        #
-        # Use torch.no_grad(), NOT torch.inference_mode().
-        #
-        # These frozen features will subsequently be consumed by
-        # TRAINABLE adapters/fusion/decoder.
-        #
-        # no_grad():
-        #     prevents construction of a graph inside DINOv3
-        #     while leaving the resulting tensors usable by
-        #     downstream trainable modules.
-        # -------------------------------------------------------------
+        # no_grad is intentionally used instead of inference_mode because these
+        # tensors will be consumed by trainable downstream modules.
         with torch.no_grad():
-
             features = self.backbone.get_intermediate_layers(
                 x,
                 n=self.block_indices,
@@ -392,90 +305,123 @@ class DINOv3FeatureExtractor(nn.Module):
                 norm=self.norm,
             )
 
+        features = tuple(features)
         if len(features) != 3:
             raise RuntimeError(
-                "DINOv3 extractor contract violated: "
-                f"expected exactly 3 features, got {len(features)}."
+                "DINOv3 extractor contract violated: expected exactly "
+                f"3 features, received {len(features)}."
             )
 
-        f4, f8, f12 = features
-
-        self._validate_outputs(
-            x=x,
-            features=(f4, f8, f12),
-        )
+        self._validate_outputs(x=x, features=features)
 
         return {
-            "b4": f4,
-            "b8": f8,
-            "b12": f12,
+            f"b{block}": feature
+            for block, feature in zip(self.blocks, features)
         }
 
-    # =================================================================
+    def forward(self, x: Tensor) -> dict[str, Tensor]:
+        """Extract one view, preserving compatibility with the day-1 extractor."""
+        return self._extract(x)
+
+    def extract_local_context(
+        self,
+        x_local: Tensor,
+        x_context: Tensor,
+        *,
+        strategy: PairStrategy = "concat",
+    ) -> dict[str, Tensor]:
+        """Extract Local and Context features from the *same frozen backbone*.
+
+        Parameters
+        ----------
+        x_local, x_context:
+            Normalized RGB tensors with identical network-input shape. The
+            project uses [B,3,512,512] for both; Context encodes the larger FOV
+            before resize, not a larger DINOv3 input tensor.
+        strategy:
+            ``"concat"`` (default): concatenate Local/Context along the batch
+            dimension and run one backbone call. This improves throughput when
+            memory permits.
+
+            ``"sequential"``: run two backbone calls. Same numerical contract,
+            lower peak activation memory, slightly more overhead.
+
+        Returns
+        -------
+        dict[str, Tensor]
+            ``L4, L8, L12, C4, C8, C12`` for the default block set.
+        """
+        self._validate_pair(x_local, x_context)
+
+        if strategy not in ("concat", "sequential"):
+            raise ValueError(
+                f"strategy must be 'concat' or 'sequential', got {strategy!r}."
+            )
+
+        if strategy == "concat":
+            batch = x_local.shape[0]
+            pair = torch.cat((x_local, x_context), dim=0)
+            pair_features = self._extract(pair)
+
+            out: dict[str, Tensor] = {}
+            for block in self.blocks:
+                f = pair_features[f"b{block}"]
+                out[f"L{block}"] = f[:batch].contiguous()
+                out[f"C{block}"] = f[batch:].contiguous()
+            return out
+
+        local_features = self._extract(x_local)
+        context_features = self._extract(x_context)
+
+        out = {}
+        for block in self.blocks:
+            out[f"L{block}"] = local_features[f"b{block}"]
+            out[f"C{block}"] = context_features[f"b{block}"]
+        return out
+
+    # ------------------------------------------------------------------
     # Output validation
-    # =================================================================
+    # ------------------------------------------------------------------
 
     def _validate_outputs(
         self,
+        *,
         x: Tensor,
         features: tuple[Tensor, Tensor, Tensor],
     ) -> None:
-
         expected_h = x.shape[-2] // self.patch_size
         expected_w = x.shape[-1] // self.patch_size
 
-        for block, feature in zip(
-            self.blocks,
-            features,
-        ):
+        for block, feature in zip(self.blocks, features):
+            if not isinstance(feature, Tensor):
+                raise RuntimeError(
+                    f"Block {block}: expected Tensor, got {type(feature)!r}."
+                )
+
             if feature.ndim != 4:
                 raise RuntimeError(
-                    f"Block {block}: expected [B,C,H,W], "
+                    f"Block {block}: expected [B,C,H,W], got {tuple(feature.shape)}."
+                )
+
+            expected = (
+                x.shape[0],
+                self.out_channels,
+                expected_h,
+                expected_w,
+            )
+            if tuple(feature.shape) != expected:
+                raise RuntimeError(
+                    f"Block {block}: expected shape {expected}, "
                     f"got {tuple(feature.shape)}."
                 )
 
-            if feature.shape[0] != x.shape[0]:
-                raise RuntimeError(
-                    f"Block {block}: batch dimension mismatch."
-                )
-
-            if feature.shape[1] != self.out_channels:
-                raise RuntimeError(
-                    f"Block {block}: expected "
-                    f"C={self.out_channels}, "
-                    f"got C={feature.shape[1]}."
-                )
-
-            if feature.shape[-2:] != (
-                expected_h,
-                expected_w,
-            ):
-                raise RuntimeError(
-                    f"Block {block}: expected spatial size "
-                    f"{(expected_h, expected_w)}, "
-                    f"got {feature.shape[-2:]}."
-                )
-
-    # =================================================================
-    # Debugging helpers
-    # =================================================================
-
-    def backbone_is_frozen(self) -> bool:
-        """
-        True iff every DINOv3 parameter has requires_grad=False.
-        """
-
-        return all(
-            not p.requires_grad
-            for p in self.backbone.parameters()
-        )
+            if self.check_finite and not bool(torch.isfinite(feature).all()):
+                raise RuntimeError(f"Block {block}: feature contains NaN or Inf.")
 
     def extra_repr(self) -> str:
         return (
-            f"model={self.model_name}, "
-            f"blocks={self.blocks}, "
-            f"indices={self.block_indices}, "
-            f"patch_size={self.patch_size}, "
-            f"out_channels={self.out_channels}, "
+            f"model={self.model_name}, blocks={self.blocks}, "
+            f"indices={self.block_indices}, patch_size={self.patch_size}, "
+            f"out_channels={self.out_channels}, norm={self.norm}, "
             f"frozen={self.backbone_is_frozen()}"
         )
