@@ -49,10 +49,10 @@ File test kiểm tra **cả 6 tensor**, không chỉ `local_b8`.
 
 Đặt:
 
-\[
+$$
 F_s^{(k)} = E_k(T_s(I)), \qquad
 s\in\{L,C\},\;k\in\{4,8,12\}
-\]
+$$
 
 - \(I\): ảnh.
 - \(T_L,T_C\): preprocessing/crop **deterministic** cho local/context.
@@ -116,7 +116,7 @@ context_hw = (Hc, Wc)
 
 ta lưu ma trận affine đồng nhất:
 
-\[
+$$
 \begin{bmatrix}
 u_L\\v_L\\1
 \end{bmatrix}
@@ -129,15 +129,15 @@ s_x&0&t_x\\
 \begin{bmatrix}
 u_C\\v_C\\1
 \end{bmatrix}
-\]
+$$
 
 với:
 
-\[
+$$
 s_x=\frac{W_L(c_{x1}-c_{x0})}{W_C(l_{x1}-l_{x0})},
 \qquad
 t_x=\frac{W_L(c_{x0}-l_{x0})}{l_{x1}-l_{x0}}
-\]
+$$
 
 và tương tự cho \(y\).
 
@@ -277,24 +277,3 @@ pytest -q tests/test_build_feature_cache.py
 8. DINOv3 không chạy lại trong epoch train Adapter/Fusion/Decoder.
 
 **FAIL → không train tiếp** nếu một trong các mục trên sai.
-
----
-
-## 10. Nguồn cập nhật đến 09/2026
-
-Kiểm tra lại trạng thái implementation/reference đến cuối 09/2026:
-
-- Siméoni et al., **DINOv3**, arXiv:2508.10104.
-  https://arxiv.org/abs/2508.10104
-- Meta FAIR, **facebookresearch/dinov3**.
-  https://github.com/facebookresearch/dinov3
-- DINOv3 official `vision_transformer.py` — semantics của `get_intermediate_layers`.
-  https://github.com/facebookresearch/dinov3/blob/main/dinov3/models/vision_transformer.py
-- DINOv3 official segmentation wrapper — freeze backbone / intermediate layers.
-  https://github.com/facebookresearch/dinov3/blob/main/dinov3/eval/segmentation/models/__init__.py
-- PyTorch docs — `torch.inference_mode`.
-  https://docs.pytorch.org/docs/stable/generated/torch.autograd.grad_mode.inference_mode.html
-- Safetensors Torch API.
-  https://huggingface.co/docs/safetensors/api/torch
-- Richard Szeliski, *Computer Vision: Algorithms and Applications*, 2nd ed.
-- Bernd Jähne, *Digital Image Processing*, 6th ed.
