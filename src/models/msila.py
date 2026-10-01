@@ -8,9 +8,13 @@ Day-2 TV2 head:
     six aligned/projected Local-Context features -> Attention Fusion v0
               -> basic decoder -> dense anomaly logits
 
-Local/Context crop generation, geometric alignment, feature projection,
-training, AU-PRO evaluation, thresholding, and post-processing are outside
-the scope of this module.
+Day-2 integration:
+    TV1 feature pipeline -> six aligned/projected features -> TV2 head
+
+The concrete Local/Context crop generation, geometric alignment, and feature
+projection algorithms remain owned by TV1. This module only defines the clean
+integration boundary. Training, AU-PRO evaluation, thresholding, and
+post-processing remain outside this module.
 """
 
 from __future__ import annotations
@@ -432,5 +436,135 @@ class MSILADay2Head(nn.Module):
             "attention": attention,
             "attention_logits": attention_logits,
         }
+        return anomaly_logits, trace
+
+
+class MSILADay2Integrated(nn.Module):
+    """Integrate a TV1 feature pipeline with the Day-2 TV2 head.
+
+    Contract
+    --------
+    ``feature_pipeline(*args, **kwargs)`` must return either:
+
+    1. a mapping containing exactly the six Day-2 tensors::
+
+           local_b4, local_b8, local_b12,
+           context_b4, context_b8, context_b12
+
+       where every tensor has shape ``[B,d,h,w]``; or
+
+    2. ``(features, trace)`` where ``features`` is the mapping above and
+       ``trace`` is any mapping of TV1 debug information.
+
+    No tensor is detached in this wrapper. Therefore gradients produced by
+    AttentionFusion/Decoder are allowed to propagate back through TV1's
+    Projection/Adapter modules, while a frozen DINO backbone remains frozen
+    through its own ``requires_grad=False`` configuration.
+    """
+
+    def __init__(
+        self,
+        feature_pipeline: nn.Module,
+        fusion_dim: int,
+        *,
+        head: nn.Module | None = None,
+        fusion: nn.Module | None = None,
+        decoder: nn.Module | None = None,
+        output_size: tuple[int, int] = (512, 512),
+        validate: bool = True,
+    ) -> None:
+        super().__init__()
+
+        if not isinstance(feature_pipeline, nn.Module):
+            raise TypeError(
+                "feature_pipeline must be an nn.Module that returns "
+                "the six Day-2 Local/Context features"
+            )
+
+        if head is not None and (fusion is not None or decoder is not None):
+            raise ValueError(
+                "Provide either a prebuilt head OR fusion/decoder overrides, "
+                "not both."
+            )
+
+        self.feature_pipeline = feature_pipeline
+        self.fusion_dim = int(fusion_dim)
+        self.validate = bool(validate)
+
+        self.head = (
+            head
+            if head is not None
+            else MSILADay2Head(
+                fusion_dim=self.fusion_dim,
+                fusion=fusion,
+                decoder=decoder,
+                output_size=output_size,
+                validate=validate,
+            )
+        )
+
+    @staticmethod
+    def _split_tv1_output(
+        tv1_output: object,
+    ) -> tuple[Mapping[str, Tensor], Mapping[str, object]]:
+        """Normalize TV1 output without imposing TV1's internal architecture."""
+
+        if isinstance(tv1_output, Mapping):
+            return tv1_output, {}
+
+        if (
+            isinstance(tv1_output, tuple)
+            and len(tv1_output) == 2
+            and isinstance(tv1_output[0], Mapping)
+            and isinstance(tv1_output[1], Mapping)
+        ):
+            return tv1_output[0], tv1_output[1]
+
+        raise TypeError(
+            "TV1 feature_pipeline must return either "
+            "features: Mapping[str, Tensor] or "
+            "(features, trace)."
+        )
+
+    def forward(
+        self,
+        *feature_args: object,
+        output_size: tuple[int, int] | None = None,
+        return_trace: bool = False,
+        **feature_kwargs: object,
+    ) -> Tensor | tuple[Tensor, dict[str, object]]:
+        """Run TV1 -> six-feature contract -> AttentionFusion -> Decoder."""
+
+        tv1_output = self.feature_pipeline(
+            *feature_args,
+            **feature_kwargs,
+        )
+
+        features, tv1_trace = self._split_tv1_output(
+            tv1_output
+        )
+
+        if self.validate:
+            validate_multiview_features(
+                features,
+                expected_channels=self.fusion_dim,
+                check_finite=True,
+            )
+
+        anomaly_logits, head_trace = self.head(
+            features,
+            output_size=output_size,
+            return_trace=True,
+        )
+
+        if not return_trace:
+            return anomaly_logits
+
+        trace: dict[str, object] = {
+            "tv1": dict(tv1_trace),
+            "multiview_features": dict(features),
+            **head_trace,
+        }
+
         return anomaly_logits, trace
 
