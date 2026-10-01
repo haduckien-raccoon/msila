@@ -248,3 +248,43 @@ def test_optional_real_dinov3_smoke():
 
     assert set(out) == {"L4", "L8", "L12", "C4", "C8", "C12"}
     assert all(torch.isfinite(v).all() for v in out.values())
+
+def test_dino_is_really_frozen(extractor):
+    # 1. requires_grad=False
+    assert all(
+        not p.requires_grad
+        for p in extractor.backbone.parameters()
+    )
+
+    # 2. eval mode
+    assert extractor.backbone.training is False
+
+    # 3. gọi train() ở parent vẫn không bật DINO train
+    extractor.train()
+    assert extractor.backbone.training is False
+
+def test_dino_has_no_grad_after_backward(
+    extractor,
+    projection,
+):
+    x = torch.randn(2, 3, 512, 512)
+
+    features = extractor(x)
+
+    y = projection(features["b12"])
+    loss = y.mean()
+
+    loss.backward()
+
+    # DINO tuyệt đối không gradient
+    for p in extractor.backbone.parameters():
+        assert p.grad is None
+
+    # Projection phải có gradient
+    grads = [
+        p.grad
+        for p in projection.parameters()
+        if p.requires_grad
+    ]
+
+    assert any(g is not None for g in grads)
