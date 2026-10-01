@@ -59,6 +59,56 @@ from torch import Tensor, nn
 DEFAULT_BLOCKS: tuple[int, int, int] = (4, 8, 12)
 PairStrategy = Literal["concat", "sequential"]
 
+# Bridge between the extractor-facing Local/Context names and the fixed
+# feature-cache schema used by data/feature_cache.py.
+ONLINE_TO_CACHE_KEYS: dict[str, str] = {
+    "L4": "local_b4",
+    "L8": "local_b8",
+    "L12": "local_b12",
+    "C4": "context_b4",
+    "C8": "context_b8",
+    "C12": "context_b12",
+}
+
+
+def map_online_features_to_cache(
+    features: dict[str, Tensor],
+    *,
+    to_cpu: bool = False,
+) -> dict[str, Tensor]:
+    """Map online extractor outputs to the fixed feature-cache key names.
+
+    Parameters
+    ----------
+    features:
+        Output of :meth:`DINOv3FeatureExtractor.extract_local_context`, i.e.
+        ``L4, L8, L12, C4, C8, C12``.
+    to_cpu:
+        If True, detach and move every tensor to contiguous CPU storage.
+        This is useful immediately before serialization. For numerical online
+        vs cache tests, leaving tensors on their current device is also valid.
+
+    Returns
+    -------
+    dict[str, Tensor]
+        ``local_b4, local_b8, local_b12, context_b4, context_b8, context_b12``.
+    """
+    missing = [key for key in ONLINE_TO_CACHE_KEYS if key not in features]
+    if missing:
+        raise KeyError(f"Online feature output missing required keys: {missing}")
+
+    out: dict[str, Tensor] = {}
+    for online_key, cache_key in ONLINE_TO_CACHE_KEYS.items():
+        tensor = features[online_key]
+        if not isinstance(tensor, Tensor):
+            raise TypeError(
+                f"{online_key} must be torch.Tensor, got {type(tensor)!r}."
+            )
+        if to_cpu:
+            tensor = tensor.detach().to(device="cpu").contiguous()
+        out[cache_key] = tensor
+    return out
+
 
 class DINOv3FeatureExtractor(nn.Module):
     """Frozen DINOv3 ViT feature extractor for Local/Context multi-view input.
@@ -379,6 +429,41 @@ class DINOv3FeatureExtractor(nn.Module):
             out[f"C{block}"] = context_features[f"b{block}"]
         return out
 
+    def extract_online_cache_features(
+        self,
+        x_local: Tensor,
+        x_context: Tensor,
+        *,
+        strategy: PairStrategy = "concat",
+        to_cpu: bool = False,
+    ) -> dict[str, Tensor]:
+        """Run the *real online DINOv3 extractor* and return cache-schema keys.
+
+        This is the bridge needed by ``tests/test_feature_cache.py`` for the
+        numerical gate:
+
+            image/preprocessed pair -> online DINOv3 -> six tensors
+                                                |
+                                                +-> compare with cache reload
+
+        No cached tensor is read here. The backbone is actually executed via
+        :meth:`extract_local_context`.
+
+        Returns exactly:
+            local_b4, local_b8, local_b12,
+            context_b4, context_b8, context_b12
+
+        ``to_cpu=False`` is preferred for normal online use. Set ``to_cpu=True``
+        immediately before cache serialization if desired; FeatureCacheWriter
+        also normalizes tensors to CPU itself.
+        """
+        online = self.extract_local_context(
+            x_local=x_local,
+            x_context=x_context,
+            strategy=strategy,
+        )
+        return map_online_features_to_cache(online, to_cpu=to_cpu)
+
     # ------------------------------------------------------------------
     # Output validation
     # ------------------------------------------------------------------
@@ -425,3 +510,50 @@ class DINOv3FeatureExtractor(nn.Module):
             f"out_channels={self.out_channels}, norm={self.norm}, "
             f"frozen={self.backbone_is_frozen()}"
         )
+
+
+def build_online_extractor(
+    *,
+    repo_dir: str | Path,
+    weights: str | Path,
+    device: str | torch.device | None = None,
+    model_name: str = "dinov3_vits16",
+    blocks: Sequence[int] = DEFAULT_BLOCKS,
+    norm: bool = True,
+    check_finite: bool = True,
+) -> DINOv3FeatureExtractor:
+    """Construct the real frozen online extractor used by integration tests.
+
+    Paths are explicit arguments rather than hard-coded project-specific values.
+    This avoids silently loading the wrong DINOv3 source revision/checkpoint.
+
+    Examples
+    --------
+    >>> extractor = build_online_extractor(
+    ...     repo_dir="third_party/dinov3",
+    ...     weights="checkpoints/dinov3_vits16_pretrain_lvd1689m.pth",
+    ... )
+    >>> online = extractor.extract_online_cache_features(x_local, x_context)
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(device)
+
+    extractor = DINOv3FeatureExtractor(
+        repo_dir=repo_dir,
+        weights=weights,
+        model_name=model_name,
+        blocks=blocks,
+        norm=norm,
+        check_finite=check_finite,
+    ).to(device)
+
+    # Explicitly re-assert the frozen/eval invariant after .to(device).
+    extractor.freeze_backbone()
+    extractor.eval()
+
+    if not extractor.backbone_is_frozen():
+        raise RuntimeError("DINOv3 backbone must be frozen for online cache extraction.")
+
+    return extractor

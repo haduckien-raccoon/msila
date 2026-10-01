@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import os
 
 import pytest
 import torch
@@ -26,7 +27,32 @@ from src.data.feature_cache import (
     sample_key,
     validate_cache,
 )
+from src.models.dinov3_extractor import build_online_extractor
 
+@pytest.fixture(scope="session")
+def online_extractor():
+    repo = os.getenv("DINOV3_REPO")
+    weights = os.getenv("DINOV3_WEIGHTS")
+
+    if not repo or not weights:
+        pytest.skip(
+            "Set DINOV3_REPO and DINOV3_WEIGHTS "
+            "to run cache-vs-online integration test."
+        )
+
+    extractor = build_online_extractor(
+        repo_dir=repo,
+        weights=weights,
+        model_name=os.getenv(
+            "DINOV3_MODEL",
+            "dinov3_vits16",
+        ),
+        blocks=(4, 8, 12),
+        norm=True,
+        check_finite=True,
+    )
+
+    return extractor
 
 @pytest.fixture
 def signature():
@@ -67,6 +93,49 @@ def make_sample(i: int = 0):
             ],
         },
     }
+
+TOL = 1e-5
+
+
+def assert_online_cache_error_below_tolerance(
+    online: dict,
+    cached: dict,
+    tolerance: float = TOL,
+):
+    """
+    Hard gate:
+        max |F_online - F_cache| < tolerance
+
+    Kiểm tra toàn bộ 6 feature:
+        L4, L8, L12, C4, C8, C12
+    """
+    for key in FEATURE_KEYS:
+        f_online = online[key].detach().cpu().float()
+        f_cache = cached[key].detach().cpu().float()
+
+        # 1. Shape phải giống tuyệt đối
+        assert f_online.shape == f_cache.shape, (
+            f"{key}: shape mismatch: "
+            f"online={tuple(f_online.shape)}, "
+            f"cache={tuple(f_cache.shape)}"
+        )
+
+        # 2. Không được có NaN / Inf
+        assert torch.isfinite(f_online).all(), \
+            f"{key}: online feature contains NaN/Inf"
+
+        assert torch.isfinite(f_cache).all(), \
+            f"{key}: cached feature contains NaN/Inf"
+
+        # 3. Numerical error
+        max_abs_error = (
+            f_online - f_cache
+        ).abs().max().item()
+
+        assert max_abs_error < tolerance, (
+            f"{key}: max_abs_error={max_abs_error:.8e} "
+            f">= tolerance={tolerance:.1e}"
+        )
 
 
 def test_roundtrip_preserves_schema_and_all_six_features(tmp_path, signature):
@@ -178,3 +247,67 @@ def test_nan_feature_is_rejected():
 
     with pytest.raises(SchemaError):
         normalize_record(s)
+
+def test_cache_matches_online_extraction(
+    tmp_path,
+    signature,
+    online_extractor,
+    real_sample,
+):
+    # ==================================================
+    # 1. ONLINE DINO EXTRACTION
+    # ==================================================
+    online_extractor.eval()
+
+    with torch.inference_mode():
+        online = online_extractor.extract_online_cache_features(
+            real_sample["x_local"],
+            real_sample["x_context"],
+        )
+
+    assert set(online.keys()) == set(FEATURE_KEYS)
+
+    # ==================================================
+    # 2. WRITE TO CACHE
+    # ==================================================
+    sample_to_cache = {
+        "image_id": real_sample["image_id"],
+        "category": real_sample["category"],
+
+        **{
+            key: online[key]
+            for key in FEATURE_KEYS
+        },
+
+        # geometry comes from preprocessing, NOT DINO
+        "geometry": real_sample["geometry"],
+    }
+
+    with FeatureCacheWriter(
+        tmp_path,
+        producer_signature=signature,
+    ) as writer:
+        writer.add(sample_to_cache)
+
+    # ==================================================
+    # 3. READ FROM CACHE
+    # ==================================================
+    reader = FeatureCacheReader(
+        tmp_path,
+        expected_producer_signature=signature,
+        mmap=True,
+    )
+
+    cached = reader.get(
+        image_id=real_sample["image_id"],
+        category=real_sample["category"],
+    )
+
+    # ==================================================
+    # 4. NUMERICAL ACCEPTANCE GATE
+    # ==================================================
+    assert_online_cache_error_below_tolerance(
+        online,
+        cached,
+        tolerance=1e-5,
+    )
