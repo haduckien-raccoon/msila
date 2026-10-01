@@ -237,3 +237,144 @@ def validate_anomaly_logits(
             f"expected={expected_shape}, "
             f"got={tuple(logits.shape)}"
         )
+
+# ============================================================
+# Day-2 Local-Context feature names
+# ============================================================
+
+MULTIVIEW_FEATURE_KEYS: Final[tuple[str, ...]] = (
+    "local_b4",
+    "local_b8",
+    "local_b12",
+    "context_b4",
+    "context_b8",
+    "context_b12",
+)
+
+
+class MultiViewFeatures(TypedDict):
+    """
+    Day-2 aligned + projected features.
+
+    Every tensor MUST be:
+        [B, d, h, w]
+
+    Context features MUST already be aligned to Local coordinates
+    before reaching this contract.
+    """
+    local_b4: Tensor
+    local_b8: Tensor
+    local_b12: Tensor
+
+    context_b4: Tensor
+    context_b8: Tensor
+    context_b12: Tensor
+
+# ============================================================
+# Day-2 Local-Context feature contract
+# ============================================================
+
+def validate_multiview_features(
+    features: Mapping[str, Tensor],
+    *,
+    expected_channels: int | None = None,
+    check_finite: bool = True,
+) -> None:
+    """
+    Validate the six aligned/projected Day-2 feature sources.
+
+    Expected:
+        {
+            "local_b4":    [B,d,h,w],
+            "local_b8":    [B,d,h,w],
+            "local_b12":   [B,d,h,w],
+            "context_b4":  [B,d,h,w],
+            "context_b8":  [B,d,h,w],
+            "context_b12": [B,d,h,w],
+        }
+
+    All six tensors MUST:
+        - use BCHW layout
+        - have identical shapes
+        - have the same device
+        - have the same dtype
+        - contain only finite values
+    """
+
+    expected = set(MULTIVIEW_FEATURE_KEYS)
+    received = set(features.keys())
+
+    # --------------------------------------------------------
+    # 1. Exactly six required sources
+    # --------------------------------------------------------
+    if received != expected:
+        missing = expected - received
+        extra = received - expected
+
+        raise ContractError(
+            "Day-2 multiview features have invalid keys. "
+            f"missing={sorted(missing)}, "
+            f"extra={sorted(extra)}"
+        )
+
+    # Reference tensor
+    reference = features["local_b4"]
+
+    _validate_bchw(
+        reference,
+        "multiview[local_b4]",
+        check_finite=check_finite,
+    )
+
+    ref_shape = reference.shape
+    ref_device = reference.device
+    ref_dtype = reference.dtype
+
+    # --------------------------------------------------------
+    # 2. Validate all six features
+    # --------------------------------------------------------
+    for key in MULTIVIEW_FEATURE_KEYS:
+        x = features[key]
+
+        _validate_bchw(
+            x,
+            f"multiview[{key}]",
+            check_finite=check_finite,
+        )
+
+        # Same [B,d,h,w]
+        if x.shape != ref_shape:
+            raise ContractError(
+                "Day-2 fusion requires all six features "
+                "to have identical [B,d,h,w] shapes. "
+                f"reference local_b4={tuple(ref_shape)}, "
+                f"{key}={tuple(x.shape)}"
+            )
+
+        # Same device
+        if x.device != ref_device:
+            raise ContractError(
+                f"multiview[{key}]: device mismatch: "
+                f"{x.device} != {ref_device}"
+            )
+
+        # Same dtype
+        if x.dtype != ref_dtype:
+            raise ContractError(
+                f"multiview[{key}]: dtype mismatch: "
+                f"{x.dtype} != {ref_dtype}"
+            )
+
+    # --------------------------------------------------------
+    # 3. Optional: lock fusion dimension d
+    # --------------------------------------------------------
+    if expected_channels is not None:
+        actual_channels = reference.shape[1]
+
+        if actual_channels != expected_channels:
+            raise ContractError(
+                "Day-2 fusion dimension mismatch. "
+                f"expected d={expected_channels}, "
+                f"got d={actual_channels}"
+            )
+

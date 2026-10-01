@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from geometry.view_meta import (  # noqa: E402
+from src.geometry.view_meta import (  # noqa: E402
     build_view_meta,
     build_view_meta_from_transform_meta,
     crop_resize_matrix,

@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from geometry.view_meta import build_view_meta
-from models.context_alignment import ContextToLocalAligner
+from src.geometry.view_meta import build_view_meta
+from src.models.context_alignment import ContextToLocalAligner
 
 
 def _nested_meta():
