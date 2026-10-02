@@ -3,25 +3,47 @@ MS-ILA E9 — Day-04 configuration fairness audit.
 
 Scientific question
 -------------------
-Are Day-04 adapter candidates identical in every controlled setting except:
+Are all Day-04 Adapter candidates identical in every controlled experimental
+setting except the two architecture variables of the current Adapter:
 
-    r = adapter reduction ratio
-    d = fusion / projection dimension
+    r = bottleneck_dim
+    d = projection_dim
 
-The exact config paths for r and d are declared in a fairness manifest.
+The locked Adapter branch is:
+
+    C -> r -> DWConv_k -> d -> C
+
+Important semantic rule
+-----------------------
+Adapter ``d`` is NOT the downstream ``fusion_dim``.
+
+Legacy mappings such as
+
+    r -> adapter_reduction
+    d -> fusion_dim
+
+are rejected by this audit because they describe the previous architecture,
+not the current Day-04 Adapter.
 
 PASS
 ----
 For every candidate config:
-    1. r and d exist and are positive integers;
-    2. the (r, d) pair is unique;
-    3. recursive config differences are a subset of {r_path, d_path};
-    4. after removing r and d, all canonical config hashes are identical.
+
+    1. r_path resolves to a positive integer ``bottleneck_dim``;
+    2. d_path resolves to a positive integer ``projection_dim``;
+    3. every (r, d) pair is unique;
+    4. recursive config differences are a subset of {r_path, d_path};
+    5. after removing r and d, all canonical controlled-config hashes are
+       identical.
+
+Therefore LR, seed, split, cache, loss, augmentation, optimizer, epochs,
+batch size, Fusion, Decoder, alignment, precision, and every other controlled
+field must remain exactly equal within the audited subtree.
 
 Output
 ------
-A machine-readable config diff report is written whenever the audit reaches
-comparison stage.
+A machine-readable ``config_diff.json`` report is written whenever the audit
+reaches comparison stage.
 """
 
 from __future__ import annotations
@@ -32,6 +54,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +65,16 @@ import pytest
 
 MANIFEST_SCHEMA_VERSION = "msila.e9.fairness_manifest.v1"
 REPORT_SCHEMA_VERSION = "msila.e9.config_diff.v1"
+
+# Current Day-04 semantics.  The manifest may nest these fields at any mapping
+# depth, but the leaf names are locked to the actual Adapter API.
+DAY04_R_LEAF = "bottleneck_dim"
+DAY04_D_LEAF = "projection_dim"
+
+# Deterministic candidate naming used by configs/day04_adapter_grid.yaml.
+DAY04_CANDIDATE_PATTERN = re.compile(
+    r"^adapter_r(?P<r>[1-9][0-9]*)_d(?P<d>[1-9][0-9]*)$"
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = PROJECT_ROOT / "configs" / "day04_fairness.json"
@@ -145,6 +178,45 @@ def _validate_dotted_path(path: Any, *, field: str) -> str:
     return path
 
 
+def _validate_day04_semantic_paths(
+    *,
+    r_path: str,
+    d_path: str,
+) -> None:
+    """Reject manifests that still describe the legacy Adapter semantics.
+
+    The manifest remains free to place Adapter configuration inside a nested
+    subtree such as::
+
+        adapter.bottleneck_dim
+        adapter.projection_dim
+
+    or::
+
+        model.adapter.bottleneck_dim
+        model.adapter.projection_dim
+
+    but the final mapping keys are scientifically locked.
+    """
+
+    r_leaf = r_path.split(".")[-1]
+    d_leaf = d_path.split(".")[-1]
+
+    if r_leaf != DAY04_R_LEAF:
+        raise FairnessAuditError(
+            "Day-04 semantic mismatch: r must resolve to "
+            f"{DAY04_R_LEAF!r}, got path {r_path!r}. "
+            "Do not map r to legacy adapter_reduction."
+        )
+
+    if d_leaf != DAY04_D_LEAF:
+        raise FairnessAuditError(
+            "Day-04 semantic mismatch: d must resolve to "
+            f"{DAY04_D_LEAF!r}, got path {d_path!r}. "
+            "Adapter d is not downstream fusion_dim."
+        )
+
+
 def _load_yaml_or_json(path: Path) -> Mapping[str, Any]:
     if not path.is_file():
         raise FairnessAuditError(f"Candidate config does not exist: {path}")
@@ -222,6 +294,11 @@ def load_manifest(path: str | Path) -> FairnessManifest:
     )
     if r_path == d_path:
         raise FairnessAuditError("r and d must map to different config paths")
+
+    _validate_day04_semantic_paths(
+        r_path=r_path,
+        d_path=d_path,
+    )
 
     candidates_raw = raw.get("candidates")
     if not isinstance(candidates_raw, Mapping) or len(candidates_raw) < 2:
@@ -401,6 +478,42 @@ def _controlled_hash(
     return _canonical_sha256(stripped)
 
 
+def _validate_candidate_id_against_factors(
+    *,
+    candidate: str,
+    r: int,
+    d: int,
+) -> None:
+    """Check deterministic Day-04 candidate IDs when that naming scheme is used.
+
+    The project grid uses ``adapter_r{r}_d{d}``.  A candidate with that prefix
+    must encode the same values found in its configuration; otherwise experiment
+    provenance is ambiguous.
+
+    Non-grid/custom candidate IDs remain allowed because E9's scientific
+    fairness criterion depends on config contents, not on cosmetic naming.
+    """
+
+    if not candidate.startswith("adapter_r"):
+        return
+
+    match = DAY04_CANDIDATE_PATTERN.fullmatch(candidate)
+    if match is None:
+        raise FairnessAuditError(
+            f"{candidate}: invalid Day-04 candidate ID; expected "
+            "'adapter_r{positive_int}_d{positive_int}'"
+        )
+
+    encoded_r = int(match.group("r"))
+    encoded_d = int(match.group("d"))
+
+    if encoded_r != r or encoded_d != d:
+        raise FairnessAuditError(
+            f"{candidate}: candidate ID encodes (r={encoded_r}, d={encoded_d}) "
+            f"but config contains (r={r}, d={d})"
+        )
+
+
 def audit_configs(manifest: FairnessManifest) -> dict[str, Any]:
     configs: dict[str, Mapping[str, Any]] = {}
     config_hashes: dict[str, str] = {}
@@ -431,6 +544,12 @@ def audit_configs(manifest: FairnessManifest) -> dict[str, Any]:
         )
         d = _positive_int_factor(
             d_value, semantic_name="d", candidate=candidate
+        )
+
+        _validate_candidate_id_against_factors(
+            candidate=candidate,
+            r=r,
+            d=d,
         )
 
         configs[candidate] = config
@@ -509,6 +628,12 @@ def audit_configs(manifest: FairnessManifest) -> dict[str, Any]:
         "allowed_differences": {
             "r": manifest.r_path,
             "d": manifest.d_path,
+        },
+        "semantic_contract": {
+            "adapter_architecture": "C->r->DWConv_k->d->C",
+            "r": "bottleneck_dim",
+            "d": "projection_dim",
+            "fusion_dim_is_adapter_d": False,
         },
         "candidate_factors": factor_values,
         "candidate_config_sha256": config_hashes,
@@ -625,12 +750,28 @@ def test_day04_candidate_configs_differ_only_in_r_and_d() -> None:
     assert report["unexpected_differences"] == []
     assert report["duplicate_factor_pairs"] == {}
 
+    assert report["semantic_contract"] == {
+        "adapter_architecture": "C->r->DWConv_k->d->C",
+        "r": "bottleneck_dim",
+        "d": "projection_dim",
+        "fusion_dim_is_adapter_d": False,
+    }
+
+    assert (
+        report["allowed_differences"]["r"].split(".")[-1]
+        == DAY04_R_LEAF
+    )
+    assert (
+        report["allowed_differences"]["d"].split(".")[-1]
+        == DAY04_D_LEAF
+    )
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "MS-ILA E9 fairness audit: candidate configs may differ only in "
-            "the manifest-declared r and d paths."
+            "r=bottleneck_dim and d=projection_dim."
         )
     )
     parser.add_argument("--manifest", type=Path, required=True)

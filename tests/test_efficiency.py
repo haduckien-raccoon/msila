@@ -6,18 +6,30 @@ import pytest
 import torch
 from torch import nn
 
-from src.eval import efficiency as efficiency
+from src.eval import efficiency
+from src.models.cached_training import CachedFeatureTrainingModel
 
 
 class _ToyModel(nn.Module):
     def __init__(self):
         super().__init__()
+
         # Conv2d: 4*3*3*3 + 4 = 112 parameters.
-        self.conv = nn.Conv2d(3, 4, kernel_size=3, bias=True)
+        self.conv = nn.Conv2d(
+            3,
+            4,
+            kernel_size=3,
+            bias=True,
+        )
+
         # Linear: 2*4 + 2 = 10 parameters; frozen.
-        self.fc = nn.Linear(4, 2, bias=True)
-        for p in self.fc.parameters():
-            p.requires_grad_(False)
+        self.fc = nn.Linear(
+            4,
+            2,
+            bias=True,
+        )
+        for parameter in self.fc.parameters():
+            parameter.requires_grad_(False)
 
 
 def test_parameter_count_matches_manual_count():
@@ -28,14 +40,20 @@ def test_parameter_count_matches_manual_count():
     assert counts["total_parameters"] == 122
     assert counts["trainable_parameters"] == 112
     assert counts["frozen_parameters"] == 10
-    assert counts["trainable_fraction"] == pytest.approx(112 / 122)
+    assert counts["trainable_fraction"] == pytest.approx(
+        112 / 122
+    )
 
 
 def test_shared_parameter_object_is_counted_once():
     class Shared(nn.Module):
         def __init__(self):
             super().__init__()
-            shared = nn.Linear(4, 3, bias=False)  # 12 scalar parameters
+            shared = nn.Linear(
+                4,
+                3,
+                bias=False,
+            )  # 12 scalar parameters
             self.a = shared
             self.b = shared
 
@@ -51,25 +69,166 @@ def test_shared_parameter_object_is_counted_once():
     assert report["shared_parameter_aliases"][0]["aliases"]
 
 
-def test_manual_cached_msila_formula_regression():
+def test_manual_cached_msila_formula_day04_rxd_regression():
+    """Closed-form regression for C -> r -> DWConv -> d -> C.
+
+    The test intentionally uses:
+
+        adapter d = 6
+        fusion_dim = 8
+
+    so a future implementation cannot silently reinterpret Adapter d as the
+    downstream fusion width.
+    """
+
     manual = efficiency.manual_cached_msila_parameter_formula(
-        in_channels=384,
-        fusion_dim=128,
-        adapter_reduction=4,
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
         adapter_kernel_size=3,
+        adapter_bias=True,
         num_blocks=3,
         share_projection_across_views=True,
+        projection_bias=True,
     )
 
-    assert manual["adapter_bottleneck_channels"] == 96
-    assert manual["components"] == {
-        "adapters": 225_507,
-        "aligner": 0,
-        "projection": 147_840,
-        "fusion": 134,
-        "decoder": 73_857,
+    # One Adapter:
+    # weights = C*r + r*k^2 + r*d + d*C
+    #         = 16*4 + 4*9 + 4*6 + 6*16
+    #         = 220
+    #
+    # biases  = 2*r + d + C = 8 + 6 + 16 = 30
+    # gamma   = 1
+    # total   = 251
+    assert manual["per_adapter"] == {
+        "weights": 220,
+        "biases": 30,
+        "gamma": 1,
+        "total": 251,
     }
-    assert manual["total_parameters"] == 447_338
+
+    assert manual["components"] == {
+        "adapters": 753,    # 3 * 251
+        "aligner": 0,
+        "projection": 408,  # 3 * (16*8 + 8)
+        "fusion": 14,       # score_proj=8 + 6 source biases
+        "decoder": 297,     # h=4: 9*8*4 + 2*4 + 1
+    }
+    assert manual["total_parameters"] == 1_472
+
+    assert manual["adapter_bottleneck_dim"] == 4
+    assert manual["adapter_projection_dim"] == 6
+    assert manual["fusion_dim"] == 8
+    assert manual["architecture"]["fusion_dim_is_adapter_d"] is False
+
+
+def test_manual_formula_bias_flag_changes_only_adapter_bias_terms():
+    with_bias = efficiency.manual_cached_msila_parameter_formula(
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
+        adapter_bias=True,
+    )
+    without_bias = efficiency.manual_cached_msila_parameter_formula(
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
+        adapter_bias=False,
+    )
+
+    # Per Adapter removed biases:
+    # 2*r + d + C = 2*4 + 6 + 16 = 30
+    # Three block Adapters => 90 parameters.
+    assert (
+        with_bias["total_parameters"]
+        - without_bias["total_parameters"]
+        == 90
+    )
+    assert without_bias["per_adapter"]["biases"] == 0
+
+
+def test_manual_formula_rejects_legacy_adapter_reduction_api():
+    """Legacy ``adapter_reduction`` must not silently map to Day-04 r."""
+
+    with pytest.raises(TypeError):
+        efficiency.manual_cached_msila_parameter_formula(
+            in_channels=16,
+            fusion_dim=8,
+            adapter_reduction=4,  # type: ignore[call-arg]
+        )
+
+
+def test_e4_formula_matches_real_cached_model():
+    """Independent formula must match the actual updated cached model."""
+
+    model = CachedFeatureTrainingModel.build_default(
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
+        output_size=(32, 32),
+        adapter_kernel_size=3,
+        gamma_init=0.0,
+        adapter_bias=True,
+        share_projection_across_views=True,
+        validate=True,
+    )
+
+    result = efficiency.verify_cached_msila_parameter_count(
+        model,
+        candidate_id="adapter_r4_d6",
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
+        adapter_kernel_size=3,
+        adapter_bias=True,
+        num_blocks=3,
+        share_projection_across_views=True,
+        projection_bias=True,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["manual_formula"]["total_parameters"] == 1_472
+    assert result["report"]["totals"]["total_parameters"] == 1_472
+    assert result["report"]["totals"]["trainable_parameters"] == 1_472
+    assert result["actual_components"] == {
+        "adapters": 753,
+        "aligner": 0,
+        "projection": 408,
+        "fusion": 14,
+        "decoder": 297,
+        "other": 0,
+    }
+
+
+def test_e4_detects_wrong_candidate_semantics():
+    """Supplying the wrong Adapter d must make the hard E4 gate fail."""
+
+    model = CachedFeatureTrainingModel.build_default(
+        in_channels=16,
+        adapter_bottleneck_dim=4,
+        adapter_projection_dim=6,
+        fusion_dim=8,
+        output_size=(32, 32),
+        validate=True,
+    )
+
+    with pytest.raises(
+        efficiency.ParameterCountError,
+        match="FAILED",
+    ):
+        efficiency.verify_cached_msila_parameter_count(
+            model,
+            candidate_id="wrong_semantics",
+            in_channels=16,
+            adapter_bottleneck_dim=4,
+            adapter_projection_dim=8,  # wrong: model was built with d=6
+            fusion_dim=8,
+        )
 
 
 def test_assert_parameter_count_rejects_mismatch():
@@ -104,7 +263,10 @@ def test_benchmark_scope_fingerprint_is_deterministic_and_sensitive():
             "attention_fusion",
             "decoder",
         ),
-        extra={"output_size": [512, 512], "tag": "locked"},
+        extra={
+            "output_size": [512, 512],
+            "tag": "locked",
+        },
     )
 
     # Mapping insertion order must not change the fingerprint.
@@ -121,7 +283,10 @@ def test_benchmark_scope_fingerprint_is_deterministic_and_sensitive():
             "attention_fusion",
             "decoder",
         ),
-        extra={"tag": "locked", "output_size": [512, 512]},
+        extra={
+            "tag": "locked",
+            "output_size": [512, 512],
+        },
     )
 
     changed = efficiency.make_benchmark_scope(
@@ -137,31 +302,53 @@ def test_benchmark_scope_fingerprint_is_deterministic_and_sensitive():
             "attention_fusion",
             "decoder",
         ),
-        extra={"output_size": [512, 512], "tag": "locked"},
+        extra={
+            "output_size": [512, 512],
+            "tag": "locked",
+        },
     )
 
-    assert a["fingerprint_sha256"] == b["fingerprint_sha256"]
-    assert a["fingerprint_sha256"] != changed["fingerprint_sha256"]
+    assert (
+        a["fingerprint_sha256"]
+        == b["fingerprint_sha256"]
+    )
+    assert (
+        a["fingerprint_sha256"]
+        != changed["fingerprint_sha256"]
+    )
 
 
-def test_latency_runs_exact_warmup_and_measurement_counts(monkeypatch):
+def test_latency_runs_exact_warmup_and_measurement_counts(
+    monkeypatch,
+):
     rounds = 3
     warmup = 2
     iterations = 4
-    calls = {"n": 0, "inference_mode": []}
+
+    calls = {
+        "n": 0,
+        "inference_mode": [],
+    }
 
     def fn():
         calls["n"] += 1
-        calls["inference_mode"].append(torch.is_inference_mode_enabled())
+        calls["inference_mode"].append(
+            torch.is_inference_mode_enabled()
+        )
         return torch.tensor(1.0)
 
     # Every measured call is exactly 2 ms.
     times = []
     base = 0
     for _ in range(rounds * iterations):
-        times.extend([base, base + 2_000_000])
+        times.extend([
+            base,
+            base + 2_000_000,
+        ])
         base += 10_000_000
+
     iterator = iter(times)
+
     monkeypatch.setattr(
         efficiency.time,
         "perf_counter_ns",
@@ -178,28 +365,50 @@ def test_latency_runs_exact_warmup_and_measurement_counts(monkeypatch):
         stability_cv_threshold=0.01,
     )
 
-    assert calls["n"] == rounds * (warmup + iterations)
+    assert calls["n"] == rounds * (
+        warmup + iterations
+    )
     assert all(calls["inference_mode"])
 
     assert report["status"] == "PASS"
-    assert report["protocol"]["total_timed_iterations"] == rounds * iterations
+    assert (
+        report["protocol"]["total_timed_iterations"]
+        == rounds * iterations
+    )
     assert report["latency_ms"]["mean"] == pytest.approx(2.0)
     assert report["latency_ms"]["median"] == pytest.approx(2.0)
     assert report["latency_ms"]["p95"] == pytest.approx(2.0)
     assert report["latency_ms"]["std"] == pytest.approx(0.0)
-    assert report["stability"]["round_medians_ms"] == pytest.approx([2.0, 2.0, 2.0])
-    assert report["stability"]["round_median_cv"] == pytest.approx(0.0)
+    assert report["stability"]["round_medians_ms"] == pytest.approx(
+        [2.0, 2.0, 2.0]
+    )
+    assert report["stability"]["round_median_cv"] == pytest.approx(
+        0.0
+    )
 
 
-def test_latency_stability_gate_detects_round_drift(monkeypatch):
-    # One sample per round. Durations: 1 ms, 2 ms, 4 ms -> intentionally unstable.
-    durations_ns = [1_000_000, 2_000_000, 4_000_000]
+def test_latency_stability_gate_detects_round_drift(
+    monkeypatch,
+):
+    # One sample per round:
+    # 1 ms, 2 ms, 4 ms -> intentionally unstable.
+    durations_ns = [
+        1_000_000,
+        2_000_000,
+        4_000_000,
+    ]
+
     times = []
     base = 0
     for duration in durations_ns:
-        times.extend([base, base + duration])
+        times.extend([
+            base,
+            base + duration,
+        ])
         base += 10_000_000
+
     iterator = iter(times)
+
     monkeypatch.setattr(
         efficiency.time,
         "perf_counter_ns",
@@ -217,7 +426,10 @@ def test_latency_stability_gate_detects_round_drift(monkeypatch):
 
     assert report["status"] == "FAIL"
     assert report["stability"]["status"] == "FAIL"
-    assert report["stability"]["round_median_cv"] > 0.10
+    assert (
+        report["stability"]["round_median_cv"]
+        > 0.10
+    )
 
 
 @pytest.mark.parametrize(
@@ -228,7 +440,11 @@ def test_latency_stability_gate_detects_round_drift(monkeypatch):
         (0, 1, 1),
     ],
 )
-def test_latency_rejects_invalid_protocol(warmup, iterations, rounds):
+def test_latency_rejects_invalid_protocol(
+    warmup,
+    iterations,
+    rounds,
+):
     with pytest.raises(ValueError):
         efficiency.benchmark_latency(
             lambda: None,
@@ -252,7 +468,9 @@ def test_peak_vram_rejects_cpu_measurement():
         )
 
 
-def test_peak_vram_protocol_reset_then_measure_is_regression_tested(monkeypatch):
+def test_peak_vram_protocol_reset_then_measure_is_regression_tested(
+    monkeypatch,
+):
     events: list[str] = []
     calls = {"n": 0}
 
@@ -294,10 +512,26 @@ def test_peak_vram_protocol_reset_then_measure_is_regression_tested(monkeypatch)
         events.append("max_memory_reserved")
         return 280
 
-    monkeypatch.setattr(torch.cuda, "memory_allocated", memory_allocated)
-    monkeypatch.setattr(torch.cuda, "memory_reserved", memory_reserved)
-    monkeypatch.setattr(torch.cuda, "max_memory_allocated", max_memory_allocated)
-    monkeypatch.setattr(torch.cuda, "max_memory_reserved", max_memory_reserved)
+    monkeypatch.setattr(
+        torch.cuda,
+        "memory_allocated",
+        memory_allocated,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "memory_reserved",
+        memory_reserved,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_allocated",
+        max_memory_allocated,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_reserved",
+        max_memory_reserved,
+    )
 
     def fn():
         calls["n"] += 1
@@ -314,25 +548,62 @@ def test_peak_vram_protocol_reset_then_measure_is_regression_tested(monkeypatch)
 
     assert calls["n"] == 5
 
-    # Critical ordering: warm-up completes, then sync, then reset, then baseline.
+    # Critical ordering:
+    # warm-up -> sync -> reset -> baseline -> measured inference.
     reset_index = events.index("reset")
-    assert events[:reset_index] == ["fn", "sync", "fn", "sync", "sync"]
-    assert events[reset_index + 1 : reset_index + 3] == [
+
+    assert events[:reset_index] == [
+        "fn",
+        "sync",
+        "fn",
+        "sync",
+        "sync",
+    ]
+    assert events[
+        reset_index + 1:
+        reset_index + 3
+    ] == [
         "memory_allocated",
         "memory_reserved",
     ]
 
     assert report["status"] == "PASS"
-    assert report["memory"]["baseline_allocated"]["bytes"] == 100
-    assert report["memory"]["peak_allocated"]["bytes"] == 180
-    assert report["memory"]["incremental_peak_allocated"]["bytes"] == 80
-    assert report["memory"]["baseline_reserved"]["bytes"] == 200
-    assert report["memory"]["peak_reserved"]["bytes"] == 280
-    assert report["memory"]["incremental_peak_reserved"]["bytes"] == 80
-    assert report["protocol"]["empty_cache_before_measurement"] is False
+
+    assert (
+        report["memory"]["baseline_allocated"]["bytes"]
+        == 100
+    )
+    assert (
+        report["memory"]["peak_allocated"]["bytes"]
+        == 180
+    )
+    assert (
+        report["memory"]["incremental_peak_allocated"]["bytes"]
+        == 80
+    )
+
+    assert (
+        report["memory"]["baseline_reserved"]["bytes"]
+        == 200
+    )
+    assert (
+        report["memory"]["peak_reserved"]["bytes"]
+        == 280
+    )
+    assert (
+        report["memory"]["incremental_peak_reserved"]["bytes"]
+        == 80
+    )
+
+    assert (
+        report["protocol"]["empty_cache_before_measurement"]
+        is False
+    )
 
 
-def test_peak_vram_rejects_impossible_peak_smaller_than_baseline(monkeypatch):
+def test_peak_vram_rejects_impossible_peak_smaller_than_baseline(
+    monkeypatch,
+):
     monkeypatch.setattr(
         efficiency,
         "_resolve_device",
@@ -343,12 +614,36 @@ def test_peak_vram_rejects_impossible_peak_smaller_than_baseline(monkeypatch):
         "device",
         lambda device: contextlib.nullcontext(),
     )
-    monkeypatch.setattr(efficiency, "_sync_device", lambda device: None)
-    monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", lambda device: None)
-    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 200)
-    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 300)
-    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda device: 150)
-    monkeypatch.setattr(torch.cuda, "max_memory_reserved", lambda device: 350)
+    monkeypatch.setattr(
+        efficiency,
+        "_sync_device",
+        lambda device: None,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "reset_peak_memory_stats",
+        lambda device: None,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "memory_allocated",
+        lambda device: 200,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "memory_reserved",
+        lambda device: 300,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_allocated",
+        lambda device: 150,
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "max_memory_reserved",
+        lambda device: 350,
+    )
 
     with pytest.raises(
         efficiency.BenchmarkProtocolError,

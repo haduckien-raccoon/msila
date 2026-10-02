@@ -12,7 +12,7 @@ import yaml
 
 
 def load_runner():
-    path = Path(__file__).resolve().parents[1] / "train" / "screen_adapter.py"
+    path = Path(__file__).resolve().parents[1] / "src"/"train" / "screen_adapter.py"
     name = "screen_adapter_under_test"
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)

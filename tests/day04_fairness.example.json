@@ -1,14 +1,20 @@
 {
   "schema_version": "msila.e9.fairness_manifest.v1",
-  "baseline_candidate": "r4_d128",
+  "baseline_candidate": "adapter_r32_d128",
   "config_root": null,
   "allowed_differences": {
-    "r": "adapter_reduction",
-    "d": "fusion_dim"
+    "r": "adapter.bottleneck_dim",
+    "d": "adapter.projection_dim"
   },
   "candidates": {
-    "r4_d128": "configs/day04/r4_d128.yaml",
-    "r8_d128": "configs/day04/r8_d128.yaml",
-    "r4_d256": "configs/day04/r4_d256.yaml"
+    "adapter_r32_d128": "configs/day04/adapter_r32_d128.yaml",
+    "adapter_r32_d256": "configs/day04/adapter_r32_d256.yaml",
+    "adapter_r32_d384": "configs/day04/adapter_r32_d384.yaml",
+    "adapter_r64_d128": "configs/day04/adapter_r64_d128.yaml",
+    "adapter_r64_d256": "configs/day04/adapter_r64_d256.yaml",
+    "adapter_r64_d384": "configs/day04/adapter_r64_d384.yaml",
+    "adapter_r128_d128": "configs/day04/adapter_r128_d128.yaml",
+    "adapter_r128_d256": "configs/day04/adapter_r128_d256.yaml",
+    "adapter_r128_d384": "configs/day04/adapter_r128_d384.yaml"
   }
 }

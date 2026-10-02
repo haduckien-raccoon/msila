@@ -43,28 +43,55 @@ from .residual_adapter import ResidualAdapter2d
 
 
 class MSILA(nn.Module):
-    """Minimal MS-ILA v0 used for Day-1 Architecture QA.
+    """Minimal MS-ILA baseline using the current Day-04 residual Adapter.
 
-    The extractor must expose ``out_channels`` and return exactly:
-        {"b4": [B,C,h,w], "b8": [B,C,h,w], "b12": [B,C,h,w]}.
+    Backbone contract
+    -----------------
+    ``extractor`` must expose ``out_channels`` and return exactly:
 
-    The three DINO features are adapted independently, fused by an
-    unweighted mean, and decoded to ``[B,1,H,W]``.
+        {"b4": [B,C,h,w], "b8": [B,C,h,w], "b12": [B,C,h,w]}
+
+    Adapter contract
+    ----------------
+    Each DINO block has one independent ``ResidualAdapter2d`` implementing
+
+        C -> r -> DWConv -> d -> C
+        F_out = F + gamma * DeltaF
+
+    where:
+
+        r = adapter_bottleneck_dim
+        d = adapter_projection_dim
+
+    ``r`` and ``d`` are explicit because the current Day-04 screen treats them
+    as two independent architecture variables.  The legacy ``adapter_reduction``
+    API is intentionally not accepted here.
+
+    Day-1 fusion remains an unweighted mean over the three adapted DINO
+    features, so the fused channel width remains ``C``.  In particular,
+    ``adapter_projection_dim`` is internal to the Adapter and is NOT a
+    downstream fusion width.
     """
 
     def __init__(
         self,
         extractor: nn.Module,
         *,
-        adapter_reduction: int = 4,
+        adapter_bottleneck_dim: int,
+        adapter_projection_dim: int,
         adapter_kernel_size: int = 3,
         gamma_init: float = 0.0,
+        adapter_bias: bool = True,
         fusion: nn.Module | None = None,
         decoder: nn.Module | None = None,
         validate: bool = True,
     ) -> None:
         super().__init__()
 
+        if not isinstance(extractor, nn.Module):
+            raise TypeError(
+                f"extractor must be torch.nn.Module, got {type(extractor).__name__}"
+            )
         if not hasattr(extractor, "out_channels"):
             raise TypeError(
                 "extractor must expose an 'out_channels' attribute/property."
@@ -72,30 +99,80 @@ class MSILA(nn.Module):
 
         channels = int(extractor.out_channels)
         if channels <= 0:
-            raise ValueError(f"extractor.out_channels must be > 0, got {channels}")
+            raise ValueError(
+                f"extractor.out_channels must be > 0, got {channels}"
+            )
+
+        for name, value in (
+            ("adapter_bottleneck_dim", adapter_bottleneck_dim),
+            ("adapter_projection_dim", adapter_projection_dim),
+            ("adapter_kernel_size", adapter_kernel_size),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(
+                    f"{name} must be an int, got {type(value).__name__}"
+                )
+            if value <= 0:
+                raise ValueError(f"{name} must be > 0, got {value}")
+
+        if adapter_kernel_size % 2 == 0:
+            raise ValueError(
+                "adapter_kernel_size must be odd so Adapter HxW is preserved"
+            )
+        if not isinstance(adapter_bias, bool):
+            raise TypeError(
+                f"adapter_bias must be bool, got {type(adapter_bias).__name__}"
+            )
 
         self.extractor = extractor
         self.validate = bool(validate)
 
+        # Explicit Day-04 Adapter architecture variables.
+        self.adapter_bottleneck_dim = int(adapter_bottleneck_dim)
+        self.adapter_projection_dim = int(adapter_projection_dim)
+        self.adapter_kernel_size = int(adapter_kernel_size)
+        self.adapter_bias = bool(adapter_bias)
+        self.gamma_init = float(gamma_init)
+
         self.adapters = nn.ModuleDict(
             {
                 key: ResidualAdapter2d(
-                    in_channels=channels,
-                    reduction=adapter_reduction,
-                    kernel_size=adapter_kernel_size,
-                    gamma_init=gamma_init,
+                    in_dim=channels,
+                    bottleneck_dim=self.adapter_bottleneck_dim,
+                    projection_dim=self.adapter_projection_dim,
+                    kernel_size=self.adapter_kernel_size,
+                    gamma_init=self.gamma_init,
+                    bias=self.adapter_bias,
                 )
                 for key in DINO_FEATURE_KEYS
             }
         )
 
-        self.fusion = fusion if fusion is not None else MeanFusion(validate=validate)
-        self.decoder = decoder if decoder is not None else BasicDecoder(channels)
+        self.fusion = (
+            fusion
+            if fusion is not None
+            else MeanFusion(validate=validate)
+        )
+        self.decoder = (
+            decoder
+            if decoder is not None
+            else BasicDecoder(channels)
+        )
 
     @property
     def out_channels(self) -> int:
-        """Channel width of DINO/adapted/fused feature maps."""
+        """Channel width C of DINO/adapted/mean-fused feature maps."""
         return int(self.extractor.out_channels)
+
+    @property
+    def adapter_r(self) -> int:
+        """Day-04 compact notation r = bottleneck width."""
+        return self.adapter_bottleneck_dim
+
+    @property
+    def adapter_d(self) -> int:
+        """Day-04 compact notation d = Adapter internal projection width."""
+        return self.adapter_projection_dim
 
     @classmethod
     def from_dinov3(
@@ -103,12 +180,23 @@ class MSILA(nn.Module):
         *,
         repo_dir: str | Path,
         weights: str | Path,
+        adapter_bottleneck_dim: int,
+        adapter_projection_dim: int,
         model_name: str = "dinov3_vits16",
         blocks: tuple[int, int, int] = (4, 8, 12),
         norm: bool = True,
-        **kwargs: Any,
+        adapter_kernel_size: int = 3,
+        gamma_init: float = 0.0,
+        adapter_bias: bool = True,
+        fusion: nn.Module | None = None,
+        decoder: nn.Module | None = None,
+        validate: bool = True,
     ) -> "MSILA":
-        """Build Day-1 MS-ILA directly from the official DINOv3 extractor."""
+        """Build MS-ILA directly from the official DINOv3 extractor.
+
+        The Adapter pair ``(r,d)`` is required explicitly so a caller cannot
+        silently fall back to the removed reduction-based architecture.
+        """
         extractor = DINOv3FeatureExtractor(
             repo_dir=repo_dir,
             weights=weights,
@@ -116,23 +204,52 @@ class MSILA(nn.Module):
             blocks=blocks,
             norm=norm,
         )
-        return cls(extractor=extractor, **kwargs)
+        return cls(
+            extractor=extractor,
+            adapter_bottleneck_dim=adapter_bottleneck_dim,
+            adapter_projection_dim=adapter_projection_dim,
+            adapter_kernel_size=adapter_kernel_size,
+            gamma_init=gamma_init,
+            adapter_bias=adapter_bias,
+            fusion=fusion,
+            decoder=decoder,
+            validate=validate,
+        )
 
     def adapt_features(
         self,
         features: Mapping[str, Tensor],
     ) -> dict[str, Tensor]:
-        """Apply one residual adapter to each DINO layer feature."""
+        """Apply one Day-04 residual Adapter to each DINO block feature."""
         if self.validate:
-            validate_dino_features(features, require_same_shape=True)
+            validate_dino_features(
+                features,
+                require_same_shape=True,
+            )
 
-        adapted = {
-            key: self.adapters[key](features[key])
-            for key in DINO_FEATURE_KEYS
-        }
+        adapted: dict[str, Tensor] = {}
+        for key in DINO_FEATURE_KEYS:
+            source = features[key]
+            output = self.adapters[key](source)
+
+            if self.validate:
+                if output.shape != source.shape:
+                    raise ContractError(
+                        f"Adapter {key} changed feature shape: "
+                        f"{tuple(source.shape)} -> {tuple(output.shape)}"
+                    )
+                if not bool(torch.isfinite(output).all()):
+                    raise ContractError(
+                        f"Adapter {key} output contains NaN or Inf"
+                    )
+
+            adapted[key] = output
 
         if self.validate:
-            validate_dino_features(adapted, require_same_shape=True)
+            validate_dino_features(
+                adapted,
+                require_same_shape=True,
+            )
 
         return adapted
 
@@ -140,17 +257,33 @@ class MSILA(nn.Module):
         self,
         image: Tensor,
     ) -> tuple[dict[str, Tensor], dict[str, Tensor], Tensor]:
-        """Run DINO -> Adapter -> MeanFusion and expose QA intermediates."""
+        """Run DINO -> Day-04 Adapter -> MeanFusion and expose intermediates."""
         if self.validate:
             validate_image(image)
 
         features = self.extractor(image)
 
         if self.validate:
-            validate_dino_features(features, require_same_shape=True)
+            validate_dino_features(
+                features,
+                require_same_shape=True,
+            )
 
         adapted = self.adapt_features(features)
         fused = self.fusion(adapted)
+
+        if self.validate:
+            reference = adapted[DINO_FEATURE_KEYS[0]]
+            if tuple(fused.shape) != tuple(reference.shape):
+                raise ContractError(
+                    "Day-1 MeanFusion must preserve [B,C,h,w]. "
+                    f"expected={tuple(reference.shape)}, "
+                    f"got={tuple(fused.shape)}"
+                )
+            if not bool(torch.isfinite(fused).all()):
+                raise ContractError(
+                    "Day-1 fused feature contains NaN or Inf"
+                )
 
         return dict(features), adapted, fused
 
@@ -160,12 +293,15 @@ class MSILA(nn.Module):
         *,
         return_trace: bool = False,
     ) -> Tensor | tuple[Tensor, dict[str, object]]:
-        """Run full Day-1 path and return full-resolution anomaly logits."""
+        """Run the complete Day-1 baseline to full-resolution anomaly logits."""
         features, adapted, fused = self.forward_features(image)
 
         logits = self.decoder(
             fused,
-            output_size=(int(image.shape[-2]), int(image.shape[-1])),
+            output_size=(
+                int(image.shape[-2]),
+                int(image.shape[-1]),
+            ),
         )
 
         if self.validate:
@@ -178,13 +314,22 @@ class MSILA(nn.Module):
             "dino": features,
             "adapted": adapted,
             "fused": fused,
+            "adapter_config": {
+                "r": self.adapter_bottleneck_dim,
+                "d": self.adapter_projection_dim,
+                "kernel_size": self.adapter_kernel_size,
+                "bias": self.adapter_bias,
+                "gamma_init": self.gamma_init,
+            },
         }
         return logits, trace
 
     def adapter_gammas(self) -> dict[str, float]:
         """Return scalar residual gates for QA/reporting."""
         return {
-            key: float(self.adapters[key].gamma.detach().cpu().item())
+            key: float(
+                self.adapters[key].gamma.detach().cpu().item()
+            )
             for key in DINO_FEATURE_KEYS
         }
 

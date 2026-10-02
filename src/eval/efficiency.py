@@ -370,35 +370,88 @@ def manual_cached_msila_parameter_formula(
     *,
     in_channels: int,
     fusion_dim: int,
-    adapter_reduction: int = 4,
-    adapter_bottleneck_channels: int | None = None,
+    adapter_bottleneck_dim: int,
+    adapter_projection_dim: int,
     adapter_kernel_size: int = 3,
+    adapter_bias: bool = True,
     num_blocks: int = 3,
     share_projection_across_views: bool = True,
+    projection_bias: bool = True,
     decoder_hidden_channels: int | None = None,
 ) -> dict[str, Any]:
-    """Closed-form count for the current ``CachedFeatureTrainingModel``.
+    """Closed-form E4 parameter count for the current cached MS-ILA pipeline.
 
-    This formula is independent of traversing ``model.parameters()`` and is
-    therefore suitable as the manual/reference side of the E4 PASS criterion.
+    This function is deliberately independent of ``model.parameters()``.  It is
+    the analytical/reference side of the E4 verification.
 
-    Current project architecture assumptions
-    ----------------------------------------
-    - one ResidualAdapter2d per DINO block, shared by Local/Context;
+    Locked Day-04 Adapter architecture
+    ----------------------------------
+    For one DINO feature block with channel width ``C``:
+
+        C -> r -> DWConv_k -> d -> C
+        F_out = F + gamma * DeltaF
+
+    where
+
+        r = adapter_bottleneck_dim
+        d = adapter_projection_dim
+
+    ``d`` above is an Adapter-internal width.  It is NOT ``fusion_dim``.
+
+    The downstream projection has a separate width:
+
+        C -> fusion_dim
+
+    Therefore E4 keeps the three capacities explicit and independent:
+    ``C``, Adapter ``(r,d)``, and ``fusion_dim``.
+
+    Parameter derivation for one Adapter
+    ------------------------------------
+    Weights:
+
+        down_proj 1x1 : C*r
+        DWConv kxk    : r*k^2
+        mid_proj 1x1  : r*d
+        out_proj 1x1  : d*C
+
+    Biases when ``adapter_bias=True``:
+
+        down_proj : r
+        DWConv    : r
+        mid_proj  : d
+        out_proj  : C
+
+    Residual gate:
+
+        gamma     : 1
+
+    Hence
+
+        N_adapter =
+            C*r + r*k^2 + r*d + d*C
+            + I_bias*(2*r + d + C)
+            + 1
+
+    Other current cached-pipeline assumptions
+    -----------------------------------------
+    - one Adapter per DINO block, shared by Local/Context views;
     - ContextToLocalAligner is parameter-free;
-    - one 1x1 projector per block when Local/Context projection is shared,
-      otherwise two projectors per block;
-    - AttentionFusion has a shared d->1 bias-free Linear and one learnable
-      source bias per Local/Context source;
-    - BasicDecoder: Conv3x3(d->h, bias) + Conv1x1(h->1, bias).
-
-    Frozen DINOv3 is NOT included, because CachedFeatureTrainingModel does not
-    instantiate the backbone.
+    - SixFeatureProjection has one C->fusion_dim 1x1 projector per block when
+      Local/Context projection is shared, otherwise two per block;
+    - AttentionFusion contains Linear(fusion_dim, 1, bias=False) plus one
+      source-bias scalar per Local/Context source;
+    - BasicDecoder is
+      Conv3x3(fusion_dim -> hidden, bias=True) followed by
+      Conv1x1(hidden -> 1, bias=True);
+    - frozen DINOv3 is excluded because CachedFeatureTrainingModel does not
+      instantiate the backbone.
     """
+
     for name, value in (
         ("in_channels", in_channels),
         ("fusion_dim", fusion_dim),
-        ("adapter_reduction", adapter_reduction),
+        ("adapter_bottleneck_dim", adapter_bottleneck_dim),
+        ("adapter_projection_dim", adapter_projection_dim),
         ("adapter_kernel_size", adapter_kernel_size),
         ("num_blocks", num_blocks),
     ):
@@ -408,27 +461,25 @@ def manual_cached_msila_parameter_formula(
             raise ValueError(f"{name} must be > 0")
 
     if adapter_kernel_size % 2 == 0:
-        raise ValueError("adapter_kernel_size must be odd")
+        raise ValueError(
+            "adapter_kernel_size must be odd so Adapter HxW is preserved"
+        )
+    if not isinstance(adapter_bias, bool):
+        raise TypeError("adapter_bias must be bool")
+    if not isinstance(share_projection_across_views, bool):
+        raise TypeError("share_projection_across_views must be bool")
+    if not isinstance(projection_bias, bool):
+        raise TypeError("projection_bias must be bool")
 
     c = int(in_channels)
-    d = int(fusion_dim)
+    f = int(fusion_dim)
+    r = int(adapter_bottleneck_dim)
+    d = int(adapter_projection_dim)
     k = int(adapter_kernel_size)
     bcount = int(num_blocks)
 
-    if adapter_bottleneck_channels is None:
-        bottleneck = max(1, c // int(adapter_reduction))
-    else:
-        if (
-            isinstance(adapter_bottleneck_channels, bool)
-            or not isinstance(adapter_bottleneck_channels, int)
-        ):
-            raise TypeError("adapter_bottleneck_channels must be int or None")
-        if adapter_bottleneck_channels <= 0:
-            raise ValueError("adapter_bottleneck_channels must be > 0")
-        bottleneck = int(adapter_bottleneck_channels)
-
     if decoder_hidden_channels is None:
-        hidden = max(d // 2, 1)
+        hidden = max(f // 2, 1)
     else:
         if isinstance(decoder_hidden_channels, bool) or not isinstance(
             decoder_hidden_channels, int
@@ -438,39 +489,57 @@ def manual_cached_msila_parameter_formula(
             raise ValueError("decoder_hidden_channels must be > 0")
         hidden = int(decoder_hidden_channels)
 
-    # ResidualAdapter2d(C -> b -> C):
-    # down 1x1: C*b weights + b bias
-    # depthwise kxk: b*k^2 weights + b bias
-    # up 1x1: b*C weights + C bias
-    # gamma: 1 scalar
+    # ---------------------------------------------------------------
+    # ResidualAdapter2d: C -> r -> DWConv_k -> d -> C
+    # ---------------------------------------------------------------
+    adapter_weights = (
+        c * r
+        + r * k * k
+        + r * d
+        + d * c
+    )
+    adapter_biases = (
+        (2 * r + d + c)
+        if adapter_bias
+        else 0
+    )
+    adapter_gamma = 1
+
     adapter_one = (
-        c * bottleneck
-        + bottleneck
-        + bottleneck * k * k
-        + bottleneck
-        + bottleneck * c
-        + c
-        + 1
+        adapter_weights
+        + adapter_biases
+        + adapter_gamma
     )
     adapters = bcount * adapter_one
 
-    # SixFeatureProjection:
-    # shared views -> one C->d 1x1 per block
-    # unshared     -> Local + Context projectors per block
-    n_projectors = bcount if share_projection_across_views else 2 * bcount
-    projection_one = c * d + d
+    # ---------------------------------------------------------------
+    # SixFeatureProjection: C -> fusion_dim
+    # ---------------------------------------------------------------
+    n_projectors = (
+        bcount
+        if share_projection_across_views
+        else 2 * bcount
+    )
+    projection_one = (
+        c * f
+        + (f if projection_bias else 0)
+    )
     projection = n_projectors * projection_one
 
+    # ---------------------------------------------------------------
     # AttentionFusion:
-    # score_proj Linear(d,1,bias=False): d
-    # source_bias: 2 * num_blocks
+    #   score_proj Linear(f,1,bias=False): f
+    #   source_bias: 2 * num_blocks
+    # ---------------------------------------------------------------
     num_sources = 2 * bcount
-    fusion = d + num_sources
+    fusion = f + num_sources
 
+    # ---------------------------------------------------------------
     # BasicDecoder:
-    # Conv3x3 d->h: 9*d*h + h
-    # Conv1x1 h->1: h + 1
-    decoder = 9 * d * hidden + 2 * hidden + 1
+    #   Conv3x3 f -> hidden: 9*f*hidden + hidden
+    #   Conv1x1 hidden -> 1: hidden + 1
+    # ---------------------------------------------------------------
+    decoder = 9 * f * hidden + 2 * hidden + 1
 
     components = {
         "adapters": int(adapters),
@@ -483,15 +552,31 @@ def manual_cached_msila_parameter_formula(
 
     return {
         "scope": "cached_trainable_pipeline",
+        "architecture": {
+            "adapter": "C->r->DWConv_k->d->C",
+            "adapter_r_semantics": "bottleneck_dim",
+            "adapter_d_semantics": "projection_dim",
+            "fusion_dim_is_adapter_d": False,
+        },
         "in_channels": c,
-        "fusion_dim": d,
-        "adapter_reduction": int(adapter_reduction),
-        "adapter_bottleneck_channels": int(bottleneck),
+        "fusion_dim": f,
+        "adapter_bottleneck_dim": r,
+        "adapter_projection_dim": d,
         "adapter_kernel_size": k,
+        "adapter_bias": bool(adapter_bias),
         "num_blocks": bcount,
         "num_sources": num_sources,
-        "share_projection_across_views": bool(share_projection_across_views),
+        "share_projection_across_views": bool(
+            share_projection_across_views
+        ),
+        "projection_bias": bool(projection_bias),
         "decoder_hidden_channels": hidden,
+        "per_adapter": {
+            "weights": int(adapter_weights),
+            "biases": int(adapter_biases),
+            "gamma": int(adapter_gamma),
+            "total": int(adapter_one),
+        },
         "components": components,
         "total_parameters": int(total),
         "expected_trainable_parameters": int(total),
@@ -499,8 +584,11 @@ def manual_cached_msila_parameter_formula(
     }
 
 
-def _actual_cached_msila_components(report: Mapping[str, Any]) -> dict[str, int]:
-    """Map current CachedFeatureTrainingModel names to manual components."""
+def _actual_cached_msila_components(
+    report: Mapping[str, Any],
+) -> dict[str, int]:
+    """Map current CachedFeatureTrainingModel parameter names to E4 components."""
+
     out = {
         "adapters": 0,
         "aligner": 0,
@@ -536,56 +624,77 @@ def verify_cached_msila_parameter_count(
     candidate_id: str,
     in_channels: int,
     fusion_dim: int,
-    adapter_reduction: int = 4,
-    adapter_bottleneck_channels: int | None = None,
+    adapter_bottleneck_dim: int,
+    adapter_projection_dim: int,
     adapter_kernel_size: int = 3,
+    adapter_bias: bool = True,
     num_blocks: int = 3,
     share_projection_across_views: bool = True,
+    projection_bias: bool = True,
     decoder_hidden_channels: int | None = None,
     output_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Hard E4 verification for the current cached MS-ILA trainable pipeline.
+    """Hard E4 verification for the current Day-04 cached MS-ILA pipeline.
 
-    PASS requires:
-      1. model total == closed-form total;
-      2. model trainable == closed-form total;
-      3. every named architecture component matches the closed-form component;
-      4. no unexpected parameter-bearing component exists.
+    PASS requires all four conditions:
+
+    1. actual total parameter count equals the closed-form count;
+    2. actual trainable count equals the closed-form count;
+    3. every named architecture component matches independently;
+    4. no unexpected parameter-bearing component exists.
+
+    The Adapter dimensions are explicit:
+
+        r = adapter_bottleneck_dim
+        d = adapter_projection_dim
+
+    ``fusion_dim`` is downstream and is never used as a substitute for Adapter
+    ``d``.
     """
+
     report = parameter_report(
         model,
         candidate_id=candidate_id,
         scope="cached_trainable_pipeline",
     )
+
     manual = manual_cached_msila_parameter_formula(
         in_channels=in_channels,
         fusion_dim=fusion_dim,
-        adapter_reduction=adapter_reduction,
-        adapter_bottleneck_channels=adapter_bottleneck_channels,
+        adapter_bottleneck_dim=adapter_bottleneck_dim,
+        adapter_projection_dim=adapter_projection_dim,
         adapter_kernel_size=adapter_kernel_size,
+        adapter_bias=adapter_bias,
         num_blocks=num_blocks,
         share_projection_across_views=share_projection_across_views,
+        projection_bias=projection_bias,
         decoder_hidden_channels=decoder_hidden_channels,
     )
 
     assert_parameter_count(
         report,
         expected_total=int(manual["total_parameters"]),
-        expected_trainable=int(manual["expected_trainable_parameters"]),
+        expected_trainable=int(
+            manual["expected_trainable_parameters"]
+        ),
     )
 
     actual_components = _actual_cached_msila_components(report)
     expected_components = dict(manual["components"])
 
     mismatches: list[str] = []
+
     for name, expected in expected_components.items():
         actual = int(actual_components[name])
         if actual != int(expected):
-            mismatches.append(f"{name}: actual={actual}, expected={expected}")
+            mismatches.append(
+                f"{name}: actual={actual}, expected={expected}"
+            )
 
     if actual_components["other"] != 0:
         mismatches.append(
-            f"other: unexpected parameter count={actual_components['other']}"
+            "other: unexpected parameter count="
+            f"{actual_components['other']}"
         )
 
     if mismatches:
@@ -595,6 +704,8 @@ def verify_cached_msila_parameter_count(
         )
 
     result = {
+        # Keep v1 for E7 compatibility.  The semantics are now the locked
+        # Day-04 r×d Adapter semantics documented in manual_formula.
         "schema_version": "msila.e4.manual_check.v1",
         "candidate_id": str(candidate_id),
         "status": "PASS",
@@ -606,6 +717,10 @@ def verify_cached_msila_parameter_count(
             "trainable_match": True,
             "component_match": True,
             "unexpected_parameters": 0,
+            "adapter_semantics": {
+                "r": "bottleneck_dim",
+                "d": "projection_dim",
+            },
         },
     }
 
@@ -613,6 +728,7 @@ def verify_cached_msila_parameter_count(
         _atomic_json_dump(result, output_path)
 
     return result
+
 
 # =====================================================================
 # E5 — LATENCY

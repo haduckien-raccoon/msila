@@ -25,6 +25,30 @@ Those two contracts must not be confused. This module explicitly converts
 between them instead of feeding raw cached tensors directly into the Day-2 head.
 
 No DINOv3 module is instantiated in cached-feature training.
+
+Day-04 adapter contract
+-----------------------
+The current ResidualAdapter2d is explicitly parameterized by two independent
+screening dimensions:
+
+    r = bottleneck_dim
+    d = projection_dim
+
+and implements
+
+    C -> r -> DWConv -> d -> C.
+
+These adapter dimensions are NOT the same quantity as ``fusion_dim`` used by
+``SixFeatureProjection`` and ``MSILADay2Head``.  The builder below therefore
+keeps the names separate:
+
+    adapter_bottleneck_dim  -> Adapter r
+    adapter_projection_dim  -> Adapter d
+    fusion_dim              -> downstream projected/fused feature width
+
+The legacy ``adapter_reduction`` API is intentionally not supported here,
+because it cannot represent the new two-dimensional Day-04 adapter screen
+without ambiguity.
 """
 
 from __future__ import annotations
@@ -318,26 +342,100 @@ class CachedFeatureTrainingModel(nn.Module):
         *,
         in_channels: int,
         fusion_dim: int,
+        adapter_bottleneck_dim: int,
+        adapter_projection_dim: int,
         output_size: tuple[int, int] = (512, 512),
-        adapter_reduction: int = 4,
         adapter_kernel_size: int = 3,
         gamma_init: float = 0.0,
+        adapter_bias: bool = True,
         share_projection_across_views: bool = True,
         validate: bool = True,
     ) -> "CachedFeatureTrainingModel":
-        """Build the wrapper from the existing MS-ILA project modules."""
+        """Build the cached-feature trainable pipeline with the Day-04 Adapter.
+
+        Parameters
+        ----------
+        in_channels:
+            Frozen DINO feature width ``C``.
+
+        fusion_dim:
+            Downstream width used by ``SixFeatureProjection`` and
+            ``MSILADay2Head``.  This is NOT the Day-04 Adapter variable ``d``.
+
+        adapter_bottleneck_dim:
+            Day-04 Adapter screening variable ``r``.
+
+        adapter_projection_dim:
+            Day-04 Adapter screening variable ``d``.
+
+        output_size:
+            Default dense anomaly-logit resolution.  During ``forward()``, a
+            batch mask can still provide the runtime output size.
+
+        adapter_kernel_size:
+            Odd depthwise-convolution kernel size inside every Adapter.
+
+        gamma_init:
+            Initial residual gate.  ``0.0`` preserves exact identity at
+            initialization.
+
+        adapter_bias:
+            Bias policy for all Adapter Conv2d layers.  Keep fixed across the
+            r×d screen.
+
+        share_projection_across_views:
+            Whether Local/Context reuse one downstream C->fusion_dim projector
+            per DINO block.  Keep fixed across candidates.
+
+        validate:
+            Enable the existing numerical/shape checks in downstream modules.
+
+        Notes
+        -----
+        One Adapter is created per DINO block and shared between the Local and
+        Context views of that block.  All three block Adapters use the same
+        ``(r, d)`` candidate, which is the controlled Day-04 architecture.
+        """
         from .residual_adapter import ResidualAdapter2d
         from .context_alignment import ContextToLocalAligner
         from .feature_projection import SixFeatureProjection
         from .msila import MSILADay2Head
 
+        # Fail early with an unambiguous builder-level contract.  The Adapter
+        # itself performs the same strict validation, but checking here gives a
+        # clearer error before constructing any project modules.
+        for name, value in (
+            ("in_channels", in_channels),
+            ("fusion_dim", fusion_dim),
+            ("adapter_bottleneck_dim", adapter_bottleneck_dim),
+            ("adapter_projection_dim", adapter_projection_dim),
+            ("adapter_kernel_size", adapter_kernel_size),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(
+                    f"{name} must be an int, got {type(value).__name__}"
+                )
+            if value <= 0:
+                raise ValueError(f"{name} must be > 0, got {value}")
+
+        if adapter_kernel_size % 2 == 0:
+            raise ValueError(
+                "adapter_kernel_size must be odd so Adapter H×W is preserved"
+            )
+        if not isinstance(adapter_bias, bool):
+            raise TypeError(
+                f"adapter_bias must be bool, got {type(adapter_bias).__name__}"
+            )
+
         adapters = nn.ModuleDict(
             {
                 f"b{block}": ResidualAdapter2d(
-                    in_channels=int(in_channels),
-                    reduction=int(adapter_reduction),
+                    in_dim=int(in_channels),
+                    bottleneck_dim=int(adapter_bottleneck_dim),
+                    projection_dim=int(adapter_projection_dim),
                     kernel_size=int(adapter_kernel_size),
                     gamma_init=float(gamma_init),
+                    bias=bool(adapter_bias),
                 )
                 for block in (4, 8, 12)
             }
@@ -348,6 +446,9 @@ class CachedFeatureTrainingModel(nn.Module):
             check_bounds=True,
         )
 
+        # IMPORTANT:
+        # fusion_dim belongs to the downstream Local/Context projection + head.
+        # It must not be silently reused as Adapter projection_dim.
         projection = SixFeatureProjection(
             in_channels=int(in_channels),
             fusion_dim=int(fusion_dim),
@@ -388,10 +489,39 @@ class CachedFeatureTrainingModel(nn.Module):
 
         for block in self.blocks:
             adapter = self.adapters[f"b{block}"]
-            # Shared block adapter for Local/Context because both originate from
-            # the same frozen DINO channel basis.
-            local[f"L{block}"] = adapter(batch[f"local_b{block}"])
-            context[f"C{block}"] = adapter(batch[f"context_b{block}"])
+
+            # One block-specific Adapter is shared between Local and Context
+            # because both features come from the same frozen DINO channel
+            # basis.  ResidualAdapter2d preserves [B,C,H,W], so geometry
+            # alignment still operates in the original backbone feature space.
+            local_input = batch[f"local_b{block}"]
+            context_input = batch[f"context_b{block}"]
+
+            local_output = adapter(local_input)
+            context_output = adapter(context_input)
+
+            if self.validate:
+                if local_output.shape != local_input.shape:
+                    raise CachedTrainingContractError(
+                        f"b{block} Local Adapter changed shape: "
+                        f"{tuple(local_input.shape)} -> {tuple(local_output.shape)}"
+                    )
+                if context_output.shape != context_input.shape:
+                    raise CachedTrainingContractError(
+                        f"b{block} Context Adapter changed shape: "
+                        f"{tuple(context_input.shape)} -> {tuple(context_output.shape)}"
+                    )
+                if not bool(torch.isfinite(local_output).all()):
+                    raise CachedTrainingContractError(
+                        f"b{block} Local Adapter output contains NaN/Inf"
+                    )
+                if not bool(torch.isfinite(context_output).all()):
+                    raise CachedTrainingContractError(
+                        f"b{block} Context Adapter output contains NaN/Inf"
+                    )
+
+            local[f"L{block}"] = local_output
+            context[f"C{block}"] = context_output
 
         return local, context
 
