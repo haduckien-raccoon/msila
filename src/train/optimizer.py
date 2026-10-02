@@ -27,7 +27,6 @@ from torch.optim import Optimizer
 
 OptimizerName = Literal["adamw", "adam", "sgd"]
 
-__init__ (1)
 class OptimizerContractError(RuntimeError):
     """Raised when the Day-3 optimizer contract is violated."""
 
