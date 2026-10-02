@@ -1,0 +1,43 @@
+{
+  "schema_version": "msila.e8.selection_rule.v1",
+  "rule_id": "adapter_day04_v1",
+  "locked_before_results": true,
+  "locked_at_utc": "2026-10-02T05:00:00Z",
+  "expected_split": "dev_synthetic",
+  "expected_e7_plan_sha256": null,
+  "reference_candidate": "candidate_01",
+  "min_seeds": 3,
+  "selection": {
+    "primary_metric": "macro_aupro_mean",
+    "direction": "max",
+    "primary_tolerance": 0.001,
+    "tie_breakers": [
+      {
+        "metric": "trainable_parameters",
+        "direction": "min",
+        "tolerance": 0
+      },
+      {
+        "metric": "latency_median_ms_mean",
+        "direction": "min",
+        "tolerance": 0.05
+      },
+      {
+        "metric": "peak_vram_mib_mean",
+        "direction": "min",
+        "tolerance": 1.0
+      }
+    ]
+  },
+  "eligibility": {
+    "category_improvement_epsilon": 0.0,
+    "min_macro_aupro_delta_vs_reference": null,
+    "min_categories_improved_vs_reference": null,
+    "max_trainable_parameters": null,
+    "max_trainable_parameters_ratio_vs_reference": null,
+    "max_latency_median_ms": null,
+    "max_latency_median_ratio_vs_reference": null,
+    "max_peak_vram_mib": null,
+    "max_peak_vram_ratio_vs_reference": null
+  }
+}

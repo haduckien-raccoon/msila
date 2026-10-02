@@ -1,0 +1,254 @@
+{
+  "schema_version": "msila.e8.selection_report.v1",
+  "analysis_status": "PASS",
+  "e7_plan_sha256": "affaf80d68f112767401444bdf5bedcf640eb3ebaa9876304321efe0af3223c5",
+  "selection_rule": {
+    "rule_id": "synthetic_e8_v1",
+    "locked_before_results": true,
+    "locked_at_utc": "2026-10-02T05:00:00Z",
+    "sha256": "258bd78cd5b5277f181a92f9c179c5e5f101afa3f4548720919feb9976775fa9",
+    "expected_split": "dev_synthetic",
+    "reference_candidate": "candidate_a",
+    "primary_metric": "macro_aupro_mean",
+    "primary_tolerance": 0.001,
+    "tie_breakers": [
+      {
+        "metric": "trainable_parameters",
+        "direction": "min",
+        "tolerance": 0.0
+      },
+      {
+        "metric": "latency_median_ms_mean",
+        "direction": "min",
+        "tolerance": 0.05
+      },
+      {
+        "metric": "peak_vram_mib_mean",
+        "direction": "min",
+        "tolerance": 1.0
+      }
+    ]
+  },
+  "grid": {
+    "candidates": [
+      "candidate_a",
+      "candidate_b"
+    ],
+    "categories": [
+      "fabric",
+      "vial"
+    ],
+    "seeds": [
+      42,
+      17
+    ],
+    "n_candidates": 2,
+    "n_categories": 2,
+    "n_seeds": 2
+  },
+  "aggregation": {
+    "macro_definition": "unweighted category mean within each seed, then mean across seeds",
+    "std_definition": "sample standard deviation across seeds (ddof=1)",
+    "delta_definition": "paired by seed: candidate score - reference score",
+    "efficiency_summary": "mean/sample-std over E7 efficiency observations for each candidate"
+  },
+  "candidate_summaries": {
+    "candidate_a": {
+      "candidate_id": "candidate_a",
+      "n_categories": 2,
+      "n_seeds": 2,
+      "seed_macro_aupro_0.05": {
+        "42": 0.705,
+        "17": 0.706
+      },
+      "macro_aupro_0.05": {
+        "n": 2,
+        "mean": 0.7055,
+        "std": 0.0007071067811865482
+      },
+      "macro_segf1": {
+        "n": 2,
+        "mean": 0.6054999999999999,
+        "std": 0.0007071067811865482
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 2,
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "parameters": {
+        "total_parameters": 400000,
+        "trainable_parameters": 400000,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 4,
+        "latency_median_ms": {
+          "n": 4,
+          "mean": 4.4,
+          "std": 0.0
+        },
+        "latency_p95_ms": {
+          "n": 4,
+          "mean": 4.9,
+          "std": 0.0
+        },
+        "peak_vram_mib": {
+          "n": 4,
+          "mean": 512.0,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 4,
+          "mean": 96.0,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "08319dfe2e117712f9a0b0fd06ea19fe547328065bcb0cc2633cb4647397e7bc"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 2,
+            "mean": 0.7004999999999999,
+            "std": 0.0007071067811865482
+          },
+          "delta_vs_reference": {
+            "n": 2,
+            "mean": 0.0,
+            "std": 0.0
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 2,
+            "mean": 0.7104999999999999,
+            "std": 0.0007071067811865482
+          },
+          "delta_vs_reference": {
+            "n": 2,
+            "mean": 0.0,
+            "std": 0.0
+          }
+        }
+      },
+      "categories_improved_vs_reference": 0,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "candidate_b": {
+      "candidate_id": "candidate_b",
+      "n_categories": 2,
+      "n_seeds": 2,
+      "seed_macro_aupro_0.05": {
+        "42": 0.725,
+        "17": 0.726
+      },
+      "macro_aupro_0.05": {
+        "n": 2,
+        "mean": 0.7255,
+        "std": 0.0007071067811865482
+      },
+      "macro_segf1": {
+        "n": 2,
+        "mean": 0.6255,
+        "std": 0.0007071067811865482
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 2,
+        "mean": 0.020000000000000018,
+        "std": 0.0
+      },
+      "parameters": {
+        "total_parameters": 450000,
+        "trainable_parameters": 450000,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 4,
+        "latency_median_ms": {
+          "n": 4,
+          "mean": 4.9,
+          "std": 0.0
+        },
+        "latency_p95_ms": {
+          "n": 4,
+          "mean": 5.4,
+          "std": 0.0
+        },
+        "peak_vram_mib": {
+          "n": 4,
+          "mean": 517.0,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 4,
+          "mean": 98.5,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "08319dfe2e117712f9a0b0fd06ea19fe547328065bcb0cc2633cb4647397e7bc"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 2,
+            "mean": 0.7204999999999999,
+            "std": 0.0007071067811865482
+          },
+          "delta_vs_reference": {
+            "n": 2,
+            "mean": 0.020000000000000018,
+            "std": 0.0
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 2,
+            "mean": 0.7304999999999999,
+            "std": 0.0007071067811865482
+          },
+          "delta_vs_reference": {
+            "n": 2,
+            "mean": 0.020000000000000018,
+            "std": 0.0
+          }
+        }
+      },
+      "categories_improved_vs_reference": 2,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    }
+  },
+  "selection": {
+    "status": "SELECTED",
+    "selected_candidate": "candidate_b",
+    "eligible_candidates": [
+      "candidate_a",
+      "candidate_b"
+    ],
+    "finalists": [
+      "candidate_b"
+    ],
+    "trace": [
+      {
+        "stage": "primary",
+        "metric": "macro_aupro_mean",
+        "direction": "max",
+        "tolerance": 0.001,
+        "best_value": 0.7255,
+        "remaining": [
+          "candidate_b"
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "locked_before_results=true plus rule hash is an audit assertion; it does not cryptographically prove the rule existed before results unless the rule was externally timestamped/committed.",
+    "E8 does not perform the E9 configuration fairness audit. Any selected candidate remains conditional on E9."
+  ]
+}

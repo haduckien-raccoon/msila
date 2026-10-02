@@ -1,0 +1,3 @@
+candidate_id,eligible,macro_aupro_mean,macro_aupro_std,macro_aupro_delta_vs_reference_mean,macro_aupro_delta_vs_reference_std,categories_improved_vs_reference,macro_segf1_mean,macro_segf1_std,total_parameters,trainable_parameters,latency_median_ms_mean,latency_median_ms_std,latency_p95_ms_mean,latency_p95_ms_std,peak_vram_mib_mean,peak_vram_mib_std,eligibility_reasons
+candidate_a,True,0.7055,0.0007071067811865482,0.0,0.0,0,0.6054999999999999,0.0007071067811865482,400000,400000,4.4,0.0,4.9,0.0,512.0,0.0,
+candidate_b,True,0.7255,0.0007071067811865482,0.020000000000000018,0.0,2,0.6255,0.0007071067811865482,450000,450000,4.9,0.0,5.4,0.0,517.0,0.0,

@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "main_selection": {
+    "status": "SELECTED",
+    "selected_candidate": "candidate_b",
+    "candidate_b_macro_delta_vs_reference": {
+      "n": 2,
+      "mean": 0.020000000000000018,
+      "std": 0.0
+    },
+    "candidate_b_categories_improved": 2
+  },
+  "locked_rule_required": "PASS",
+  "tie_break_test": {
+    "primary_tolerance": 0.03,
+    "selected_candidate": "candidate_a",
+    "reason": "trainable_parameters:min"
+  },
+  "outputs": {
+    "json": "/mnt/data/e8_adapter_selection/synthetic_output/selection_report.json",
+    "csv": "/mnt/data/e8_adapter_selection/synthetic_output/candidate_summary.csv",
+    "markdown": "/mnt/data/e8_adapter_selection/synthetic_output/selection_report.md"
+  }
+}
