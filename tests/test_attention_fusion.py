@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from models.attention_fusion import AttentionFusion
-from models.contracts import (
+from src.models.attention_fusion import AttentionFusion
+from src.models.contracts import (
     MULTIVIEW_FEATURE_KEYS,
     ContractError,
 )

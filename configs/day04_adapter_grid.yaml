@@ -1,0 +1,55 @@
+# Day 04 — locked coarse r×d screen for ResidualAdapter2d.
+# Do not edit candidate values between runs. If the backbone feature dimension
+# changes, update adapter_defaults.in_dim ONCE before starting the whole screen.
+
+version: 1
+screen_name: day04_adapter_grid
+expected_num_candidates: 9
+seed: 0
+
+# Current DINOv3 ViT-S/16 feature width: C = 384.
+# Source: official facebookresearch/dinov3 model definition/model card.
+adapter_defaults:
+  in_dim: 384
+  kernel_size: 3
+  gamma_init: 0.0
+  bias: true
+
+# Coarse small / medium / large grid.
+# r = bottleneck_dim, d = projection_dim.
+candidates:
+  - run_name: adapter_r32_d128
+    bottleneck_dim: 32
+    projection_dim: 128
+
+  - run_name: adapter_r32_d256
+    bottleneck_dim: 32
+    projection_dim: 256
+
+  - run_name: adapter_r32_d384
+    bottleneck_dim: 32
+    projection_dim: 384
+
+  - run_name: adapter_r64_d128
+    bottleneck_dim: 64
+    projection_dim: 128
+
+  - run_name: adapter_r64_d256
+    bottleneck_dim: 64
+    projection_dim: 256
+
+  - run_name: adapter_r64_d384
+    bottleneck_dim: 64
+    projection_dim: 384
+
+  - run_name: adapter_r128_d128
+    bottleneck_dim: 128
+    projection_dim: 128
+
+  - run_name: adapter_r128_d256
+    bottleneck_dim: 128
+    projection_dim: 256
+
+  - run_name: adapter_r128_d384
+    bottleneck_dim: 128
+    projection_dim: 384

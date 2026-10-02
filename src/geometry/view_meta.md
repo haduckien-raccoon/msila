@@ -89,7 +89,7 @@ Dùng `float64` cho metadata/matrix vì dữ liệu rất nhỏ nhưng cần com
 ## 4. Dùng với `data/multiview_transform.py`
 
 ```python
-from geometry.view_meta import build_view_meta_from_transform_meta
+from src.geometry.view_meta import build_view_meta_from_transform_meta
 
 views = multiview_transform(image)
 geom = build_view_meta_from_transform_meta(

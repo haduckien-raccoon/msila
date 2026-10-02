@@ -228,7 +228,7 @@ Bất kỳ thay đổi nào ở checkpoint, layer, resize/crop, normalization, l
 Tạo một factory nhỏ trong repo, ví dụ `project/cache_job.py`:
 
 ```python
-from tools.build_feature_cache import CacheJob
+from src.tools.build_feature_cache import CacheJob
 from project.data import build_train_samples
 from project.features import build_frozen_extractor
 

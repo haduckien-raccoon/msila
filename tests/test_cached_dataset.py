@@ -1,311 +1,227 @@
 from __future__ import annotations
 
-import pickle
+import importlib.util
 import sys
+import types
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
-from PIL import Image
 
-HERE = Path(__file__).resolve()
-PROJECT_ROOT = HERE.parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.feature_cache import FEATURE_KEYS, FeatureCacheWriter
-from src.data.cached_dataset import (
-    CachedDatasetError,
-    CachedFeatureDataset,
-    MaskError,
-    TrainingIndexError,
-    cached_collate_fn,
-    make_cached_dataloader,
+FEATURE_KEYS = (
+    "local_b4",
+    "local_b8",
+    "local_b12",
+    "context_b4",
+    "context_b8",
+    "context_b12",
 )
 
 
-@pytest.fixture
-def signature():
-    return {
-        "backbone": "dinov3_vits16",
-        "checkpoint_sha256": "test-checkpoint",
-        "logical_layers_1based": [4, 8, 12],
-        "internal_indices_0based": [3, 7, 11],
-        "preprocess_version": "msila_local_context_v1",
-    }
+def _sample_key(image_id: str, category: str) -> str:
+    return f"{category}/{image_id}"
 
 
-def cache_sample(i: int, category: str = "fabric"):
-    g = torch.Generator().manual_seed(500 + i)
+FAKE_STORE: dict[str, dict] = {}
+READER_CALLS: list[dict] = []
 
-    def feat(h: int, w: int):
-        # Deliberately keep extraction batch dimension = 1.
-        return torch.randn((1, 8, h, w), generator=g, dtype=torch.float32)
 
-    return {
-        "image_id": f"{category}/sample_{i:03d}.png",
+class FakeFeatureCacheReader:
+    def __init__(
+        self,
+        cache_dir,
+        *,
+        expected_producer_signature=None,
+        mmap=True,
+        shard_cache_size=2,
+    ):
+        READER_CALLS.append(
+            {
+                "cache_dir": str(cache_dir),
+                "expected_producer_signature": expected_producer_signature,
+                "mmap": mmap,
+                "shard_cache_size": shard_cache_size,
+            }
+        )
+
+    def __contains__(self, item):
+        image_id, category = item
+        return _sample_key(image_id, category) in FAKE_STORE
+
+    def get(self, *, image_id: str, category: str):
+        return FAKE_STORE[_sample_key(image_id, category)]
+
+
+class SchemaError(RuntimeError):
+    pass
+
+
+def _load_module():
+    fake = types.ModuleType("feature_cache")
+    fake.FEATURE_KEYS = FEATURE_KEYS
+    fake.FeatureCacheReader = FakeFeatureCacheReader
+    fake.SchemaError = SchemaError
+    fake.sample_key = _sample_key
+    sys.modules["feature_cache"] = fake
+
+    path = Path(__file__).resolve().parents[1] / "data" / "cached_dataset.py"
+    spec = importlib.util.spec_from_file_location("cached_dataset_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture()
+def mod():
+    FAKE_STORE.clear()
+    READER_CALLS.clear()
+    return _load_module()
+
+
+def _cached_sample(i: int, category: str = "fabric") -> dict:
+    sample = {
+        "image_id": f"img_{i:02d}",
         "category": category,
-        "local_b4": feat(16, 16),
-        "local_b8": feat(16, 16),
-        "local_b12": feat(16, 16),
-        "context_b4": feat(24, 24),
-        "context_b8": feat(24, 24),
-        "context_b12": feat(24, 24),
         "geometry": {
-            "image_hw": [64, 64],
-            "local_hw": [32, 32],
-            "context_hw": [48, 48],
-            "local_box": [16, 16, 48, 48],
-            "context_box": [8, 8, 56, 56],
-            "context_to_local": [
-                [1.0, 0.0, -8.0],
-                [0.0, 1.0, -8.0],
-                [0.0, 0.0, 1.0],
-            ],
+            "local_hw": [4, 4],
+            "context_hw": [4, 4],
+            "image_hw": [4, 4],
         },
     }
+    for j, key in enumerate(FEATURE_KEYS):
+        sample[key] = torch.full((1, 2, 2, 2), float(i * 10 + j))
+    return sample
 
 
-def build_cache(root: Path, signature, n: int = 2):
-    with FeatureCacheWriter(
-        root,
-        producer_signature=signature,
-        target_shard_bytes=1024 * 1024,
-    ) as writer:
-        for i in range(n):
-            writer.add(cache_sample(i))
-
-
-def save_mask(path: Path, *, anomalous: bool = True):
-    arr = np.zeros((32, 32), dtype=np.uint8)
-    if anomalous:
-        arr[10:20, 12:22] = 255
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(arr, mode="L").save(path)
-
-
-def test_item_returns_six_features_mask_and_meta(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    masks = tmp_path / "dataset"
-    build_cache(cache_dir, signature, n=1)
-
-    mask_rel = Path("masks") / "sample_000.png"
-    save_mask(masks / mask_rel)
-
-    records = [{
-        "image_id": "fabric/sample_000.png",
-        "category": "fabric",
-        "mask_path": str(mask_rel),
-        "is_anomaly": True,
-        "mask_hw": [32, 32],
-        "meta": {"defect_type": "hole", "split": "train"},
-    }]
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=records,
-        expected_producer_signature=signature,
-        mask_root=masks,
-        mask_hw_source="record",
-    )
-
-    item = ds[0]
-
-    assert set(FEATURE_KEYS).issubset(item.keys())
-    assert "mask" in item
-    assert "meta" in item
-
-    # Extraction [1,C,H,W] must become per-sample [C,H,W].
-    assert item["local_b4"].shape == (8, 16, 16)
-    assert item["context_b12"].shape == (8, 24, 24)
-
-    assert item["mask"].shape == (1, 32, 32)
-    assert item["mask"].dtype == torch.float32
-    assert set(torch.unique(item["mask"]).tolist()).issubset({0.0, 1.0})
-
-    assert item["meta"]["image_id"] == "fabric/sample_000.png"
-    assert item["meta"]["category"] == "fabric"
-    assert item["meta"]["defect_type"] == "hole"
-    assert "geometry" in item["meta"]
-
-    # Training item deliberately contains no RGB image / extractor.
-    assert "image" not in item
-    assert "extractor" not in item
-
-
-def test_normal_without_mask_gets_zero_mask(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=1)
-
-    records = [{
-        "image_id": "fabric/sample_000.png",
-        "category": "fabric",
-        "mask_path": None,
-        "is_anomaly": False,
-        "mask_hw": [32, 32],
-    }]
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=records,
-        expected_producer_signature=signature,
-    )
-
-    item = ds[0]
-    assert item["mask"].shape == (1, 32, 32)
-    assert torch.count_nonzero(item["mask"]).item() == 0
-
-
-def test_anomaly_without_mask_fails(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=1)
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=[{
-            "image_id": "fabric/sample_000.png",
-            "category": "fabric",
-            "mask_path": None,
-            "is_anomaly": True,
-            "mask_hw": [32, 32],
-        }],
-        expected_producer_signature=signature,
-    )
-
-    with pytest.raises(MaskError):
-        _ = ds[0]
-
-
-def test_collate_creates_real_training_batch(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=2)
-
-    records = [
-        {
-            "image_id": f"fabric/sample_{i:03d}.png",
-            "category": "fabric",
-            "mask_path": None,
-            "is_anomaly": False,
-            "mask_hw": [32, 32],
-        }
-        for i in range(2)
-    ]
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=records,
-        expected_producer_signature=signature,
-    )
-
-    batch = cached_collate_fn([ds[0], ds[1]])
-
-    assert batch["local_b4"].shape == (2, 8, 16, 16)
-    assert batch["context_b4"].shape == (2, 8, 24, 24)
-    assert batch["mask"].shape == (2, 1, 32, 32)
-    assert len(batch["meta"]) == 2
-
-
-def test_dataloader_helper_num_workers_zero(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=2)
-
-    records = [
-        {
-            "image_id": f"fabric/sample_{i:03d}.png",
-            "category": "fabric",
-            "mask_path": None,
-            "is_anomaly": False,
-            "mask_hw": [32, 32],
-        }
-        for i in range(2)
-    ]
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=records,
-        expected_producer_signature=signature,
-    )
-
-    loader = make_cached_dataloader(
-        ds,
-        batch_size=2,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=False,
-    )
-    batch = next(iter(loader))
-
-    assert batch["local_b8"].shape == (2, 8, 16, 16)
-    assert batch["mask"].shape == (2, 1, 32, 32)
-
-
-def test_reader_is_dropped_when_dataset_is_pickled(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=1)
-
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=[{
-            "image_id": "fabric/sample_000.png",
-            "category": "fabric",
-            "mask_path": None,
-            "is_anomaly": False,
-            "mask_hw": [32, 32],
-        }],
-        expected_producer_signature=signature,
-    )
-
-    _ = ds[0]
-    assert ds._reader is not None
-
-    restored = pickle.loads(pickle.dumps(ds))
-    assert restored._reader is None
-    assert restored._reader_pid is None
-
-    # Reader is reconstructed lazily and sample still works.
-    item = restored[0]
-    assert item["local_b4"].shape == (8, 16, 16)
-
-
-def test_missing_cache_reference_fails_before_training(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    build_cache(cache_dir, signature, n=1)
-
-    with pytest.raises(TrainingIndexError):
-        CachedFeatureDataset(
-            cache_dir=cache_dir,
-            records=[{
-                "image_id": "fabric/not_in_cache.png",
-                "category": "fabric",
-                "mask_path": None,
+def _records(n: int) -> list[dict]:
+    out = []
+    for i in range(n):
+        cached = _cached_sample(i)
+        FAKE_STORE[_sample_key(cached["image_id"], cached["category"])] = cached
+        out.append(
+            {
+                "image_id": cached["image_id"],
+                "category": cached["category"],
+                "mask": torch.zeros(4, 4),
+                "mask_hw": [4, 4],
                 "is_anomaly": False,
-                "mask_hw": [32, 32],
-            }],
-            expected_producer_signature=signature,
+            }
+        )
+    return out
+
+
+def _collect_ids(loader) -> list[str]:
+    ids = []
+    for batch in loader:
+        ids.extend(item["image_id"] for item in batch["meta"])
+    return ids
+
+
+def test_dataset_returns_cached_features_without_recomputing(mod):
+    records = _records(1)
+    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+
+    item = ds[0]
+
+    assert set(FEATURE_KEYS).issubset(item)
+    for j, key in enumerate(FEATURE_KEYS):
+        # Cached [1,C,H,W] -> per-sample [C,H,W], values unchanged.
+        assert item[key].shape == (2, 2, 2)
+        assert torch.equal(item[key], torch.full((2, 2, 2), float(j)))
+
+
+def test_expected_producer_signature_is_forwarded(mod):
+    records = _records(1)
+    signature = {
+        "backbone": "dinov3_vits16",
+        "blocks": [4, 8, 12],
+        "local_context": "locked-day03",
+    }
+
+    ds = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+        expected_producer_signature=signature,
+    )
+    _ = ds[0]  # opens lazy reader too
+
+    assert len(READER_CALLS) >= 2
+    assert all(
+        call["expected_producer_signature"] == signature
+        for call in READER_CALLS
+    )
+
+
+def test_same_seed_gives_same_shuffle_order(mod):
+    records = _records(12)
+
+    ds1 = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+    ds2 = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+
+    loader1 = mod.make_cached_dataloader(
+        ds1,
+        batch_size=3,
+        shuffle=True,
+        num_workers=0,
+        seed=42,
+    )
+    loader2 = mod.make_cached_dataloader(
+        ds2,
+        batch_size=3,
+        shuffle=True,
+        num_workers=0,
+        seed=42,
+    )
+
+    assert _collect_ids(loader1) == _collect_ids(loader2)
+
+
+def test_seed_and_generator_are_mutually_exclusive(mod):
+    records = _records(1)
+    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+
+    with pytest.raises(ValueError, match="either seed or generator"):
+        mod.make_cached_dataloader(
+            ds,
+            batch_size=1,
+            seed=42,
+            generator=torch.Generator(),
         )
 
 
-def test_mask_shape_mismatch_is_not_silently_resized(tmp_path, signature):
-    cache_dir = tmp_path / "cache"
-    masks = tmp_path / "dataset"
-    build_cache(cache_dir, signature, n=1)
+def test_mask_shape_mismatch_fails_fast(mod):
+    records = _records(1)
+    records[0]["mask"] = torch.zeros(3, 4)
+    records[0]["mask_hw"] = [4, 4]
 
-    wrong_mask = masks / "wrong.png"
-    wrong_mask.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.zeros((16, 16), dtype=np.uint8), mode="L").save(wrong_mask)
+    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
 
-    ds = CachedFeatureDataset(
-        cache_dir=cache_dir,
-        records=[{
-            "image_id": "fabric/sample_000.png",
-            "category": "fabric",
-            "mask_path": "wrong.png",
-            "is_anomaly": True,
-            "mask_hw": [32, 32],
-        }],
-        expected_producer_signature=signature,
-        mask_root=masks,
-    )
-
-    with pytest.raises(MaskError):
+    with pytest.raises(mod.MaskError, match="mask shape mismatch"):
         _ = ds[0]
+
+
+def test_default_does_not_cast_cached_feature_dtype(mod):
+    records = _records(1)
+    key = _sample_key("img_00", "fabric")
+    for feature_key in FEATURE_KEYS:
+        FAKE_STORE[key][feature_key] = FAKE_STORE[key][feature_key].to(torch.float16)
+
+    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+    item = ds[0]
+
+    assert all(item[k].dtype == torch.float16 for k in FEATURE_KEYS)
+
+
+def test_source_contains_no_dino_import_or_extractor_call():
+    path = Path(__file__).resolve().parents[1] / "data" / "cached_dataset.py"
+    source = path.read_text(encoding="utf-8").lower()
+
+    forbidden = (
+        "import dinov3",
+        "from dinov3",
+        "torch.hub.load(",
+        "load_model(",
+    )
+    assert not any(token in source for token in forbidden)

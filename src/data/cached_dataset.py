@@ -32,8 +32,9 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -44,7 +45,6 @@ try:
     from .feature_cache import (
         FEATURE_KEYS,
         FeatureCacheReader,
-        ProducerMismatchError,
         SchemaError,
         sample_key,
     )
@@ -52,7 +52,6 @@ except ImportError:  # allows direct execution/import during isolated testing
     from feature_cache import (  # type: ignore
         FEATURE_KEYS,
         FeatureCacheReader,
-        ProducerMismatchError,
         SchemaError,
         sample_key,
     )
@@ -567,6 +566,25 @@ def cached_collate_fn(batch: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return out
 
 
+
+def seed_worker(worker_id: int) -> None:
+    """
+    Seed Python and NumPy RNGs from PyTorch's worker seed.
+
+    PyTorch already assigns each DataLoader worker its own torch seed.
+    Propagating that seed to Python/NumPy avoids duplicated stochastic
+    behavior if worker-side preprocessing is introduced later.
+
+    The current CachedFeatureDataset itself is deterministic and performs
+    no random augmentation; this helper is therefore a reproducibility guard,
+    not a change to cached features.
+    """
+    del worker_id  # worker id is already encoded in torch.initial_seed()
+    worker_seed = torch.initial_seed() % (2**32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
 def make_cached_dataloader(
     dataset: CachedFeatureDataset,
     *,
@@ -578,6 +596,7 @@ def make_cached_dataloader(
     prefetch_factor: int = 2,
     drop_last: bool = False,
     generator: torch.Generator | None = None,
+    seed: int | None = None,
 ) -> DataLoader:
     """
     Conservative DataLoader defaults for cached-feature training.
@@ -587,6 +606,12 @@ def make_cached_dataloader(
     - persistent_workers defaults to True iff num_workers > 0.
     - prefetch_factor is passed only when multiprocessing is enabled.
     - default PyTorch in-order behavior is preserved for reproducibility.
+    - `seed` creates a dedicated CPU Generator for deterministic shuffling.
+    - Python/NumPy worker RNGs are seeded from PyTorch via `seed_worker`.
+    - pass either `seed` or an explicit `generator`, never both.
+
+    For Day-04 r×d screening, keep `seed`, records/split, batch size,
+    shuffle policy, cache signature, and all other training settings fixed.
 
     Benchmark num_workers/prefetch_factor on the actual storage device:
     NVMe, HDD, NFS and Google Drive can have very different optima.
@@ -597,6 +622,12 @@ def make_cached_dataloader(
         raise ValueError("num_workers must be >= 0")
     if prefetch_factor <= 0:
         raise ValueError("prefetch_factor must be > 0")
+
+    if seed is not None and generator is not None:
+        raise ValueError("Pass either seed or generator, not both")
+    if seed is not None:
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(int(seed))
 
     if pin_memory is None:
         pin_memory = bool(torch.cuda.is_available())
@@ -621,5 +652,6 @@ def make_cached_dataloader(
 
     if num_workers > 0:
         kwargs["prefetch_factor"] = int(prefetch_factor)
+        kwargs["worker_init_fn"] = seed_worker
 
     return DataLoader(**kwargs)

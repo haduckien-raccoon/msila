@@ -186,7 +186,7 @@ SHA-256 ở đây chỉ dùng làm **content/config fingerprint**, không phải
 ## Cách dùng
 
 ```python
-from data.feature_cache import FeatureCacheWriter, FeatureCacheReader
+from src.data.feature_cache import FeatureCacheWriter, FeatureCacheReader
 
 signature = {
     "backbone": "dinov3_vits16",
@@ -224,7 +224,7 @@ x = sample["local_b8"]
 Pre-training gate:
 
 ```python
-from data.feature_cache import validate_cache
+from src.data.feature_cache import validate_cache
 
 print(validate_cache("artifacts/feature_cache"))
 ```

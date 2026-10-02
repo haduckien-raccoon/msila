@@ -4,12 +4,12 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.contracts import (
+from src.models.contracts import (
     DINO_FEATURE_KEYS,
     MULTIVIEW_FEATURE_KEYS,
 )
-from models.msila import MSILADay2Integrated
-from models.residual_adapter import ResidualAdapter2d
+from src.models.msila import MSILADay2Integrated
+from src.models.residual_adapter import ResidualAdapter2d
 
 
 B = 2

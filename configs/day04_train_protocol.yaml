@@ -1,0 +1,69 @@
+# Day 04 — FIXED training protocol.
+#
+# Fill this ONCE before the first candidate.
+# Do not edit it between candidates in the same category screen.
+#
+# Project-specific values remain null instead of fabricating
+# LR/epochs/paths/loss/Fusion/Decoder settings.
+
+version: 1
+
+# Must define build_model() and step(); see train/screen_adapter.md.
+hooks_module: REPLACE_ME
+
+output_root: outputs/day04
+
+frozen_backbone:
+  checkpoint: null
+  frozen: true
+  blocks: [4, 8, 12]
+  local_context: null
+  alignment: null
+
+data:
+  cache_dir: null
+  train_records: null
+  val_records: null
+  expected_producer_signature: null
+  mask_root: null
+  mask_threshold: 0
+  mask_hw_source: record
+  allow_zero_mask_for_normal: true
+  squeeze_cached_batch_dim: true
+  mmap: true
+  shard_cache_size: 2
+
+  num_workers: 0
+  pin_memory: null
+  persistent_workers: null
+  prefetch_factor: 2
+  drop_last: false
+
+model:
+  fusion: null
+  decoder: null
+  loss: null
+  augmentation: null
+
+training:
+  epochs: null
+  batch_size: null
+
+  optimizer:
+    name: AdamW
+    lr: null
+    kwargs: {}
+
+  scheduler: null
+  gradient_clip_norm: null
+
+  deterministic_algorithms: true
+  deterministic_warn_only: false
+
+  amp:
+    enabled: false
+    dtype: bfloat16
+
+checkpoint:
+  monitor: val_loss
+  mode: min
