@@ -1,0 +1,34 @@
+{
+  "schema_version": "msila.day04.plan.v1",
+  "split": "dev_synthetic",
+  "metric_protocol_version": "1.0",
+  "candidates": [
+    "candidate_01",
+    "candidate_02"
+  ],
+  "categories": [
+    "can",
+    "fabric",
+    "fruit_jelly",
+    "rice",
+    "sheet_metal",
+    "vial",
+    "wallplugs",
+    "walnuts"
+  ],
+  "seeds": [
+    42,
+    17,
+    2026
+  ],
+  "run_layout": "runs/{candidate}/{category}/seed_{seed}",
+  "required_files": {
+    "metrics": "metrics.json",
+    "params": "params.json",
+    "efficiency": "efficiency.json"
+  },
+  "require_e3_qa": true,
+  "require_parameter_pass": true,
+  "require_efficiency_pass": true,
+  "require_single_efficiency_scope": true
+}

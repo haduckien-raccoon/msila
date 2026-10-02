@@ -1,0 +1,104 @@
+{
+  "schema_version": "msila.e9.config_diff.v1",
+  "status": "FAIL",
+  "manifest_sha256": "cca456cf31e2a1e3de1715089c7cb5646ecf2231897805d6d77b6ac322b6ed36",
+  "baseline_candidate": "r4_d128",
+  "config_root": null,
+  "allowed_differences": {
+    "r": "adapter_reduction",
+    "d": "fusion_dim"
+  },
+  "candidate_factors": {
+    "r4_d128": {
+      "r": 4,
+      "d": 128
+    },
+    "r8_d128": {
+      "r": 8,
+      "d": 128
+    },
+    "r4_d256": {
+      "r": 4,
+      "d": 256
+    }
+  },
+  "candidate_config_sha256": {
+    "r4_d128": "afc6507570672485b40fdcdf311aa989f7e73bc76afe30dbcf71dab9b4108c80",
+    "r8_d128": "d2192b1fc32e185472b8d299e1bdde837154614c810841174d1c348e7d7f058e",
+    "r4_d256": "01ab6077c1ad984eb904bd098cad56f1cbe0b07b436e58462b1e3d2e384b685d"
+  },
+  "controlled_config_sha256_after_removing_r_d": {
+    "r4_d128": "d7db8da2721c107a499826c9344bed7f534b76f621261cf1f9cd3a1f7cf930be",
+    "r8_d128": "4efda6eb8b2882bd1134c15bd814113f4534d94257d1518e6c3462df22f1173c",
+    "r4_d256": "d7db8da2721c107a499826c9344bed7f534b76f621261cf1f9cd3a1f7cf930be"
+  },
+  "controlled_hashes_identical": false,
+  "duplicate_factor_pairs": {},
+  "comparisons": {
+    "r8_d128": {
+      "against": "r4_d128",
+      "all_differences": [
+        {
+          "path": "adapter_reduction",
+          "reference": 4,
+          "candidate": 8,
+          "kind": "value_or_type"
+        },
+        {
+          "path": "training.learning_rate",
+          "reference": 0.0001,
+          "candidate": 0.0002,
+          "kind": "value_or_type"
+        }
+      ],
+      "allowed_differences": [
+        {
+          "path": "adapter_reduction",
+          "reference": 4,
+          "candidate": 8,
+          "kind": "value_or_type"
+        }
+      ],
+      "unexpected_differences": [
+        {
+          "path": "training.learning_rate",
+          "reference": 0.0001,
+          "candidate": 0.0002,
+          "kind": "value_or_type"
+        }
+      ],
+      "status": "FAIL"
+    },
+    "r4_d256": {
+      "against": "r4_d128",
+      "all_differences": [
+        {
+          "path": "fusion_dim",
+          "reference": 128,
+          "candidate": 256,
+          "kind": "value_or_type"
+        }
+      ],
+      "allowed_differences": [
+        {
+          "path": "fusion_dim",
+          "reference": 128,
+          "candidate": 256,
+          "kind": "value_or_type"
+        }
+      ],
+      "unexpected_differences": [],
+      "status": "PASS"
+    }
+  },
+  "unexpected_differences": [
+    {
+      "candidate_id": "r8_d128",
+      "path": "training.learning_rate",
+      "reference": 0.0001,
+      "candidate": 0.0002,
+      "kind": "value_or_type"
+    }
+  ],
+  "pass_rule": "All exact recursive differences must be a subset of {r_path,d_path}; controlled hashes after removing r,d must match; all (r,d) pairs must be unique."
+}

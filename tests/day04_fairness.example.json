@@ -1,0 +1,14 @@
+{
+  "schema_version": "msila.e9.fairness_manifest.v1",
+  "baseline_candidate": "r4_d128",
+  "config_root": null,
+  "allowed_differences": {
+    "r": "adapter_reduction",
+    "d": "fusion_dim"
+  },
+  "candidates": {
+    "r4_d128": "configs/day04/r4_d128.yaml",
+    "r8_d128": "configs/day04/r8_d128.yaml",
+    "r4_d256": "configs/day04/r4_d256.yaml"
+  }
+}

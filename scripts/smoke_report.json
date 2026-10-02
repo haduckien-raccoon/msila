@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "grid": {
+    "candidates": 2,
+    "categories": 2,
+    "seeds": 2,
+    "expected_rows": 8,
+    "observed_rows": 8
+  },
+  "complete_grid_detection": "PASS",
+  "missing_run_detection": "PASS",
+  "missing_run_error": "Day-04 grid is incomplete: 1 missing run(s).",
+  "parameter_consistency_check": "PASS",
+  "common_efficiency_scope_check": "PASS",
+  "outputs": {
+    "csv": "/mnt/data/e7_day04/synthetic_day04/table/day04_category_runs.csv",
+    "json": "/mnt/data/e7_day04/synthetic_day04/table/day04_category_runs.json",
+    "completeness": "/mnt/data/e7_day04/synthetic_day04/table/day04_completeness.json"
+  }
+}

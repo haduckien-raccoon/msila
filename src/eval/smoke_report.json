@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "e4_regression": "PASS",
+  "e5_cpu_protocol_smoke": "PASS",
+  "e5_example_latency_ms": {
+    "mean": 0.026835,
+    "median": 0.019752,
+    "p95": 0.051411999999999985,
+    "std": 0.025452558807842224,
+    "min": 0.017686,
+    "max": 0.156726
+  },
+  "scope_fingerprint_deterministic": true,
+  "cuda_available_in_this_runtime": false,
+  "e6_cpu_rejection": "PASS",
+  "note": "No E6 numeric VRAM result is claimed when CUDA is unavailable. Run E6 on the actual Day-04 CUDA GPU."
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "msila.day04.aggregate.v1",
+  "status": "PASS",
+  "plan_sha256": "affaf80d68f112767401444bdf5bedcf640eb3ebaa9876304321efe0af3223c5",
+  "split": "dev_synthetic",
+  "expected_cells": 8,
+  "observed_cells": 8,
+  "missing_cells": 0,
+  "duplicate_cells": 0,
+  "candidates": [
+    "candidate_a",
+    "candidate_b"
+  ],
+  "categories": [
+    "fabric",
+    "vial"
+  ],
+  "seeds": [
+    42,
+    17
+  ],
+  "expected_formula": "2 candidates x 2 categories x 2 seeds = 8 runs",
+  "parameter_signature_consistent_within_candidate": true,
+  "efficiency_scope_fingerprints": [
+    "08319dfe2e117712f9a0b0fd06ea19fe547328065bcb0cc2633cb4647397e7bc"
+  ],
+  "single_efficiency_scope": true,
+  "upstream_requirements": {
+    "evaluator_validation_pass": true,
+    "e3_qa_required": true,
+    "e4_parameter_pass_required": true,
+    "e5_e6_efficiency_pass_required": true,
+    "aupro_max_fpr": 0.05
+  }
+}

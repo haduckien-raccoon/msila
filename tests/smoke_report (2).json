@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "pytest": "\u001b[32m.\u001b[0m\u001b[32m                                                                        [100%]\u001b[0m\n\u001b[32m\u001b[32m\u001b[1m1 passed\u001b[0m\u001b[32m in 0.05s\u001b[0m\u001b[0m",
+  "positive_fairness_audit": {
+    "status": "PASS",
+    "controlled_hashes_identical": true,
+    "unexpected_differences": [],
+    "candidate_factors": {
+      "r4_d128": {
+        "r": 4,
+        "d": 128
+      },
+      "r8_d128": {
+        "r": 8,
+        "d": 128
+      },
+      "r4_d256": {
+        "r": 4,
+        "d": 256
+      }
+    }
+  },
+  "unauthorized_change_rejection": {
+    "status": "PASS",
+    "detected_path": "training.learning_rate",
+    "message": "E9 fairness audit FAILED: unexpected config differences=r8_d128:training.learning_rate; controlled hashes are not identical"
+  },
+  "duplicate_rd_rejection": "PASS"
+}

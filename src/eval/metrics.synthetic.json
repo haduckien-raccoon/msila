@@ -1,0 +1,82 @@
+{
+  "schema_version": "msila-evaluator-v1",
+  "metric_protocol_version": "1.0",
+  "dataset": "mvtec_ad2",
+  "split": "test_public",
+  "n_samples": 6,
+  "n_categories": 3,
+  "categories": [
+    "fabric",
+    "vial",
+    "wallplugs"
+  ],
+  "settings": {
+    "aupro_max_fpr": 0.05,
+    "seg_f1_threshold": 0.5
+  },
+  "metrics": {
+    "aupro_0.05": {
+      "per_category": {
+        "fabric": 1.0,
+        "vial": 1.0,
+        "wallplugs": 1.0
+      },
+      "macro": 1.0
+    },
+    "seg_f1": {
+      "per_category": {
+        "fabric": {
+          "tp": 84,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "vial": {
+          "tp": 84,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "wallplugs": {
+          "tp": 84,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "macro": 1.0
+    }
+  },
+  "counts": {
+    "per_category": {
+      "fabric": {
+        "samples": 2,
+        "anomalous_samples": 2,
+        "normal_samples": 0
+      },
+      "vial": {
+        "samples": 2,
+        "anomalous_samples": 2,
+        "normal_samples": 0
+      },
+      "wallplugs": {
+        "samples": 2,
+        "anomalous_samples": 2,
+        "normal_samples": 0
+      }
+    }
+  },
+  "validation": {
+    "status": "PASS",
+    "anomaly_map_contract": "2-D finite probability map in [0,1]",
+    "gt_mask_contract": "2-D binary mask; accepted encodings {0,1} or {0,255}",
+    "single_split": true,
+    "unique_sample_ids": true
+  }
+}

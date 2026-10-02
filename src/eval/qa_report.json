@@ -1,0 +1,139 @@
+{
+  "schema_version": "msila-anomaly-map-qa-v1",
+  "dataset": "mvtec_ad2",
+  "requirements": {
+    "anomaly_map": "2-D finite probability map in [0,1]",
+    "gt_mask": "2-D binary mask encoded as {0,1} or {0,255}",
+    "geometric_alignment": "anomaly_map_hw == gt_mask_hw == original_hw",
+    "original_hw_source": "meta.original_hw=(H,W), or loader-native meta.H/meta.W",
+    "coordinate_space": "optional declaration; if present, anomaly map and GT must both be original_image"
+  },
+  "summary": {
+    "status": "PASS",
+    "n_samples": 3,
+    "n_pass": 3,
+    "n_fail": 0,
+    "valid_fraction": 1.0,
+    "n_coordinate_space_declared": 3,
+    "n_coordinate_space_undeclared": 0,
+    "check_pass_counts": {
+      "probability_map_valid": 3,
+      "binary_gt_valid": 3,
+      "map_mask_same_hw": 3,
+      "map_matches_original_hw": 3,
+      "mask_matches_original_hw": 3,
+      "declared_coordinate_space_valid": 3
+    }
+  },
+  "per_sample": [
+    {
+      "image_id": "f1",
+      "category": "fabric",
+      "split": "test_public",
+      "status": "PASS",
+      "anomaly_map_hw": [
+        32,
+        40
+      ],
+      "gt_mask_hw": [
+        32,
+        40
+      ],
+      "original_hw": [
+        32,
+        40
+      ],
+      "score_min": 0.0,
+      "score_max": 1.0,
+      "checks": {
+        "probability_map_valid": true,
+        "binary_gt_valid": true,
+        "map_mask_same_hw": true,
+        "map_matches_original_hw": true,
+        "mask_matches_original_hw": true,
+        "declared_coordinate_space_valid": true
+      },
+      "coordinate_space": {
+        "declared": true,
+        "anomaly_map_space": "original_image",
+        "gt_mask_space": "original_image",
+        "valid": true
+      },
+      "issues": []
+    },
+    {
+      "image_id": "v1",
+      "category": "vial",
+      "split": "test_public",
+      "status": "PASS",
+      "anomaly_map_hw": [
+        32,
+        40
+      ],
+      "gt_mask_hw": [
+        32,
+        40
+      ],
+      "original_hw": [
+        32,
+        40
+      ],
+      "score_min": 0.0,
+      "score_max": 1.0,
+      "checks": {
+        "probability_map_valid": true,
+        "binary_gt_valid": true,
+        "map_mask_same_hw": true,
+        "map_matches_original_hw": true,
+        "mask_matches_original_hw": true,
+        "declared_coordinate_space_valid": true
+      },
+      "coordinate_space": {
+        "declared": true,
+        "anomaly_map_space": "original_image",
+        "gt_mask_space": "original_image",
+        "valid": true
+      },
+      "issues": []
+    },
+    {
+      "image_id": "w1",
+      "category": "wallplugs",
+      "split": "test_public",
+      "status": "PASS",
+      "anomaly_map_hw": [
+        32,
+        40
+      ],
+      "gt_mask_hw": [
+        32,
+        40
+      ],
+      "original_hw": [
+        32,
+        40
+      ],
+      "score_min": 0.0,
+      "score_max": 1.0,
+      "checks": {
+        "probability_map_valid": true,
+        "binary_gt_valid": true,
+        "map_mask_same_hw": true,
+        "map_matches_original_hw": true,
+        "mask_matches_original_hw": true,
+        "declared_coordinate_space_valid": true
+      },
+      "coordinate_space": {
+        "declared": true,
+        "anomaly_map_space": "original_image",
+        "gt_mask_space": "original_image",
+        "valid": true
+      },
+      "issues": []
+    }
+  ],
+  "limitations": [
+    "Matching H/W and original_hw proves geometric compatibility, not semantic pixel registration.",
+    "A same-size flip/translation can only be ruled out by spatial-transform provenance or qualitative overlay inspection."
+  ]
+}
