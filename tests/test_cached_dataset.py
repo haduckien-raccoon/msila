@@ -9,6 +9,31 @@ import pytest
 import torch
 
 
+# ---------------------------------------------------------------------------
+# Repository paths
+#
+# tests/ is located directly under the repository root:
+#
+#   <repo>/
+#   ├── src/data/cached_dataset.py
+#   └── tests/test_cached_dataset.py
+#
+# The previous test incorrectly resolved:
+#
+#   <repo>/data/cached_dataset.py
+#
+# which no longer exists after the source tree was moved under src/.
+# ---------------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CACHED_DATASET_PATH = (
+    PROJECT_ROOT
+    / "src"
+    / "data"
+    / "cached_dataset.py"
+)
+
+
 FEATURE_KEYS = (
     "local_b4",
     "local_b8",
@@ -19,7 +44,10 @@ FEATURE_KEYS = (
 )
 
 
-def _sample_key(image_id: str, category: str) -> str:
+def _sample_key(
+    image_id: str,
+    category: str,
+) -> str:
     return f"{category}/{image_id}"
 
 
@@ -39,7 +67,8 @@ class FakeFeatureCacheReader:
         READER_CALLS.append(
             {
                 "cache_dir": str(cache_dir),
-                "expected_producer_signature": expected_producer_signature,
+                "expected_producer_signature":
+                    expected_producer_signature,
                 "mmap": mmap,
                 "shard_cache_size": shard_cache_size,
             }
@@ -47,10 +76,23 @@ class FakeFeatureCacheReader:
 
     def __contains__(self, item):
         image_id, category = item
-        return _sample_key(image_id, category) in FAKE_STORE
+        return (
+            _sample_key(image_id, category)
+            in FAKE_STORE
+        )
 
-    def get(self, *, image_id: str, category: str):
-        return FAKE_STORE[_sample_key(image_id, category)]
+    def get(
+        self,
+        *,
+        image_id: str,
+        category: str,
+    ):
+        return FAKE_STORE[
+            _sample_key(
+                image_id,
+                category,
+            )
+        ]
 
 
 class SchemaError(RuntimeError):
@@ -58,18 +100,53 @@ class SchemaError(RuntimeError):
 
 
 def _load_module():
+    """Load src/data/cached_dataset.py with an isolated fake cache backend.
+
+    ``cached_dataset.py`` first attempts its package-relative import
+
+        from .feature_cache import ...
+
+    which is unavailable when loaded through ``spec_from_file_location`` as an
+    isolated module.  Its documented fallback then imports ``feature_cache``.
+    We intentionally inject that fallback module here so these unit tests
+    exercise CachedFeatureDataset without touching the real cache storage.
+    """
+
+    if not CACHED_DATASET_PATH.is_file():
+        raise FileNotFoundError(
+            "Cached dataset source not found at the repository contract path: "
+            f"{CACHED_DATASET_PATH}"
+        )
+
     fake = types.ModuleType("feature_cache")
     fake.FEATURE_KEYS = FEATURE_KEYS
-    fake.FeatureCacheReader = FakeFeatureCacheReader
+    fake.FeatureCacheReader = (
+        FakeFeatureCacheReader
+    )
     fake.SchemaError = SchemaError
     fake.sample_key = _sample_key
+
     sys.modules["feature_cache"] = fake
 
-    path = Path(__file__).resolve().parents[1] / "data" / "cached_dataset.py"
-    spec = importlib.util.spec_from_file_location("cached_dataset_under_test", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
+    spec = importlib.util.spec_from_file_location(
+        "cached_dataset_under_test",
+        CACHED_DATASET_PATH,
+    )
+
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            "Could not create import specification for "
+            f"{CACHED_DATASET_PATH}"
+        )
+
+    module = importlib.util.module_from_spec(
+        spec
+    )
+
+    spec.loader.exec_module(
+        module
+    )
+
     return module
 
 
@@ -77,10 +154,14 @@ def _load_module():
 def mod():
     FAKE_STORE.clear()
     READER_CALLS.clear()
+
     return _load_module()
 
 
-def _cached_sample(i: int, category: str = "fabric") -> dict:
+def _cached_sample(
+    i: int,
+    category: str = "fabric",
+) -> dict:
     sample = {
         "image_id": f"img_{i:02d}",
         "category": category,
@@ -90,50 +171,102 @@ def _cached_sample(i: int, category: str = "fabric") -> dict:
             "image_hw": [4, 4],
         },
     }
+
     for j, key in enumerate(FEATURE_KEYS):
-        sample[key] = torch.full((1, 2, 2, 2), float(i * 10 + j))
+        sample[key] = torch.full(
+            (1, 2, 2, 2),
+            float(i * 10 + j),
+        )
+
     return sample
 
 
-def _records(n: int) -> list[dict]:
+def _records(
+    n: int,
+) -> list[dict]:
     out = []
+
     for i in range(n):
         cached = _cached_sample(i)
-        FAKE_STORE[_sample_key(cached["image_id"], cached["category"])] = cached
+
+        FAKE_STORE[
+            _sample_key(
+                cached["image_id"],
+                cached["category"],
+            )
+        ] = cached
+
         out.append(
             {
-                "image_id": cached["image_id"],
-                "category": cached["category"],
-                "mask": torch.zeros(4, 4),
-                "mask_hw": [4, 4],
-                "is_anomaly": False,
+                "image_id":
+                    cached["image_id"],
+                "category":
+                    cached["category"],
+                "mask":
+                    torch.zeros(4, 4),
+                "mask_hw":
+                    [4, 4],
+                "is_anomaly":
+                    False,
             }
         )
+
     return out
 
 
-def _collect_ids(loader) -> list[str]:
+def _collect_ids(
+    loader,
+) -> list[str]:
     ids = []
+
     for batch in loader:
-        ids.extend(item["image_id"] for item in batch["meta"])
+        ids.extend(
+            item["image_id"]
+            for item in batch["meta"]
+        )
+
     return ids
 
 
-def test_dataset_returns_cached_features_without_recomputing(mod):
+def test_dataset_returns_cached_features_without_recomputing(
+    mod,
+):
     records = _records(1)
-    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+
+    ds = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
 
     item = ds[0]
 
-    assert set(FEATURE_KEYS).issubset(item)
+    assert set(FEATURE_KEYS).issubset(
+        item
+    )
+
     for j, key in enumerate(FEATURE_KEYS):
-        # Cached [1,C,H,W] -> per-sample [C,H,W], values unchanged.
-        assert item[key].shape == (2, 2, 2)
-        assert torch.equal(item[key], torch.full((2, 2, 2), float(j)))
+        # Cached [1,C,H,W] -> per-sample [C,H,W];
+        # values must be preserved exactly.
+        assert item[key].shape == (
+            2,
+            2,
+            2,
+        )
+
+        assert torch.equal(
+            item[key],
+            torch.full(
+                (2, 2, 2),
+                float(j),
+            ),
+        )
 
 
-def test_expected_producer_signature_is_forwarded(mod):
+def test_expected_producer_signature_is_forwarded(
+    mod,
+):
     records = _records(1)
+
     signature = {
         "backbone": "dinov3_vits16",
         "blocks": [4, 8, 12],
@@ -145,20 +278,34 @@ def test_expected_producer_signature_is_forwarded(mod):
         records=records,
         expected_producer_signature=signature,
     )
-    _ = ds[0]  # opens lazy reader too
+
+    # Opens lazy reader too.
+    _ = ds[0]
 
     assert len(READER_CALLS) >= 2
+
     assert all(
-        call["expected_producer_signature"] == signature
+        call[
+            "expected_producer_signature"
+        ] == signature
         for call in READER_CALLS
     )
 
 
-def test_same_seed_gives_same_shuffle_order(mod):
+def test_same_seed_gives_same_shuffle_order(
+    mod,
+):
     records = _records(12)
 
-    ds1 = mod.CachedFeatureDataset(cache_dir="unused", records=records)
-    ds2 = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+    ds1 = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
+
+    ds2 = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
 
     loader1 = mod.make_cached_dataloader(
         ds1,
@@ -167,6 +314,7 @@ def test_same_seed_gives_same_shuffle_order(mod):
         num_workers=0,
         seed=42,
     )
+
     loader2 = mod.make_cached_dataloader(
         ds2,
         batch_size=3,
@@ -175,14 +323,26 @@ def test_same_seed_gives_same_shuffle_order(mod):
         seed=42,
     )
 
-    assert _collect_ids(loader1) == _collect_ids(loader2)
+    assert (
+        _collect_ids(loader1)
+        == _collect_ids(loader2)
+    )
 
 
-def test_seed_and_generator_are_mutually_exclusive(mod):
+def test_seed_and_generator_are_mutually_exclusive(
+    mod,
+):
     records = _records(1)
-    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
 
-    with pytest.raises(ValueError, match="either seed or generator"):
+    ds = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="either seed or generator",
+    ):
         mod.make_cached_dataloader(
             ds,
             batch_size=1,
@@ -191,32 +351,87 @@ def test_seed_and_generator_are_mutually_exclusive(mod):
         )
 
 
-def test_mask_shape_mismatch_fails_fast(mod):
+def test_mask_shape_mismatch_fails_fast(
+    mod,
+):
     records = _records(1)
-    records[0]["mask"] = torch.zeros(3, 4)
-    records[0]["mask_hw"] = [4, 4]
 
-    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+    records[0]["mask"] = torch.zeros(
+        3,
+        4,
+    )
 
-    with pytest.raises(mod.MaskError, match="mask shape mismatch"):
+    records[0]["mask_hw"] = [
+        4,
+        4,
+    ]
+
+    ds = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
+
+    with pytest.raises(
+        mod.MaskError,
+        match="mask shape mismatch",
+    ):
         _ = ds[0]
 
 
-def test_default_does_not_cast_cached_feature_dtype(mod):
+def test_default_does_not_cast_cached_feature_dtype(
+    mod,
+):
     records = _records(1)
-    key = _sample_key("img_00", "fabric")
-    for feature_key in FEATURE_KEYS:
-        FAKE_STORE[key][feature_key] = FAKE_STORE[key][feature_key].to(torch.float16)
 
-    ds = mod.CachedFeatureDataset(cache_dir="unused", records=records)
+    key = _sample_key(
+        "img_00",
+        "fabric",
+    )
+
+    for feature_key in FEATURE_KEYS:
+        FAKE_STORE[
+            key
+        ][
+            feature_key
+        ] = (
+            FAKE_STORE[
+                key
+            ][
+                feature_key
+            ].to(
+                torch.float16
+            )
+        )
+
+    ds = mod.CachedFeatureDataset(
+        cache_dir="unused",
+        records=records,
+    )
+
     item = ds[0]
 
-    assert all(item[k].dtype == torch.float16 for k in FEATURE_KEYS)
+    assert all(
+        item[k].dtype
+        == torch.float16
+        for k in FEATURE_KEYS
+    )
 
 
 def test_source_contains_no_dino_import_or_extractor_call():
-    path = Path(__file__).resolve().parents[1] / "data" / "cached_dataset.py"
-    source = path.read_text(encoding="utf-8").lower()
+    """Cached training must not recompute DINO/DINOv3 features."""
+
+    assert CACHED_DATASET_PATH.is_file(), (
+        "Cached dataset source is missing from expected path: "
+        f"{CACHED_DATASET_PATH}"
+    )
+
+    source = (
+        CACHED_DATASET_PATH
+        .read_text(
+            encoding="utf-8"
+        )
+        .lower()
+    )
 
     forbidden = (
         "import dinov3",
@@ -224,4 +439,8 @@ def test_source_contains_no_dino_import_or_extractor_call():
         "torch.hub.load(",
         "load_model(",
     )
-    assert not any(token in source for token in forbidden)
+
+    assert not any(
+        token in source
+        for token in forbidden
+    )
