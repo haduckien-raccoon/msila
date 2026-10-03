@@ -75,6 +75,7 @@ import os
 import random
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -433,8 +434,21 @@ def _jsonable_record(value: Any) -> Any:
         return [_jsonable_record(v) for v in value]
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
+
+    # Normalize scalar subclasses to built-in Python types before YAML dump.
+    # Newer PyTorch versions expose torch.__version__ as TorchVersion, a str
+    # subclass that PyYAML SafeDumper may reject even though isinstance(..., str)
+    # is True.  Returning the original object therefore is not safe.
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        return str(value)
+    if isinstance(value, (np.integer, int)):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        return float(value)
     return repr(value)
 
 
@@ -1092,9 +1106,34 @@ def save_checkpoint(
     )
 
 
+
+def _format_duration(seconds: float) -> str:
+    """Compact human-readable duration used only for live console progress."""
+    seconds = max(0, int(round(float(seconds))))
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _safe_len(value: Any) -> int | None:
+    """Return len(value) when available; progress reporting must never break training."""
+    try:
+        return int(len(value))
+    except (TypeError, AttributeError):
+        return None
+
+
 def run_candidate(args: argparse.Namespace) -> Path:
+    run_t0 = time.perf_counter()
     candidate, adapter_defaults = load_candidate_from_grid(
         args.grid, r=args.r, d=args.d
+    )
+    print(
+        f"[DAY04][SETUP] category={args.category} | "
+        f"candidate={candidate.run_name} | seed={args.seed} | device_request={args.device}",
+        flush=True,
     )
     raw_protocol = load_yaml(args.protocol)
     protocol = resolve_protocol(raw_protocol, category=args.category)
@@ -1111,6 +1150,12 @@ def run_candidate(args: argparse.Namespace) -> Path:
         category=args.category,
     )
     audit_split_disjoint(train_records, val_records)
+    print(
+        f"[DAY04][DATA] category={args.category} | "
+        f"train_samples={len(train_records)} | val_samples={len(val_records)} | "
+        f"cache_dir={protocol['data']['cache_dir']}",
+        flush=True,
+    )
 
     deterministic = bool(
         protocol["training"].get("deterministic_algorithms", True)
@@ -1261,7 +1306,23 @@ def run_candidate(args: argparse.Namespace) -> Path:
     rows: list[dict[str, Any]] = []
     best_path = run_dir / "best.pt"
 
+    train_steps = _safe_len(train_loader)
+    val_steps = _safe_len(val_loader)
+    batch_size = int(protocol["training"]["batch_size"])
+    amp_label = str(amp_dtype).replace("torch.", "") if amp_enabled else "off"
+    print(
+        f"[DAY04][TRAIN START] category={args.category} | "
+        f"candidate={candidate.run_name} | seed={args.seed} | "
+        f"epochs={epochs} | batch_size={batch_size} | "
+        f"train_steps={train_steps if train_steps is not None else '?'} | "
+        f"val_steps={val_steps if val_steps is not None else '?'} | "
+        f"device={device} | amp={amp_label}",
+        flush=True,
+    )
+
+    train_t0 = time.perf_counter()
     for epoch in range(1, epochs + 1):
+        epoch_t0 = time.perf_counter()
         train_metrics = run_epoch(
             model=model,
             loader=train_loader,
@@ -1323,6 +1384,33 @@ def run_candidate(args: argparse.Namespace) -> Path:
             else:
                 scheduler.step()
 
+        # Live progress only: no effect on optimization, checkpointing, or metrics.
+        epoch_sec = time.perf_counter() - epoch_t0
+        train_elapsed = time.perf_counter() - train_t0
+        avg_epoch_sec = train_elapsed / float(epoch)
+        eta_sec = avg_epoch_sec * float(epochs - epoch)
+        best_text = "nan" if best is None else f"{best:.6f}"
+        train_loss = float(row.get("train_loss", float("nan")))
+        val_loss = float(row.get("val_loss", float("nan")))
+        pct = 100.0 * float(epoch) / float(epochs)
+        print(
+            f"[DAY04][TRAIN] {pct:6.2f}% | "
+            f"category={args.category} | candidate={candidate.run_name} | seed={args.seed} | "
+            f"epoch={epoch:03d}/{epochs:03d} | "
+            f"train_loss={train_loss:.6f} | val_loss={val_loss:.6f} | "
+            f"best_{monitor}={best_text} | "
+            f"epoch_time={_format_duration(epoch_sec)} | ETA={_format_duration(eta_sec)}",
+            flush=True,
+        )
+
+    print(
+        f"[DAY04][TRAIN DONE] category={args.category} | "
+        f"candidate={candidate.run_name} | seed={args.seed} | "
+        f"epochs={epochs} | elapsed={_format_duration(time.perf_counter() - train_t0)} | "
+        f"best_{monitor}={'nan' if best is None else f'{best:.6f}'}",
+        flush=True,
+    )
+
     if not best_path.is_file():
         raise ScreenConfigError("Training ended without a best checkpoint.")
 
@@ -1334,6 +1422,12 @@ def run_candidate(args: argparse.Namespace) -> Path:
     model.load_state_dict(checkpoint["model"], strict=True)
     model.to(device)
 
+    print(
+        f"[DAY04][PREDICT START] category={args.category} | "
+        f"candidate={candidate.run_name} | val_samples={len(val_ds)}",
+        flush=True,
+    )
+    predict_t0 = time.perf_counter()
     export_predictions(
         model=model,
         loader=val_loader,
@@ -1344,14 +1438,33 @@ def run_candidate(args: argparse.Namespace) -> Path:
         amp_enabled=amp_enabled,
         amp_dtype=amp_dtype,
     )
+    print(
+        f"[DAY04][PREDICT DONE] category={args.category} | "
+        f"candidate={candidate.run_name} | elapsed={_format_duration(time.perf_counter() - predict_t0)}",
+        flush=True,
+    )
+    print(
+        f"[DAY04][RUN DONE] category={args.category} | candidate={candidate.run_name} | "
+        f"seed={args.seed} | total_elapsed={_format_duration(time.perf_counter() - run_t0)} | "
+        f"run_dir={run_dir}",
+        flush=True,
+    )
 
     return run_dir
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    run_dir = run_candidate(args)
-    print(f"[PASS] completed: {run_dir}")
+    try:
+        run_dir = run_candidate(args)
+    except Exception as exc:
+        # Keep the exact root cause visible through notebook log filters.
+        print(
+            f"[DAY04 ERROR] {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        raise
+    print(f"[DAY04][PASS] completed: {run_dir}", flush=True)
     return 0
 
 
