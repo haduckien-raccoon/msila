@@ -48,3 +48,9 @@ logging:
   save_environment: true
   save_config: true
   save_checkpoint: true
+
+data:
+  cache_dir: null
+  mvtec_ad2: /content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/data/
+  train_dir: null
+  val_dir: null

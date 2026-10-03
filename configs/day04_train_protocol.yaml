@@ -1,58 +1,136 @@
-# Day 04 — FIXED training protocol.
+# Day 04 — controlled Adapter r×d screening protocol
 #
-# Fill this ONCE before the first candidate.
-# Do not edit it between candidates in the same category screen.
+# Scientific rule:
+#   - only Adapter r=bottleneck_dim and d=projection_dim may change
+#   - everything in this file is fixed across candidates of the same screen
 #
-# Project-specific values remain null instead of fabricating
-# LR/epochs/paths/loss/Fusion/Decoder settings.
+# IMPORTANT:
+# The three data paths marked null below are intentionally NOT fabricated.
+# Fill them ONCE with the real TRAIN-core / DEV-synthetic cached-data artifacts
+# before the first real candidate run. screen_adapter.py will hard-fail while
+# required paths remain null.
 
 version: 1
 
-# Must define build_model() and step(); see train/screen_adapter.md.
-hooks_module: REPLACE_ME
+# Real hook added in Day-04 step 7.
+hooks_module: src.train.day04_project_hooks
 
-output_root: outputs/day04
+# Category is expanded by screen_adapter.py.
+output_root: "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/msila_day04/screens/{category}"
 
+# ---------------------------------------------------------------------------
+# Frozen-backbone provenance
+# ---------------------------------------------------------------------------
+# DINOv3 is NOT instantiated during cached-feature training. These fields lock
+# the provenance of the cache and must match the feature-cache producer.
 frozen_backbone:
-  checkpoint: null
+  checkpoint: "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/dinov3_vits16_pretrain_lvd1689m.pth"
   frozen: true
   blocks: [4, 8, 12]
-  local_context: null
-  alignment: null
 
+  local_context:
+    local_source_fov: [512, 512]
+    local_input_size: [512, 512]
+    context_source_fov: [768, 768]
+    context_input_size: [512, 512]
+    overlap: 128
+    stride: 384
+
+  alignment:
+    type: context_to_local
+    interpolation: bilinear
+    align_corners: false
+
+# ---------------------------------------------------------------------------
+# Cached data
+# ---------------------------------------------------------------------------
 data:
+  # REQUIRED REAL ARTIFACTS — fill ONCE before first candidate.
+  #
+  # cache_dir:
+  #   cache containing local/context DINOv3 features for the Day-04 screen.
+  #
+  # train_records:
+  #   TRAIN-core records used for optimization.
+  #
+  # val_records:
+  #   DEV-synthetic records used for architecture selection / validation.
+  #
+  # Do NOT point val_records to test_public. test_public is for final public
+  # evaluation after the Adapter candidate has been locked.
   cache_dir: null
   train_records: null
   val_records: null
+
+  # Optional producer signature check. Keep null only if no locked signature
+  # object is currently persisted with the experiment protocol.
   expected_producer_signature: null
+
+  # Set this if anomaly-mask paths in train/dev records are relative to a
+  # common root. It may remain null when record paths are already resolvable.
   mask_root: null
+
   mask_threshold: 0
   mask_hw_source: record
   allow_zero_mask_for_normal: true
   squeeze_cached_batch_dim: true
+
   mmap: true
   shard_cache_size: 2
 
+  # Conservative Colab settings; fixed across all candidates.
   num_workers: 0
-  pin_memory: null
-  persistent_workers: null
+  pin_memory: true
+  persistent_workers: false
   prefetch_factor: 2
   drop_last: false
 
+# ---------------------------------------------------------------------------
+# Fixed downstream model
+# ---------------------------------------------------------------------------
+# Adapter r,d do NOT appear here. They come only from day04_adapter_grid.yaml.
 model:
-  fusion: null
-  decoder: null
-  loss: null
+  fusion:
+    type: attention_fusion_v0
+
+    # Day-03 locked downstream projection/fusion width.
+    # This is NOT Adapter projection_dim d.
+    dim: 64
+
+    # One C->fusion_dim projector per DINO block, shared Local/Context.
+    share_projection_across_views: true
+
+  decoder:
+    type: basic_decoder
+    output_size: [512, 512]
+
+  loss:
+    type: bce_plus_dice
+    bce_weight: 1.0
+    dice_weight: 1.0
+    dice_eps: 1.0e-6
+
   augmentation: null
 
+# ---------------------------------------------------------------------------
+# Fixed training protocol
+# ---------------------------------------------------------------------------
 training:
-  epochs: null
-  batch_size: null
+  # Day-03 locked maximum. screen_adapter.py currently runs a fixed epoch count
+  # and saves the best checkpoint by val_loss; it does not implement Day-03
+  # early-stop-loss-ratio logic.
+  epochs: 150
+
+  # Day-03 locked value.
+  batch_size: 4
 
   optimizer:
     name: AdamW
-    lr: null
-    kwargs: {}
+
+    # Day-03 locked optimizer settings.
+    lr: 1.0e-3
+    kwargs:
+      weight_decay: 0.0
 
   scheduler: null
   gradient_clip_norm: null
@@ -60,10 +138,15 @@ training:
   deterministic_algorithms: true
   deterministic_warn_only: false
 
+  # Keep disabled for the first controlled screen unless the whole protocol is
+  # deliberately re-locked with AMP enabled for every candidate.
   amp:
     enabled: false
     dtype: bfloat16
 
+# ---------------------------------------------------------------------------
+# Checkpoint selection inside each candidate run
+# ---------------------------------------------------------------------------
 checkpoint:
   monitor: val_loss
   mode: min

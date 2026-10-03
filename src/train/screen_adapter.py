@@ -10,11 +10,22 @@ only
 
 may change across candidates in the same category screen.
 
-The runner intentionally does NOT implement Fusion, Decoder, or the project
+One Day-04 candidate is instantiated as THREE independent block-specific
+Adapters:
+
+    b4  -> ResidualAdapter2d(r, d)
+    b8  -> ResidualAdapter2d(r, d)
+    b12 -> ResidualAdapter2d(r, d)
+
+The three modules share the same architecture hyperparameters (r,d) but DO NOT
+share trainable Parameter objects. This matches CachedFeatureTrainingModel,
+which is the source-of-truth for the current cached-feature architecture.
+
+The runner intentionally does NOT reimplement Fusion, Decoder, or the project
 loss. Those components already belong to the project and must remain fixed.
 Instead, a small hook module provides:
 
-    build_model(adapter=..., config=...) -> torch.nn.Module
+    build_model(adapters=..., config=...) -> torch.nn.Module
     step(model=..., batch=..., stage=..., config=...) -> Mapping
 
 This avoids silently inventing a second training pipeline.
@@ -38,7 +49,8 @@ Scientific controls implemented here
 2. The training protocol is hashed and locked per category.
 3. Train/val record contents are hashed; overlap is rejected.
 4. The same seed is used for every candidate in one locked screen.
-5. Adapter initialization is isolated from fixed-model initialization.
+5. The b4/b8/b12 Adapter initializations are deterministic, independent, and
+   isolated from fixed-model initialization.
 6. Non-adapter parameter structure AND initialization are hashed. Therefore
    changing Fusion/Decoder shape or initialization across candidates fails.
 7. Output run names are deterministic: adapter_r{r}_d{d}.
@@ -477,59 +489,121 @@ def build_loader(
     )
 
 
-def build_adapter(
+def build_adapters(
     deps: ProjectDeps,
     adapter_defaults: Mapping[str, Any],
     candidate: Candidate,
     *,
     seed: int,
-):
-    """Initialize candidate adapter without perturbing later fixed-module RNG."""
+) -> tuple[nn.ModuleDict, dict[str, dict[str, Any]]]:
+    """Build the Day-04 candidate as three independent b4/b8/b12 Adapters.
+
+    All three blocks use the same candidate hyperparameters ``(r, d)`` and the
+    same fixed Adapter settings.  Their Parameter objects are deliberately
+    independent, matching ``CachedFeatureTrainingModel.build_default()``.
+
+    A deterministic block-specific seed is used only inside a forked CPU RNG
+    context, so Adapter construction cannot perturb initialization of the fixed
+    Projection/Fusion/Decoder modules built afterwards.
+    """
     fixed = deps.AdapterFactoryConfig.from_mapping(adapter_defaults)
     factory = deps.ResidualAdapterFactory(fixed)
 
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(int(seed))
-        build = factory.build_rd(r=candidate.r, d=candidate.d)
+    modules: dict[str, nn.Module] = {}
+    records: dict[str, dict[str, Any]] = {}
 
-    if build.run_name != candidate.run_name:
+    for block in (4, 8, 12):
+        key = f"b{block}"
+
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(int(seed) + int(block))
+            build = factory.build_rd(r=candidate.r, d=candidate.d)
+
+        if build.run_name != candidate.run_name:
+            raise ScreenConfigError(
+                f"Factory run_name drift for {key}: "
+                f"{build.run_name} != {candidate.run_name}"
+            )
+
+        modules[key] = build.model
+        records[key] = build.record()
+
+    adapters = nn.ModuleDict(modules)
+
+    if set(adapters.keys()) != {"b4", "b8", "b12"}:
         raise ScreenConfigError(
-            f"Factory run_name drift: {build.run_name} != {candidate.run_name}"
+            "Day-04 candidate must contain exactly b4/b8/b12 Adapters."
         )
-    return build
+
+    # Strong non-sharing gate: neither module objects nor Parameter objects may
+    # be reused across DINO blocks.
+    if (
+        adapters["b4"] is adapters["b8"]
+        or adapters["b4"] is adapters["b12"]
+        or adapters["b8"] is adapters["b12"]
+    ):
+        raise ScreenConfigError(
+            "b4/b8/b12 must be independent Adapter module instances."
+        )
+
+    parameter_ids = {
+        key: {id(p) for p in module.parameters()}
+        for key, module in adapters.items()
+    }
+    for left, right in (("b4", "b8"), ("b4", "b12"), ("b8", "b12")):
+        if parameter_ids[left] & parameter_ids[right]:
+            raise ScreenConfigError(
+                f"{left} and {right} share Adapter Parameter objects; "
+                "Day-04 requires independent block-specific Adapters."
+            )
+
+    return adapters, records
 
 
 def build_project_model(
     hooks: Any,
     *,
-    adapter: nn.Module,
+    adapters: nn.ModuleDict,
     protocol: Mapping[str, Any],
     seed: int,
     deterministic: bool,
     warn_only: bool,
 ) -> nn.Module:
+    """Build the fixed downstream model around the exact supplied Adapters."""
+    if not isinstance(adapters, nn.ModuleDict):
+        raise ScreenConfigError("adapters must be torch.nn.ModuleDict.")
+    if set(adapters.keys()) != {"b4", "b8", "b12"}:
+        raise ScreenConfigError("adapters must contain exactly b4/b8/b12.")
+
     seed_everything(seed, deterministic=deterministic, warn_only=warn_only)
-    model = hooks.build_model(adapter=adapter, config=protocol)
+    model = hooks.build_model(adapters=adapters, config=protocol)
+
     if not isinstance(model, nn.Module):
         raise ScreenConfigError("hooks.build_model() must return torch.nn.Module.")
 
-    adapter_param_ids = {id(p) for p in adapter.parameters()}
+    supplied_param_ids = {id(p) for p in adapters.parameters()}
     model_param_ids = {id(p) for p in model.parameters()}
-    if not adapter_param_ids.issubset(model_param_ids):
+
+    if not supplied_param_ids:
+        raise ScreenConfigError("Supplied Adapter ModuleDict has no parameters.")
+
+    if not supplied_param_ids.issubset(model_param_ids):
         raise ScreenConfigError(
-            "build_model() did not register the exact Adapter instance supplied "
-            "by the runner. Do not silently rebuild/copy the candidate Adapter."
+            "build_model() did not register the exact b4/b8/b12 Adapter "
+            "Parameter objects supplied by the runner. Do not silently "
+            "rebuild/copy the candidate Adapters."
         )
+
     return model
 
 
 def non_adapter_model_fingerprint(
     model: nn.Module,
-    adapter: nn.Module,
+    adapters: nn.Module,
 ) -> dict[str, Any]:
-    """Fingerprint fixed model state while excluding the screenable Adapter."""
-    adapter_param_ids = {id(p) for p in adapter.parameters()}
-    adapter_buffer_ids = {id(b) for b in adapter.buffers()}
+    """Fingerprint fixed model state while excluding all screenable Adapters."""
+    adapter_param_ids = {id(p) for p in adapters.parameters()}
+    adapter_buffer_ids = {id(b) for b in adapters.buffers()}
 
     structure: list[dict[str, Any]] = []
     h = hashlib.sha256()
@@ -1053,24 +1127,23 @@ def run_candidate(args: argparse.Namespace) -> Path:
     hooks_module = str(protocol["hooks_module"])
     hooks = import_hooks(hooks_module)
 
-    adapter_build = build_adapter(
+    adapters, adapter_records = build_adapters(
         deps,
         adapter_defaults,
         candidate,
         seed=args.seed,
     )
-    adapter = adapter_build.model
 
     model = build_project_model(
         hooks,
-        adapter=adapter,
+        adapters=adapters,
         protocol=protocol,
         seed=args.seed,
         deterministic=deterministic,
         warn_only=warn_only,
     )
 
-    fixed_fp = non_adapter_model_fingerprint(model, adapter)
+    fixed_fp = non_adapter_model_fingerprint(model, adapters)
     output_root = Path(protocol["output_root"])
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -1098,15 +1171,44 @@ def run_candidate(args: argparse.Namespace) -> Path:
         )
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    adapter_total_params = sum(
+        int(record["trainable_params"])
+        for record in adapter_records.values()
+    )
+
     config_record = {
         "candidate": {
             "r": candidate.r,
             "d": candidate.d,
             "run_name": candidate.run_name,
-            "trainable_adapter_params": adapter_build.trainable_params,
+            "adapter_blocks": ["b4", "b8", "b12"],
+            "trainable_adapter_params": adapter_total_params,
+            "per_block": adapter_records,
         },
         "category": args.category,
         "seed": int(args.seed),
+
+        # Authoritative E9 subtree.  Within one category/seed screen, the
+        # fairness audit may remove ONLY adapter.bottleneck_dim and
+        # adapter.projection_dim; all remaining scientific settings must hash
+        # identically across candidates.
+        "scientific_config": {
+            "adapter": {
+                "bottleneck_dim": candidate.r,
+                "projection_dim": candidate.d,
+                "kernel_size": int(adapter_defaults["kernel_size"]),
+                "gamma_init": float(adapter_defaults["gamma_init"]),
+                "bias": bool(adapter_defaults["bias"]),
+                "blocks": [4, 8, 12],
+                "sharing": "independent_across_blocks_shared_local_context_within_block",
+            },
+            "frozen_backbone": protocol["frozen_backbone"],
+            "data": protocol["data"],
+            "model": protocol["model"],
+            "training": protocol["training"],
+            "checkpoint": protocol["checkpoint"],
+        },
+
         "protocol_sha256": protocol_sha,
         "grid_sha256": sha256_file(args.grid),
         "train_records_sha256": records_sha256(train_records),
@@ -1121,6 +1223,19 @@ def run_candidate(args: argparse.Namespace) -> Path:
             "git_commit": _git_commit_or_none(),
         },
     }
+    expected_one = next(iter(adapter_records.values()))["trainable_params"]
+    if any(
+        int(record["trainable_params"]) != int(expected_one)
+        for record in adapter_records.values()
+    ):
+        raise ScreenConfigError(
+            "b4/b8/b12 Adapter parameter counts differ for the same (r,d)."
+        )
+    if adapter_total_params != 3 * int(expected_one):
+        raise ScreenConfigError(
+            "Total Adapter parameter count must equal 3 × per-block count."
+        )
+
     save_yaml(config_record, run_dir / "config.yaml")
 
     train_ds = build_dataset(deps, protocol, train_records)
