@@ -1,0 +1,24 @@
+purpose: day05_tv1b_integration_smoke_only
+scientific_result: false
+note: Temporary parameters used only to validate the framework. Do not report R0/R1/R2
+  quality from this smoke run. Replace adapter r,d with the locked Day-04 winner before
+  the real Day-05 screen.
+category: fabric
+candidates:
+- R0
+- R1
+- R2
+steps_per_candidate: 3
+batch_size: 1
+adapter:
+  bottleneck_dim: 32
+  projection_dim: 128
+  source: temporary_smoke_not_day04_winner
+optimizer:
+  name: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.0
+runtime:
+  device: cuda
+  reuse_frozen_dino_features_in_ram: true
+  num_workers: 0
