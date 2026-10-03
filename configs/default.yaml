@@ -54,3 +54,22 @@ data:
   mvtec_ad2: /content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/data/
   train_dir: null
   val_dir: null
+
+# project real paths, relative to the root of the project -> train on colab
+project_root: 
+  benchmark_root: msila/benchmark
+  configs: msila/configs
+  metadata: msila/metadata
+  outputs: msila/outputs
+  src: msila/src
+  tests: msila/tests
+  analysis: msila/src/analysis
+  data: msila/src/data
+  eval: msila/src/eval
+  geometry: msila/src/geometry
+  losses: msila/src/losses
+  metrics: msila/src/metrics
+  models: msila/src/models
+  tools: msila/src/tools
+  train: msila/src/train
+  utils: msila/src/utils
