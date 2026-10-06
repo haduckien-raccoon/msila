@@ -1,0 +1,21 @@
+schema: msila.day05.full_train.template.v1
+status: WAITING_FOR_DAY04_SELECTION
+category: fabric
+candidates:
+- R0
+- R1
+- R2
+adapter:
+  r: null
+  d: null
+  selection_report: null
+  note: Fill only after Day-04 Adapter selection is locked.
+data:
+  cache_dir: null
+  train_records: null
+  val_records: null
+  mask_root: null
+  note: Locked TRAIN-core + DEV-synthetic artifacts; never Overfit-16/test.
+training_source: configs/day04_train_protocol.yaml
+representation_source: configs/day05_representation.yaml
+output_root: /content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/outputs/day05/full_train
