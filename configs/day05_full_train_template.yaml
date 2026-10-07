@@ -6,10 +6,9 @@ candidates:
 - R1
 - R2
 adapter:
-  r: null
-  d: null
-  selection_report: null
-  note: Fill only after Day-04 Adapter selection is locked.
+  r: 32
+  d: 384
+  selection_report: "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/msila_day04/e8_full_v3/selection_report.json"
 data:
   cache_dir: null
   train_records: null
