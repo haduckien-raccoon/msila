@@ -64,6 +64,7 @@
 ./src/train/TASK9_OPTIMIZER.md
 ./src/train/screen_adapter.md
 ./src/train/screen_adapter.py
+./src/train/screen_representation.py
 ./src/train/__init__.py
 ./src/train/optimizer.py
 ./src/train/day04_project_hooks.py
