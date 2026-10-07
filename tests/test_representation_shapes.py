@@ -147,7 +147,7 @@ def _resolve_dinov3_weights(data_root: Path, model_name: str) -> Path:
     # Conservative local discovery only. Never pick arbitrarily when multiple
     # checkpoints are available because that would destroy reproducibility.
     search_roots = [ROOT / "weights", data_root.parent / "weights", Path("/content/checkpoints")]
-    patterns = [f"*{model_name}*.pth", "*dinov3*vitb16*.pth"]
+    patterns = [f"*{model_name}*.pth", "*dinov3*vits16*.pth"]
     found: list[Path] = []
     for base in search_roots:
         if not base.is_dir():

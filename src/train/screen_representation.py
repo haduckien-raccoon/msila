@@ -154,13 +154,20 @@ def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone:
             raise FullTrainError("cache manifest lacks producer_signature")
         return reader, {"verified": False, "reason": "no producer_signature"}
 
-    text = json.dumps(signature, ensure_ascii=False).lower()
-    expected = expected_backbone.lower()
-    if "vitb16" in expected and "vits16" in text:
-        raise FullTrainError("BACKBONE DRIFT: Day-05 expects ViT-B/16 but cache says ViT-S/16")
-    verified = expected in text or ("vitb16" in expected and "vitb16" in text)
-    if not verified and not allow_unverified:
-        raise FullTrainError(f"cannot verify cache backbone={expected_backbone} from producer_signature")
+    expected = str(expected_backbone).strip().lower()
+    producer_backbone = str(signature.get("backbone", "")).strip().lower()
+
+    if not producer_backbone:
+        if not allow_unverified:
+            raise FullTrainError("cache producer_signature lacks backbone")
+        verified = False
+    else:
+        if producer_backbone != expected:
+            raise FullTrainError(
+                f"BACKBONE DRIFT: Day-05 expects {expected}, "
+                f"cache says {producer_backbone}"
+            )
+        verified = True
     return reader, {
         "verified": bool(verified),
         "producer_signature": signature,
@@ -545,8 +552,8 @@ def train_candidate(args):
         raise FullTrainError("candidate must be R0/R1/R2")
     if args.r <= 0 or args.d <= 0:
         raise FullTrainError("r,d must be final locked Day-04 winner >0")
-    if day05["locked"]["backbone"]["name"] != "dinov3_vitb16":
-        raise FullTrainError("Day-05 full runner is locked to dinov3_vitb16")
+    if day05["locked"]["backbone"]["name"] != "dinov3_vits16":
+        raise FullTrainError("Day-05 full runner is locked to dinov3_vits16")
     if day05["locked"]["fusion"]["type"] != "mean" or day05["locked"]["fusion"]["trainable"]:
         raise FullTrainError("Day-05 must use parameter-free MeanFusion")
     if day05["experiment"]["candidate_ids"] != ["R0", "R1", "R2"]:
@@ -632,8 +639,12 @@ def train_candidate(args):
         "git_branch": git_value("branch", "--show-current"),
         "git_commit": git_value("rev-parse", "HEAD"),
         "runner_sha256": sha256_file(runner_path),
-        "torch_version": torch.__version__,
-        "cuda_version": torch.version.cuda,
+        "torch_version": str(torch.__version__),
+        "cuda_version": (
+            None
+            if torch.version.cuda is None
+            else str(torch.version.cuda)
+        ),
     }
 
     output_root = Path(args.output_root)

@@ -27,7 +27,7 @@ locked:
     overlap: 128
 
   backbone:
-    name: dinov3_vitb16
+    name: dinov3_vits16
     frozen: true
     feature_blocks: [4, 8, 12]
 
