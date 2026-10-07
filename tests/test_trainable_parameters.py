@@ -26,7 +26,7 @@ checkpoint.
 Required environment
 --------------------
 DINOV3_REPO=/content/dinov3_repo
-DINOV3_WEIGHTS=/path/to/dinov3_vitb16_checkpoint.pth
+DINOV3_WEIGHTS=/path/to/dinov3_vits16_checkpoint.pth
 MSILA_DAY04_ADAPTER_R=<locked Day-04 bottleneck_dim>
 MSILA_DAY04_ADAPTER_D=<locked Day-04 projection_dim>
 
@@ -111,7 +111,7 @@ def _resolve_dinov3_weights(model_name: str) -> Path:
         return path
 
     roots = [ROOT / "weights", Path("/content/checkpoints")]
-    patterns = [f"*{model_name}*.pth", "*dinov3*vitb16*.pth"]
+    patterns = [f"*{model_name}*.pth", "*dinov3*vits16*.pth"]
     found: set[Path] = set()
     for base in roots:
         if not base.is_dir():
@@ -126,7 +126,7 @@ def _resolve_dinov3_weights(model_name: str) -> Path:
             "Multiple DINOv3 checkpoints found. Set DINOV3_WEIGHTS explicitly:\n"
             + "\n".join(str(p) for p in sorted(found))
         )
-    pytest.fail("Set DINOV3_WEIGHTS=/path/to/dinov3_vitb16_checkpoint.pth.")
+    pytest.fail("Set DINOV3_WEIGHTS=/path/to/dinov3_vits16_checkpoint.pth.")
 
 
 def _resolve_adapter_dims(day05_cfg: dict[str, Any]) -> tuple[int, int, str]:
