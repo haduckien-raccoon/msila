@@ -1,0 +1,209 @@
+# Dán vào notebook, chạy từ thư mục gốc repo. Không thay thế efficiency.py.
+import csv
+import gc
+import json
+from pathlib import Path
+
+import torch
+from src.data.cached_dataset import load_training_records, make_cached_dataloader
+from src.eval.efficiency import parameter_report, make_benchmark_scope, benchmark_inference_efficiency
+from src.train.screen_representation import (
+    Day05RepresentationModel, read_yaml, sha256_file, sha256_json,
+    filter_records, make_dataset, move_to_device, seed_everything,
+)
+
+# CHỈ ĐỔI đường dẫn/category/seed theo artifact thật của bạn.
+RUN_ROOT = Path('/duong/dan/day05_runs')
+CATEGORY, SEED = 'fabric', 42
+CACHE_DIR = Path('/duong/dan/cache')
+VAL_RECORDS = Path('/duong/dan/dev_synthetic_records.json')
+MASK_ROOT = None  # Path('/duong/dan/masks') nếu mask paths là relative.
+OUT = Path('/duong/dan/efficiency_output_moi')
+DAY05_CONFIG = Path('configs/day05_representation.yaml')
+TRAIN_PROTOCOL = Path('configs/day04_train_protocol.yaml')
+DEVICE = torch.device('cuda:0')
+CANDIDATES = ('R0', 'R1', 'R2')
+
+# Khóa CHUNG trước khi đo; giữ defaults E5/E6 Day 4.
+BATCH_SIZE = 1
+BENCHMARK = dict(
+    latency_warmup=10, latency_iterations=50, latency_rounds=3,
+    stability_cv_threshold=0.10, vram_warmup=10, vram_iterations=1,
+    use_inference_mode=True,
+)
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+require(torch.cuda.is_available(), 'Cần runtime CUDA có PyTorch.')
+require(not OUT.exists(), 'OUT phải là thư mục mới; không ghi đè kết quả.')
+torch.cuda.set_device(DEVICE)
+gc.collect()
+torch.cuda.empty_cache()
+require(torch.cuda.memory_allocated(DEVICE) == 0,
+        'GPU còn tensor sống. Restart runtime và chạy cell này trước khi train/load model.')
+
+day05 = read_yaml(DAY05_CONFIG)
+protocol = read_yaml(TRAIN_PROTOCOL)
+require(not protocol['training'].get('amp', {}).get('enabled', False),
+        'Cell này khóa FP32; protocol AMP phải được thống nhất trước khi đo.')
+seed_everything(SEED)
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
+run_dirs = {c: RUN_ROOT / f'seed_{SEED}' / CATEGORY / c for c in CANDIDATES}
+configs = {c: read_yaml(run_dirs[c] / 'resolved_config.yaml') for c in CANDIDATES}
+base = configs['R0']
+common_keys = (
+    'category', 'seed', 'adapter', 'backbone', 'input', 'projection',
+    'fusion', 'decoder', 'loss', 'data_fingerprints', 'cache_producer_sha256',
+    'protocol_lock_sha256', 'runner_sha256',
+)
+runner_path = Path('src/train/screen_representation.py')
+for c, cfg in configs.items():
+    require(cfg['schema'] == 'msila.day05.full_train.resolved.v1', 'Sai schema run.')
+    require(cfg['candidate'] == c and cfg['category'] == CATEGORY and cfg['seed'] == SEED,
+            f'{c}: sai candidate/category/seed.')
+    require(all(cfg[k] == base[k] for k in common_keys), f'{c}: protocol bị lệch.')
+    require(cfg['representation'] == day05['representations'][c], f'{c}: representation bị lệch.')
+    for k in ('backbone', 'input', 'projection', 'fusion', 'decoder', 'loss'):
+        require(cfg[k] == day05['locked'][k], f'{c}: config {k} khác khi train.')
+    for k in ('kernel_size', 'gamma_init'):
+        require(cfg['adapter'][k] == day05['locked']['adapter'][k], f'{c}: adapter {k} bị lệch.')
+    require(cfg['runner_sha256'] == sha256_file(runner_path), 'Code model khác code khi train.')
+    require(cfg['cache']['in_channels'] == base['cache']['in_channels'], 'Cache channel bị lệch.')
+    require(cfg['cache']['manifest_sha256'] == sha256_file(CACHE_DIR / 'manifest.json'),
+            f'{c}: cache manifest khác khi train.')
+    require(cfg['data_fingerprints']['val_source_sha256'] == sha256_file(VAL_RECORDS),
+            f'{c}: DEV records khác khi train.')
+    require((run_dirs[c] / 'best.pt').is_file(), f'{c}: thiếu checkpoint best.pt.')
+
+# Chọn cùng batch thật theo image_id, không dựa trên scores/kết quả candidate.
+records = filter_records(load_training_records(VAL_RECORDS), CATEGORY, 'val')
+records = sorted(records, key=lambda r: str(r['image_id']))
+require(len(records) >= BATCH_SIZE, 'Không đủ sample cho benchmark batch.')
+dataset = make_dataset(CACHE_DIR, records[:BATCH_SIZE], protocol, MASK_ROOT)
+loader = make_cached_dataloader(dataset, batch_size=BATCH_SIZE, shuffle=False,
+                                num_workers=0, pin_memory=False, drop_last=False)
+batch_cpu = next(iter(loader))
+feature_keys = tuple(f'{view}_b{b}' for view in ('local', 'context') for b in (4, 8, 12))
+tile_size = int(base['input']['tile_size'])
+require(tuple(batch_cpu['mask'].shape[-2:]) == (tile_size, tile_size),
+        'GT/output resolution không khớp tile_size đã khóa; không tự resize.')
+for k in feature_keys:
+    x = batch_cpu[k]
+    require(x.device.type == 'cpu' and x.dtype == torch.float32 and x.ndim == 4,
+            f'{k}: cần CPU FP32 feature [B,C,H,W].')
+    require(x.shape[0] == BATCH_SIZE and x.shape[1] == base['cache']['in_channels'],
+            f'{k}: sai batch size/channel.')
+
+props = torch.cuda.get_device_properties(DEVICE)
+hardware = dict(gpu=props.name, gpu_uuid=str(getattr(props, 'uuid', 'unavailable')),
+                device=str(DEVICE), total_memory_bytes=int(props.total_memory),
+                torch_version=str(torch.__version__), cuda_version=torch.version.cuda,
+                cudnn_version=torch.backends.cudnn.version())
+source_hashes = {str(p): sha256_file(p) for p in (
+    Path('src/eval/efficiency.py'), runner_path,
+    Path('src/models/residual_adapter.py'), Path('src/models/feature_projection.py'),
+    Path('src/models/context_alignment.py'), Path('src/models/cached_training.py'),
+    Path('src/models/feature_selector.py'), Path('src/models/mean_fusion.py'),
+    Path('src/models/basic_decoder.py'), Path('src/data/cached_dataset.py'),
+    Path('src/data/feature_cache.py'), DAY05_CONFIG, TRAIN_PROTOCOL,
+)}
+scope = make_benchmark_scope(
+    scope_name='day05_cached_representation_pipeline', device=DEVICE,
+    batch_size=BATCH_SIZE, precision='fp32_tf32_disabled',
+    input_signature=json.dumps({k: list(batch_cpu[k].shape) for k in feature_keys}, sort_keys=True),
+    pipeline_stages=('adapter', 'context_alignment_if_R2', 'projection', 'mean_fusion', 'decoder'),
+    extra=dict(
+        hardware=hardware, input_contract=base['input'], output_hw=[tile_size, tile_size],
+        sample_ids=[m['image_id'] for m in batch_cpu['meta']], benchmark=BENCHMARK,
+        source_hashes=source_hashes, cache_manifest_sha256=base['cache']['manifest_sha256'],
+        val_records_sha256=sha256_file(VAL_RECORDS),
+        backbone_included=False, data_loading_included=False,
+        feature_and_mask_h2d_included=False, geometry_build_in_forward_included=True,
+        tiling_included=False, stitching_included=False,
+        output='raw_logits; trace is constructed by existing forward',
+        resident_inputs='all six cached feature maps and the same mask/meta for every candidate',
+        deterministic_algorithms=True, cudnn_benchmark=False,
+    ),
+)
+
+def measure_one(candidate):
+    cfg = configs[candidate]
+    model = gpu_batch = forward_once = checkpoint = None
+    gc.collect()
+    torch.cuda.empty_cache()  # Giữa candidates, không nằm trong cửa sổ đo.
+    require(torch.cuda.memory_allocated(DEVICE) == 0, 'Candidate trước chưa giải phóng GPU.')
+    try:
+        model = Day05RepresentationModel(
+            day05_config=day05, candidate=candidate,
+            in_channels=cfg['cache']['in_channels'],
+            adapter_r=cfg['adapter']['r'], adapter_d=cfg['adapter']['d'],
+        )
+        checkpoint_path = run_dirs[candidate] / 'best.pt'
+        # Chỉ load checkpoint do bạn tạo/tin cậy: format trainer có RNG/optimizer.
+        checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+        require(checkpoint['schema'] == 'msila.day05.full_train.checkpoint.v1', 'Sai checkpoint schema.')
+        require(checkpoint['resolved_config_sha256'] == sha256_json(cfg), 'Checkpoint/config không khớp.')
+        model.load_state_dict(checkpoint['model'], strict=True)
+        checkpoint = None  # Không đưa optimizer/RNG checkpoint lên GPU.
+        params = parameter_report(model, candidate_id=candidate, scope='cached_trainable_pipeline')
+        model.zero_grad(set_to_none=True)
+        model = model.to(DEVICE).eval()
+        gpu_batch = move_to_device(batch_cpu, DEVICE)
+
+        def forward_once():
+            with torch.autocast(device_type='cuda', enabled=False):
+                logits, _ = model(gpu_batch)
+                return logits
+
+        efficiency = benchmark_inference_efficiency(
+            forward_once, candidate_id=candidate, scope=scope, **BENCHMARK,
+        )
+        return dict(parameters=params, efficiency=efficiency,
+                    checkpoint_sha256=sha256_file(checkpoint_path),
+                    resolved_config_sha256=sha256_json(cfg))
+    finally:
+        forward_once = gpu_batch = model = checkpoint = None
+        gc.collect()
+        torch.cuda.synchronize(DEVICE)
+        torch.cuda.empty_cache()
+
+# Khi BẠN chạy cell: tạo artifact kết quả riêng, không sửa source/checkpoint.
+OUT.mkdir(parents=True, exist_ok=False)
+with (OUT / 'efficiency_protocol.json').open('x', encoding='utf-8') as f:
+    json.dump(scope, f, indent=2, ensure_ascii=False)
+rows = []
+for candidate in CANDIDATES:
+    result = measure_one(candidate)
+    with (OUT / f'{candidate}_efficiency.json').open('x', encoding='utf-8') as f:
+        json.dump(result, f, indent=2, ensure_ascii=False)
+    e = result['efficiency']
+    rows.append(dict(
+        candidate=candidate, category=CATEGORY, seed=SEED,
+        trainable_params=result['parameters']['totals']['trainable_parameters'],
+        inference_ms_per_batch=e['latency']['latency_ms']['median'],
+        inference_p95_ms_per_batch=e['latency']['latency_ms']['p95'],
+        peak_vram_MiB=e['peak_vram']['memory']['peak_allocated']['MiB'],
+        gpu=hardware['gpu'], tile_resolution=f'{tile_size}x{tile_size}',
+        batch_size=BATCH_SIZE, precision=scope['precision'],
+        latency_warmup=BENCHMARK['latency_warmup'],
+        latency_iterations=BENCHMARK['latency_iterations'],
+        latency_rounds=BENCHMARK['latency_rounds'],
+        vram_warmup=BENCHMARK['vram_warmup'], vram_iterations=BENCHMARK['vram_iterations'],
+        scope_sha256=e['scope_fingerprint_sha256'], status=e['status'],
+    ))
+require(len({r['scope_sha256'] for r in rows}) == 1, 'Scope giữa candidates không giống nhau.')
+with (OUT / 'efficiency_summary.csv').open('x', newline='', encoding='utf-8') as f:
+    writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+    writer.writeheader()
+    writer.writerows(rows)
+print('candidate | trainable params | inference ms/batch (median) | peak VRAM MiB | status')
+for r in rows:
+    print(f"{r['candidate']} | {r['trainable_params']:,} | {r['inference_ms_per_batch']:.3f} | "
+          f"{r['peak_vram_MiB']:.2f} | {r['status']}")
+print(f"CSV: {OUT / 'efficiency_summary.csv'}")
+if any(r['status'] != 'PASS' for r in rows):
+    print('Latency chưa ổn định. Đo lại CẢ R0/R1/R2 trong điều kiện ổn định, cùng protocol.')

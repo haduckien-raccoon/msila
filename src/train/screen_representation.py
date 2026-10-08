@@ -632,8 +632,12 @@ def train_candidate(args):
         "git_branch": git_value("branch", "--show-current"),
         "git_commit": git_value("rev-parse", "HEAD"),
         "runner_sha256": sha256_file(runner_path),
-        "torch_version": torch.__version__,
-        "cuda_version": torch.version.cuda,
+        "torch_version": str(torch.__version__),
+        "cuda_version": (
+            None
+            if torch.version.cuda is None
+            else str(torch.version.cuda)
+        ),
     }
 
     output_root = Path(args.output_root)
