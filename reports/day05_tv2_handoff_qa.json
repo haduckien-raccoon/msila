@@ -1,0 +1,33 @@
+{
+  "schema": "msila.day05.tv2_delivery_qa.v1",
+  "code_verification": {
+    "passed": 643,
+    "failed": 0,
+    "skipped": 18,
+    "seconds": 22.06,
+    "scope": "software and fixture tests; real DINO/CUDA/data tests skipped where assets unavailable"
+  },
+  "tv1_evidence_source": "/home/haduckien/Downloads/Day05_TV1C_Full_Train_Fabric_Colab (1).ipynb",
+  "observed_tv1_notebook_outputs": {
+    "category": "fabric",
+    "seed": 42,
+    "backbone": "dinov3_vits16",
+    "adapter": {
+      "r": 32,
+      "d": 384
+    },
+    "completed_epochs_per_run": 150,
+    "optimizer_updates_per_run": 11550,
+    "best_epochs": {
+      "R0": 28,
+      "R1": 21,
+      "R2": 21
+    }
+  },
+  "drive_artifacts_read_in_this_workspace": false,
+  "native_real_inference_executed_in_this_workspace": false,
+  "delivery_notebook": "notebooks/Day05_TV2_Receive_Inference_Evaluation_ViTS16_Colab.ipynb",
+  "delivery_zip": "reports/day05_tv2_code_overlay.zip",
+  "legacy_support": "Original configs/checkpoint hashes retained; TV1-D evidence checked; receipt-only hashes labelled",
+  "runbook": "docs/DAY05_TV2_HANDOFF.md"
+}

@@ -19,12 +19,184 @@ from scripts.day05_full_inference import (load_tv1_model, make_tile_batch, infer
 from scripts.eval_day05_representation import evaluate_manifest
 from scripts.run_day05_pipeline import main, stage_once
 from scripts.build_day05_cache import source_plan, prepare_sample, build
+from scripts.day05_legacy_handoff import LEGACY_LOCK_KEYS
 
 ROOT=Path(__file__).parents[1]
 
 
+@pytest.fixture
+def legacy_artifacts(artifacts, tmp_path):
+    """Reproduce original TV1-C/TV1-D serialization; only synthetic QA data."""
+    import csv
+    import shutil
+    root = tmp_path / 'legacy_runs'
+    rule = dict(schema='msila.day05.checkpoint_rule_lock.v1', status='LOCKED_BEFORE_TV1C_RESULTS',
+        rule_source='fixture_protocol', rule_source_sha256='a'*64, selector_file='fixture_selector',
+        selector_file_sha256='b'*64, selector_source='src.train.screen_adapter.is_better',
+        dev_split='dev_synthetic', day04_monitor='val_loss', day05_log_monitor='val_total_loss',
+        mode='min', comparison='strict_improvement', tie_policy='keep_earliest_epoch',
+        candidate_scope=list(SOURCES), category='fabric', seed=42)
+    rule['rule_lock_sha256'] = digest(rule)
+    rule['locked_at_unix'] = 1.0
+    runs = []
+    for c, original in zip(SOURCES, artifacts.runs):
+        run = root/'seed_42/fabric'/c
+        shutil.copytree(original, run)
+        cfg = yaml.safe_load((run/'resolved_config.yaml').read_text())
+        for key in ('day05_config','day05_config_sha256','data_loader'):
+            del cfg[key]
+        cfg['training'] = {key: cfg['training'][key] for key in
+            ('epochs','batch_size','optimizer','scheduler','gradient_clip_norm','updates_per_epoch','total_update_budget')}
+        cfg['data_fingerprints'] = {key: value for key,value in cfg['data_fingerprints'].items() if 'masks' not in key}
+        cfg['checkpoint_rule'] = dict(monitor='val_total_loss',mode='min')
+        payload = {key:cfg[key] for key in LEGACY_LOCK_KEYS}
+        cfg['protocol_lock_sha256'] = digest(payload)
+        (root/'protocol_lock.json').write_text(json.dumps(dict(sha256=digest(payload),payload=payload)))
+        (run/'resolved_config.yaml').write_text(yaml.safe_dump(cfg))
+        for name in ('best.pt','last.pt'):
+            state = torch.load(run/name, map_location='cpu', weights_only=False)
+            state['resolved_config_sha256'] = digest(cfg)
+            torch.save(state,run/name)
+        manifest = json.loads((run/'run_manifest.json').read_text())
+        del manifest['artifact_sha256']
+        manifest.update(resolved_config_sha256=digest(cfg), protocol_lock_sha256=cfg['protocol_lock_sha256'], started_at_unix=2.0)
+        (run/'run_manifest.json').write_text(json.dumps(manifest))
+        with (run/'epoch_log.csv').open(newline='') as stream:
+            rows = list(csv.DictReader(stream))
+        selected = min(rows,key=lambda row:float(row['val_total_loss']))
+        selection = dict(schema='msila.day05.checkpoint_selection_record.v1',status='PASS',
+            candidate=c,category='fabric',seed=42,dev_split='dev_synthetic',
+            rule={key:rule[key] for key in ('rule_lock_sha256','day04_monitor','day05_log_monitor','mode',
+                                          'comparison','tie_policy','rule_source_sha256','selector_file_sha256')},
+            selection=dict(selected_epoch=int(selected['epoch']),selected_metric=float(selected['val_total_loss']),
+                metric_name='val_total_loss',checkpoint_sha256=file_hash(run/'best.pt')),
+            evidence=dict(epoch_log_sha256=file_hash(run/'epoch_log.csv'),
+                resolved_config_sha256_file=file_hash(run/'resolved_config.yaml'),
+                checkpoint_resolved_config_sha256=digest(cfg),protocol_lock_sha256=cfg['protocol_lock_sha256'],
+                git_commit=cfg['git_commit']))
+        (run/'selection_record.json').write_text(json.dumps(selection))
+        runs.append(run)
+    (root/'checkpoint_rule_lock.json').write_text(json.dumps(rule))
+    return SimpleNamespace(root=root,runs=runs)
+
+
+def test_legacy_tv1d_handoff_preserves_original_config_and_model(artifacts, legacy_artifacts):
+    from scripts.build_evaluation_manifest import read_artifact
+    before = {str(p):file_hash(p) for p in legacy_artifacts.root.rglob('*') if p.is_file()}
+    for c,original,legacy in zip(SOURCES,artifacts.runs,legacy_artifacts.runs):
+        model,cfg,row = load_tv1_model(legacy,c)
+        reference,_,_ = load_tv1_model(original,c)
+        assert 'day05_config' not in cfg
+        assert row['artifact_format']=='legacy_tv1c_with_tv1d_selection'
+        assert row['resolved_config_sha256']==digest(cfg)
+        batch={key:torch.randn(1,384,4,4) for key in FEATURE_KEYS}
+        batch.update(meta=[{'geometry':artifacts.geometry}],output_hw=(17,19))
+        with torch.no_grad():
+            assert torch.equal(model(batch)[0],reference(batch)[0])
+        assert read_artifact(legacy,c)[0]==cfg
+    assert before=={str(p):file_hash(p) for p in legacy_artifacts.root.rglob('*') if p.is_file()}
+    handoff=verify_and_build_manifest(*legacy_artifacts.runs,legacy_artifacts.root/'receipt.json')
+    assert all('artifact_sha256_at_receipt' in row for row in handoff['runs'])
+
+
+@pytest.mark.parametrize('changed',['epoch_log','training_log','last_checkpoint','rule_lock','selection','config','missing_selection'])
+def test_legacy_handoff_rejects_incomplete_or_modified_evidence(legacy_artifacts,changed):
+    from scripts.build_evaluation_manifest import read_artifact
+    run=legacy_artifacts.runs[0]
+    if changed in ('epoch_log','training_log'):
+        path=run/(changed+'.csv')
+        path.write_text(path.read_text().splitlines()[0]+'\n')
+    elif changed=='last_checkpoint':
+        path=run/'last.pt';state=torch.load(path,map_location='cpu',weights_only=False)
+        state['epoch']-=1;torch.save(state,path)
+    elif changed=='rule_lock':
+        path=legacy_artifacts.root/'checkpoint_rule_lock.json';obj=json.loads(path.read_text())
+        obj['locked_at_unix']=3.0;path.write_text(json.dumps(obj))
+    elif changed=='selection':
+        path=run/'selection_record.json';obj=json.loads(path.read_text())
+        obj['selection']['checkpoint_sha256']='0'*64;path.write_text(json.dumps(obj))
+    elif changed=='config':
+        path=run/'resolved_config.yaml';obj=yaml.safe_load(path.read_text())
+        obj['training']['batch_size']+=1;path.write_text(yaml.safe_dump(obj))
+    else: (run/'selection_record.json').unlink()
+    with pytest.raises((ValueError,FileNotFoundError)):
+        read_artifact(run,'R0')
+
+
+def test_tv2_notebook_receives_legacy_runs_and_never_retrains(artifacts,legacy_artifacts,tmp_path,monkeypatch):
+    """Execute notebook orchestration on fixtures; DINO/CUDA metrics are not simulated PASS."""
+    import ast
+    import gc
+    import matplotlib
+    import subprocess
+    import sys
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    notebook_path=ROOT/'notebooks/Day05_TV2_Receive_Inference_Evaluation_ViTS16_Colab.ipynb'
+    if not notebook_path.is_file():
+        pytest.skip('TV2 notebook delivered separately from its code ZIP; install the notebook to run orchestration QA.')
+    notebook=json.loads(notebook_path.read_text())
+    code_cells=[cell for cell in notebook['cells'] if cell['cell_type']=='code']
+    for cell in code_cells:
+        tree=ast.parse(''.join(cell['source']))
+        for call in (node for node in ast.walk(tree) if isinstance(node,ast.Call)):
+            if isinstance(call.func,ast.Name) and call.func.id=='run':
+                assert call.args[0].value in ('scripts.build_day05_cache','scripts.day05_full_inference')
+    native=tmp_path/'native_dev';native.mkdir()
+    samples=[]
+    for record in artifacts.records['dev_synthetic']:
+        gt=np.zeros((40,48),np.uint8)
+        if record['is_anomaly']:gt[:2,:2]=255;gt[20:23,20:23]=255
+        path=native/(record['image_id']+'.png');Image.fromarray(gt).save(path)
+        samples.append(dict(image_id=record['image_id'],category='fabric',gt_mask=str(path),
+                            original_hw=[40,48],gt_mask_sha256=file_hash(path)))
+    inputs=native/'dev_inputs.json'
+    inputs.write_text(json.dumps(dict(schema='msila.day05.inference_inputs.v1',split='dev_synthetic',samples=samples)))
+    env=dict(__name__='__main__',Path=Path,json=json,gc=gc,yaml=yaml,torch=torch,sys=sys,subprocess=subprocess,
+             PROJECT_DRIVE=tmp_path,PROJECT_ROOT=ROOT,DEVICE='cpu')
+    commands=[]
+    def run_mock(module,*args):commands.append((module,list(map(str,args))))
+    for cell in code_cells:
+        stage=cell['metadata']['day05_stage']
+        if stage=='setup':continue
+        if stage=='protocol_gate':gate=cell;break
+        exec(compile(''.join(cell['source']),cell['id'],'exec'),env)
+        if stage=='config':
+            env.update(run=run_mock,TV1_ROOT=legacy_artifacts.root,OUT=legacy_artifacts.root,
+                RUN_DIRS=legacy_artifacts.runs,TV2_RECEIPT_DIR=legacy_artifacts.root/'tv2_handoff',
+                CACHE=artifacts.root/'feature_cache',TRAIN=artifacts.root/'train_core.json',
+                DEV=artifacts.root/'dev_synthetic.json',DINO_CKPT=artifacts.checkpoint,
+                MASKS=None,INPUTS=inputs,DEV_EXPORT=native,MAP_DIR=legacy_artifacts.root/'maps/dev_synthetic')
+    assert len(commands)==1 and '--export-dev-only' in commands[0][1]
+    with pytest.raises(RuntimeError,match='Chưa có protocol lock'):
+        exec(''.join(gate['source']),env)
+    lock=next(cell for cell in code_cells if cell['metadata']['day05_stage']=='gt_lock')
+    source=''.join(lock['source']).replace('EXPORT_LOCKED_PROTOCOLS = False','EXPORT_LOCKED_PROTOCOLS = True')
+    source=source.replace("TINY_LOCK_BASIS = ''","TINY_LOCK_BASIS = 'SYNTHETIC QA ONLY'")
+    source=source.replace("BOUNDARY_LOCK_BASIS = ''","BOUNDARY_LOCK_BASIS = 'SYNTHETIC QA ONLY'")
+    exec(source,env);exec(''.join(gate['source']),env)
+    evaluation_calls=[]
+    def evaluate_spy(args):
+        evaluation_calls.append(args)
+        # No fake metric/PASS: an empty QA-only display fixture in pytest tmp_path.
+        path=args.output_root/'evaluation/dev_synthetic/primary';path.mkdir(parents=True)
+        (path/'metrics.json').write_text(json.dumps(dict(schema='QA_DISPLAY_ONLY',candidate_category=[])))
+        return path.parent/'summary'
+    monkeypatch.setattr('scripts.run_day05_pipeline.evaluate',evaluate_spy)
+    for cell in code_cells:
+        if cell['metadata']['day05_stage'] in ('inference','evaluate','results'):
+            exec(compile(''.join(cell['source']),cell['id'],'exec'),env)
+    assert [module for module,args in commands]==['scripts.build_day05_cache','scripts.day05_full_inference']
+    assert commands[-1][1][commands[-1][1].index('--r0')+1]==str(legacy_artifacts.runs[0])
+    assert evaluation_calls[0].output_root==legacy_artifacts.root
+    assert evaluation_calls[0].tiny_protocol==env['TINY']
+    assert env['first_cfg']['training']['batch_size']==artifacts.protocol['training']['batch_size']
+    assert 'msila.day05.tv2.efficiency_input.v1' in env['MEASUREMENT_INPUT_PATH'].read_text()
+    plt.close('all')
+
+
 def signature(checkpoint):
-    return dict(schema='unit_fixture_only',backbone='dinov3_vits16',checkpoint_sha256=file_hash(checkpoint),
+    return dict(schema='unit_fixture_only',categories=['fabric'],backbone='dinov3_vits16',checkpoint_sha256=file_hash(checkpoint),
         logical_layers_1based=[4,8,12],local_source_size=[512,512],context_source_size=[768,768],
         model_input_size=[512,512],normalization='ImageNet mean/std',smoke_only=False,full_source_coverage=True,
         source_split_version='day04_full_hash80_20_v3',train_fraction=.8,

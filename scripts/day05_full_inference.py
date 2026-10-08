@@ -17,6 +17,7 @@ from src.models.dinov3_extractor import build_online_extractor
 from src.train.day05_contract import SOURCES, digest, file_hash, validate_signature, validate_day05
 from src.train.screen_representation import Day05RepresentationModel
 from scripts.build_evaluation_manifest import read_artifact, verify_and_build_manifest
+from scripts.day05_legacy_handoff import model_config
 from scripts.eval_day05_representation import evaluator_hashes
 
 PREPROCESSING = dict(rgb_decode='PIL.convert_RGB_uint8_div255', local_size=512, context_size=768, input_size=512, overlap=128,
@@ -27,8 +28,9 @@ STITCHING = 'sigmoid_per_tile; hann2d(periodic=False,clamp_min=0.001); weighted_
 
 def load_tv1_model(run_dir, candidate, device='cpu'):
     cfg, row = read_artifact(run_dir, candidate)
-    validate_day05(cfg['day05_config'])
-    model = Day05RepresentationModel(day05_config=cfg['day05_config'], candidate=candidate,
+    construction_config = model_config(cfg)
+    validate_day05(construction_config)
+    model = Day05RepresentationModel(day05_config=construction_config, candidate=candidate,
         in_channels=cfg['cache']['in_channels'], adapter_r=cfg['adapter']['r'], adapter_d=cfg['adapter']['d'])
     state = torch.load(row['checkpoint_path'], map_location='cpu', weights_only=False)
     if (state.get('schema') != 'msila.day05.full_train.checkpoint.v1'

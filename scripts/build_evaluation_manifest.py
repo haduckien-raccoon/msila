@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 from src.train.day05_contract import SOURCES, digest, file_hash, validate_day05, validate_signature
 from src.train.screen_representation import lock_payload
+from scripts.day05_legacy_handoff import model_config, verify_legacy
 
 
 def read_artifact(path, candidate):
@@ -17,7 +18,9 @@ def read_artifact(path, candidate):
         raise ValueError(f'{candidate}: artifact candidate mismatch')
     if run['status'] != 'COMPLETE' or cfg['seed'] != 42 or run['seed'] != 42:
         raise ValueError(f'{candidate}: need COMPLETE seed42 run')
-    validate_day05(cfg['day05_config'])
+    if cfg['category'] != run['category'] or cfg['git_commit'] != run['git_commit']:
+        raise ValueError(f'{candidate}: manifest/config category or code identity mismatch')
+    validate_day05(model_config(cfg))
     validate_signature(cfg['cache']['provenance_check']['producer_signature'])
     if cfg['cache']['in_channels'] != 384:
         raise ValueError('ViT-S/16 feature channels must be 384')
@@ -27,12 +30,16 @@ def read_artifact(path, candidate):
         raise ValueError(f'{candidate}: source mismatch')
     if digest(cfg) != run['resolved_config_sha256']:
         raise ValueError(f'{candidate}: resolved config hash mismatch')
-    if cfg['protocol_lock_sha256'] != digest(lock_payload(cfg)):
-        raise ValueError(f'{candidate}: controlled protocol hash mismatch')
-    for name in ('best.pt', 'last.pt', 'resolved_config.yaml', 'preflight_report.json',
-                 'selection_record.json', 'training_log.csv', 'epoch_log.csv', 'sample_anomaly_map.png'):
-        if run.get('artifact_sha256', {}).get(name) != file_hash(path / name):
-            raise ValueError(f'{candidate}: missing or changed {name}')
+    legacy_evidence = {}
+    if 'day05_config' not in cfg:
+        legacy_evidence = verify_legacy(path, cfg, run)
+    else:
+        if cfg['protocol_lock_sha256'] != digest(lock_payload(cfg)):
+            raise ValueError(f'{candidate}: controlled protocol hash mismatch')
+        for name in ('best.pt', 'last.pt', 'resolved_config.yaml', 'preflight_report.json',
+                     'selection_record.json', 'training_log.csv', 'epoch_log.csv', 'sample_anomaly_map.png'):
+            if run.get('artifact_sha256', {}).get(name) != file_hash(path / name):
+                raise ValueError(f'{candidate}: missing or changed {name}')
     if run.get('completed_epochs') != cfg['training']['epochs'] or run.get('global_step') != cfg['training']['total_update_budget']:
         raise ValueError(f'{candidate}: incomplete epoch/update budget')
     if json.loads((path / 'preflight_report.json').read_text())['status'] != 'PASS':
@@ -40,7 +47,8 @@ def read_artifact(path, candidate):
     return cfg, dict(candidate=candidate, artifact_path=str(path), category=cfg['category'],
                      seed=cfg['seed'], checkpoint_path=str(path / 'best.pt'),
                      checkpoint_sha256=file_hash(path / 'best.pt'),
-                     resolved_config_sha256=digest(cfg), protocol_lock_sha256=cfg['protocol_lock_sha256'])
+                     resolved_config_sha256=digest(cfg), protocol_lock_sha256=cfg['protocol_lock_sha256'],
+                     **legacy_evidence)
 
 
 def verify_and_build_manifest(r0, r1, r2, output_path):
