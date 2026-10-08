@@ -884,7 +884,7 @@ def test_dinov3_extractor_enforces_frozen_eval_mode(monkeypatch, tmp_path) -> No
     extractor = DINOv3FeatureExtractor(
         repo_dir=repo,
         weights="unused.pth",
-        model_name="dinov3_vitb16",
+        model_name="dinov3_vits16",
         blocks=(4, 8, 12),
         check_finite=True,
     )
