@@ -175,8 +175,9 @@ class GradientFlowHarness(nn.Module):
         self.adapters = nn.ModuleDict(
             {
                 key: ResidualAdapter2d(
-                    in_channels=DINO_C,
-                    reduction=4,
+                    in_dim=DINO_C,
+                    bottleneck_dim=DINO_C // 4,
+                    projection_dim=12,  # Software fixture; distinct from fusion width 8.
                     kernel_size=3,
                     gamma_init=0.0,
                 )

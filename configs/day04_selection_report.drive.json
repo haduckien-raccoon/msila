@@ -1,0 +1,982 @@
+{
+  "schema_version": "msila.e8.selection_report.v1",
+  "analysis_status": "PASS",
+  "e7_plan_sha256": "d1137084e62d995d9e366f04babf34947632e22e93ebee50423f262c6d166eb1",
+  "selection_rule": {
+    "rule_id": "adapter_day04_rxd_v1",
+    "locked_before_results": true,
+    "locked_at_utc": "2026-10-07T06:32:52.071576Z",
+    "sha256": "18ac3d7654f2cbe368bb45d6a3817023e67b9f16f640bb895d6a772c0781fa37",
+    "expected_split": "dev_synthetic",
+    "reference_candidate": "adapter_r32_d128",
+    "primary_metric": "macro_aupro_mean",
+    "primary_tolerance": 0.001,
+    "tie_breakers": [
+      {
+        "metric": "trainable_parameters",
+        "direction": "min",
+        "tolerance": 0.0
+      },
+      {
+        "metric": "latency_median_ms_mean",
+        "direction": "min",
+        "tolerance": 0.05
+      },
+      {
+        "metric": "peak_vram_mib_mean",
+        "direction": "min",
+        "tolerance": 1.0
+      }
+    ]
+  },
+  "grid": {
+    "candidates": [
+      "adapter_r32_d128",
+      "adapter_r32_d256",
+      "adapter_r32_d384",
+      "adapter_r64_d128",
+      "adapter_r64_d256",
+      "adapter_r64_d384",
+      "adapter_r128_d128",
+      "adapter_r128_d256",
+      "adapter_r128_d384"
+    ],
+    "categories": [
+      "fabric",
+      "vial",
+      "wallplugs"
+    ],
+    "seeds": [
+      42,
+      17,
+      2026
+    ],
+    "n_candidates": 9,
+    "n_categories": 3,
+    "n_seeds": 3
+  },
+  "aggregation": {
+    "macro_definition": "unweighted category mean within each seed, then mean across seeds",
+    "std_definition": "sample standard deviation across seeds (ddof=1)",
+    "delta_definition": "paired by seed: candidate score - reference score",
+    "efficiency_summary": "mean/sample-std over E7 efficiency observations for each candidate"
+  },
+  "candidate_summaries": {
+    "adapter_r32_d128": {
+      "candidate_id": "adapter_r32_d128",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7370776024472648,
+        "17": 0.7350985926279137,
+        "2026": 0.7500617661683325
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7407459870811705,
+        "std": 0.008128156307975283
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5545735246625183,
+        "std": 0.045216703869193534
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "parameters": {
+        "total_parameters": 291690,
+        "trainable_parameters": 291690,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.349835166666667,
+          "std": 0.7368720597398506
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 12.963546727777777,
+          "std": 1.392759517406226
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 40.37939453125,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7213969725185314,
+            "std": 0.013748280096866303
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.0,
+            "std": 0.0
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7475018224518176,
+            "std": 0.019329512987911565
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.0,
+            "std": 0.0
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.753339166273162,
+            "std": 0.007011294283683202
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.0,
+            "std": 0.0
+          }
+        }
+      },
+      "categories_improved_vs_reference": 0,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r32_d256": {
+      "candidate_id": "adapter_r32_d256",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7327247298713809,
+        "17": 0.7204376611649864,
+        "2026": 0.747137402979747
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7334332646720382,
+        "std": 0.01336396533280915
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5250763890759057,
+        "std": 0.01977550477776792
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.00731272240913224,
+        "std": 0.006403693620958608
+      },
+      "parameters": {
+        "total_parameters": 451818,
+        "trainable_parameters": 451818,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.280926555555556,
+          "std": 0.3453078332338447
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 12.632852494444442,
+          "std": 1.7867109299725539
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 40.990234375,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7024909561650489,
+            "std": 0.026776704450132555
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.01890601635348251,
+            "std": 0.021584848354689316
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7804786664080865,
+            "std": 0.01183729711366669
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.03297684395626873,
+            "std": 0.03116011132600417
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7173301714429791,
+            "std": 0.03743477822157122
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.03600899483018294,
+            "std": 0.030616169053969276
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r32_d384": {
+      "candidate_id": "adapter_r32_d384",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7094886753411552,
+        "17": 0.766756540955201,
+        "2026": 0.7533684451296878
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7432045538086814,
+        "std": 0.029956311907276295
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5338400348793272,
+        "std": 0.03550942585328917
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": 0.0024585667275109913,
+        "std": 0.029632541789829804
+      },
+      "parameters": {
+        "total_parameters": 611946,
+        "trainable_parameters": 611946,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.359590277777777,
+          "std": 0.47802686129319055
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 13.355283761111108,
+          "std": 1.6153384037490945
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 41.60107421875,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7049449592796311,
+            "std": 0.0471174768097522
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.016452013238900293,
+            "std": 0.034044460787196924
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7711776375337389,
+            "std": 0.022510605634893936
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.02367581508192122,
+            "std": 0.03386114914689883
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7534910646126739,
+            "std": 0.024674307212941612
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.00015189833951193923,
+            "std": 0.028065810205446372
+          }
+        }
+      },
+      "categories_improved_vs_reference": 2,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r64_d128": {
+      "candidate_id": "adapter_r64_d128",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7165387643640346,
+        "17": 0.7250154310903275,
+        "2026": 0.7454522250679742
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7290021401741121,
+        "std": 0.01486329167642927
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5461950700899209,
+        "std": 0.02953444540772204
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.011743846907058245,
+        "std": 0.008093456153857655
+      },
+      "parameters": {
+        "total_parameters": 341898,
+        "trainable_parameters": 341898,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.199468277777777,
+          "std": 0.58550211020644
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 12.03806556111111,
+          "std": 1.90363508174735
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 40.56982421875,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.6809129701453074,
+            "std": 0.014518508292814295
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.04048400237322395,
+            "std": 0.0028603291027549387
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7581526272434255,
+            "std": 0.03984801543391147
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.010650804791607774,
+            "std": 0.02081469124379733
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7479408231336033,
+            "std": 0.015127551686343952
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.005398343139558707,
+            "std": 0.021995601511268684
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r64_d256": {
+      "candidate_id": "adapter_r64_d256",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7382787312568918,
+        "17": 0.7117243366271753,
+        "2026": 0.7400009859459633
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7300013512766768,
+        "std": 0.01585176610592893
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5347454893639481,
+        "std": 0.057363440125271295
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.010744635804493549,
+        "std": 0.01230195628700111
+      },
+      "parameters": {
+        "total_parameters": 514314,
+        "trainable_parameters": 514314,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.369007777777776,
+          "std": 0.7820170482219405
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 13.053431999999999,
+          "std": 1.7543020386851262
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 41.2275390625,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.704740395418427,
+            "std": 0.016927577540422473
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.016656577100104413,
+            "std": 0.01556878365114978
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7528193028452798,
+            "std": 0.025330547872025405
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.005317480393462064,
+            "std": 0.007447923331567715
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7324443555663237,
+            "std": 0.03816126777109691
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.020894810706838296,
+            "std": 0.03347782050860023
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r64_d384": {
+      "candidate_id": "adapter_r64_d384",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7285039277698994,
+        "17": 0.7474515360245277,
+        "2026": 0.749424742572334
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7417934021222538,
+        "std": 0.011551232940318084
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5358552727617348,
+        "std": 0.03312627337276249
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": 0.0010474150410833734,
+        "std": 0.010564508324816757
+      },
+      "parameters": {
+        "total_parameters": 686730,
+        "trainable_parameters": 686730,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.512612222222224,
+          "std": 0.8335445358322608
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 13.130783683333329,
+          "std": 1.7659271404399175
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 41.88525390625,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.6893527883334504,
+            "std": 0.030280986832985895
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.03204418418508107,
+            "std": 0.020854997435172017
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7767015010226476,
+            "std": 0.004574798977184326
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.029199678570829946,
+            "std": 0.01748514542009184
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.759325917010663,
+            "std": 0.013226553148071534
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.00598675073750099,
+            "std": 0.019842243238861947
+          }
+        }
+      },
+      "categories_improved_vs_reference": 2,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r128_d128": {
+      "candidate_id": "adapter_r128_d128",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7396954856838097,
+        "17": 0.7032829888088097,
+        "2026": 0.7581211224955616
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7336998656627269,
+        "std": 0.02790637599437493
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.551589518131564,
+        "std": 0.012414084595127165
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.007046121418443334,
+        "std": 0.021622854833408055
+      },
+      "parameters": {
+        "total_parameters": 442314,
+        "trainable_parameters": 442314,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.509142277777777,
+          "std": 0.6766940291637129
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 12.979369344444443,
+          "std": 1.3727931174177035
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 40.95068359375,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.6879190935589056,
+            "std": 0.027135637691614107
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.033477878959625805,
+            "std": 0.03028110965628063
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7695937080642125,
+            "std": 0.032925367741181294
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.022091885612394686,
+            "std": 0.013877437642296053
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7435867953650628,
+            "std": 0.0337487257548241
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.009752370908099217,
+            "std": 0.02683054008666342
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r128_d256": {
+      "candidate_id": "adapter_r128_d256",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.7111291957545328,
+        "17": 0.7374673023457018,
+        "2026": 0.7502540979131705
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.732950198671135,
+        "std": 0.019949753417920536
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5386448492100434,
+        "std": 0.0665357720667898
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.007795788410035291,
+        "std": 0.015758246036861375
+      },
+      "parameters": {
+        "total_parameters": 639306,
+        "trainable_parameters": 639306,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.078647833333333,
+          "std": 0.26497780231641516
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 12.745181205555554,
+          "std": 1.4066815585387709
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 41.7021484375,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.6985364800746452,
+            "std": 0.024634269683471165
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.022860492443886216,
+            "std": 0.024348647708770682
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.776412700327256,
+            "std": 0.024561932709568843
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.028910877875438373,
+            "std": 0.014658270963476702
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.723901415611504,
+            "std": 0.03758980471863469
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.029437750661658064,
+            "std": 0.044398620442062164
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    },
+    "adapter_r128_d384": {
+      "candidate_id": "adapter_r128_d384",
+      "n_categories": 3,
+      "n_seeds": 3,
+      "seed_macro_aupro_0.05": {
+        "42": 0.731763538099464,
+        "17": 0.7334570329132454,
+        "2026": 0.748865291898888
+      },
+      "macro_aupro_0.05": {
+        "n": 3,
+        "mean": 0.7380286209705323,
+        "std": 0.009422953824474306
+      },
+      "macro_segf1": {
+        "n": 3,
+        "mean": 0.5454991736025786,
+        "std": 0.020433894964128195
+      },
+      "macro_aupro_delta_vs_reference": {
+        "n": 3,
+        "mean": -0.0027173661106378866,
+        "std": 0.002259791265703807
+      },
+      "parameters": {
+        "total_parameters": 836298,
+        "trainable_parameters": 836298,
+        "frozen_parameters": 0,
+        "scope": "cached_trainable_pipeline"
+      },
+      "efficiency": {
+        "n_observations": 9,
+        "latency_median_ms": {
+          "n": 9,
+          "mean": 10.656308777777777,
+          "std": 0.820972608726195
+        },
+        "latency_p95_ms": {
+          "n": 9,
+          "mean": 13.047074411111108,
+          "std": 2.0591840417350435
+        },
+        "peak_vram_mib": {
+          "n": 9,
+          "mean": 42.45361328125,
+          "std": 0.0
+        },
+        "incremental_peak_vram_mib": {
+          "n": 9,
+          "mean": 21.13427734375,
+          "std": 0.0
+        },
+        "benchmark_scope_fingerprint": "6f9bf66c7cea36d18c5d92f58e25ee0caa1f8be545979e4749811efbf15999ef"
+      },
+      "per_category": {
+        "fabric": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.6956064684421547,
+            "std": 0.010177653811936062
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.02579050407637677,
+            "std": 0.018205998570444186
+          }
+        },
+        "vial": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7894150909079736,
+            "std": 0.03360318622238673
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": 0.04191326845615595,
+            "std": 0.02460351158821423
+          }
+        },
+        "wallplugs": {
+          "aupro_0.05": {
+            "n": 3,
+            "mean": 0.7290643035614691,
+            "std": 0.04121151352242502
+          },
+          "delta_vs_reference": {
+            "n": 3,
+            "mean": -0.02427486271169284,
+            "std": 0.04706549155215412
+          }
+        }
+      },
+      "categories_improved_vs_reference": 1,
+      "eligibility": {
+        "eligible": true,
+        "reasons": []
+      }
+    }
+  },
+  "selection": {
+    "status": "SELECTED",
+    "selected_candidate": "adapter_r32_d384",
+    "eligible_candidates": [
+      "adapter_r128_d128",
+      "adapter_r128_d256",
+      "adapter_r128_d384",
+      "adapter_r32_d128",
+      "adapter_r32_d256",
+      "adapter_r32_d384",
+      "adapter_r64_d128",
+      "adapter_r64_d256",
+      "adapter_r64_d384"
+    ],
+    "finalists": [
+      "adapter_r32_d384"
+    ],
+    "trace": [
+      {
+        "stage": "primary",
+        "metric": "macro_aupro_mean",
+        "direction": "max",
+        "tolerance": 0.001,
+        "best_value": 0.7432045538086814,
+        "remaining": [
+          "adapter_r32_d384"
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "locked_before_results=true plus rule hash is an audit assertion; it does not cryptographically prove the rule existed before results unless the rule was externally timestamped/committed.",
+    "E8 does not perform the E9 configuration fairness audit. Any selected candidate remains conditional on E9."
+  ]
+}

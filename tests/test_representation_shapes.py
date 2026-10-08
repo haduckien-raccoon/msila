@@ -78,6 +78,8 @@ def _resolve_data_root(default_cfg: dict[str, Any]) -> Path:
             "or MSILA_MVTEC_AD2_ROOT."
         )
     root = Path(str(raw)).expanduser()
+    if not root.is_dir() and not override:
+        pytest.skip("Real MVTec sources missing; set MSILA_MVTEC_AD2_ROOT")
     if not root.is_dir():
         pytest.fail(f"MVTec AD 2 root does not exist: {root}")
     return root

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse, csv, hashlib, json, math, os, random, subprocess, time
+from contextlib import nullcontext
+from src.train.day05_contract import validate_signature, validate_selection, validate_day05, validate_record_sources
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -81,13 +83,15 @@ def git_value(*args):
         return None
 
 
-def seed_everything(seed: int):
+def seed_everything(seed: int, protocol=None):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    torch.use_deterministic_algorithms(True, warn_only=False)
+    t = {} if protocol is None else protocol["training"]
+    torch.use_deterministic_algorithms(t.get("deterministic_algorithms", True),
+                                      warn_only=t.get("deterministic_warn_only", False))
     torch.backends.cudnn.benchmark = False
 
 
@@ -127,6 +131,21 @@ def records_fingerprint(records):
     return sha256_json(rows)
 
 
+def masks_fingerprint(records, mask_root):
+    rows = []
+    for r in records:
+        raw = r.get("mask_path")
+        if raw is None:
+            value = {"implicit_zero": r.get("is_anomaly") is False, "hw": r.get("mask_hw")}
+        else:
+            path = Path(raw)
+            if not path.is_absolute() and mask_root is not None:
+                path = Path(mask_root) / path
+            value = sha256_file(path)
+        rows.append({"image_id": r["image_id"], "category": r["category"], "mask_sha256": value})
+    return sha256_json(rows)
+
+
 def known_positive_count(records):
     flags = []
     for r in records:
@@ -138,6 +157,8 @@ def known_positive_count(records):
 
 
 def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone: str, allow_unverified=False):
+    if expected_backbone != "dinov3_vits16":
+        raise FullTrainError("Day-05 cache validation is locked to dinov3_vits16")
     validate_cache(cache_dir)
     reader = FeatureCacheReader(cache_dir, mmap=True, shard_cache_size=1)
     missing = []
@@ -148,22 +169,17 @@ def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone:
     if missing:
         raise FullTrainError(f"cache missing {len(missing)} required records; first={missing[:3]}")
 
+    if allow_unverified:
+        raise FullTrainError("Unverified backbone provenance is forbidden for Day-05")
     signature = reader.manifest.get("producer_signature")
-    if not isinstance(signature, Mapping):
-        if not allow_unverified:
-            raise FullTrainError("cache manifest lacks producer_signature")
-        return reader, {"verified": False, "reason": "no producer_signature"}
-
-    text = json.dumps(signature, ensure_ascii=False).lower()
-    expected = expected_backbone.lower()
-    if "vits16" in expected and "vitb16" in text:
-        raise FullTrainError("BACKBONE DRIFT: Day-05 expects ViT-S/16 but cache says ViT-B/16")
-    verified = expected in text or ("vits16" in expected and "vits16" in text)
-    if not verified and not allow_unverified:
-        raise FullTrainError(f"cannot verify cache backbone={expected_backbone} from producer_signature")
+    try:
+        validate_signature(signature)
+    except ValueError as exc:
+        raise FullTrainError(str(exc)) from exc
+    if reader.manifest.get("producer_sha256") != sha256_json(signature):
+        raise FullTrainError("cache producer signature/hash mismatch")
     return reader, {
-        "verified": bool(verified),
-        "producer_signature": signature,
+        "verified": True, "producer_signature": signature,
         "producer_sha256": reader.manifest.get("producer_sha256"),
     }
 
@@ -291,8 +307,10 @@ class Day05RepresentationModel(nn.Module):
         selected = self.selector(projected)
         fused, weights = self.fusion(selected)
 
-        mask = batch["mask"]
-        logits = self.decoder(fused, output_size=(int(mask.shape[-2]), int(mask.shape[-1])))
+        output_hw = batch.get("output_hw")
+        if output_hw is None:
+            output_hw = batch["mask"].shape[-2:]
+        logits = self.decoder(fused, output_size=tuple(map(int, output_hw)))
         return logits, {
             "projected": projected,
             "selected": selected,
@@ -318,6 +336,9 @@ def verify_protocol(protocol):
         raise FullTrainError("non-null scheduler not implemented: lock it explicitly before training")
     if int(t["epochs"]) <= 0 or int(t["batch_size"]) <= 0:
         raise FullTrainError("epochs/batch_size must be >0")
+    rule = protocol.get("checkpoint", {})
+    if rule.get("monitor") not in {"val_loss", "val_total_loss"} or rule.get("mode") != "min":
+        raise FullTrainError("Unsupported Day-04 checkpoint rule; cannot silently replace it")
     if float(t["optimizer"]["lr"]) <= 0:
         raise FullTrainError("optimizer lr must be >0")
 
@@ -342,7 +363,7 @@ def make_dataset(cache_dir, records, protocol, mask_root):
 def make_loader(ds, protocol, shuffle, seed):
     d = protocol["data"]
     t = protocol["training"]
-    return make_cached_dataloader(
+    loader = make_cached_dataloader(
         ds,
         batch_size=int(t["batch_size"]),
         shuffle=shuffle,
@@ -353,15 +374,20 @@ def make_loader(ds, protocol, shuffle, seed):
         drop_last=bool(d.get("drop_last", False)) if shuffle else False,
         seed=int(seed),
     )
+    if shuffle:
+        # Separate sample order from persistent-worker base-seed consumption.
+        loader.sampler.generator = torch.Generator().manual_seed(int(seed))
+    return loader
 
 
-def make_criterion(day05):
+def make_criterion(day05, protocol=None):
     loss = day05["locked"]["loss"]
     if float(loss.get("illumination_weight", 0.0)) != 0.0:
         raise FullTrainError("illumination loss is forbidden in Day-05 representation ablation")
     return AnomalySegmentationLoss(
         bce_weight=float(loss["bce_weight"]),
         dice_weight=float(loss["dice_weight"]),
+        dice_eps=1e-6 if protocol is None else float(protocol["model"]["loss"]["dice_eps"]),
     )
 
 
@@ -377,7 +403,17 @@ def source_usage(trace):
     return out
 
 
-def run_preflight(model, loader, criterion, optimizer, device, steps):
+def amp_context(protocol, device):
+    cfg = {} if protocol is None else protocol["training"].get("amp", {})
+    if not cfg.get("enabled", False):
+        return nullcontext()
+    dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}.get(cfg.get("dtype"))
+    if dtype != torch.bfloat16:
+        raise FullTrainError("Only the locked bfloat16 AMP protocol is implemented")
+    return torch.autocast(device_type=device.type, dtype=dtype)
+
+
+def run_preflight(model, loader, criterion, optimizer, device, steps, protocol=None):
     if steps < 2:
         raise FullTrainError("preflight_steps must be >=2 because gamma_init=0")
     before = snapshot_trainable(model)
@@ -393,8 +429,12 @@ def run_preflight(model, loader, criterion, optimizer, device, steps):
             batch = next(it)
         batch = move_to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        logits, trace = model(batch, retain_source_grads=True)
-        lo = criterion(logits, batch["mask"])
+        for k, x in batch.items():
+            if k.startswith(("local_b", "context_b")) and (x.requires_grad or not torch.isfinite(x).all()):
+                raise FullTrainError(f"Frozen feature contract violated: {k}")
+        with amp_context(protocol, device):
+            logits, trace = model(batch, retain_source_grads=True)
+            lo = criterion(logits, batch["mask"])
         loss = lo["loss"]
         if not bool(torch.isfinite(loss)):
             raise FullTrainError("preflight loss NaN/Inf")
@@ -425,6 +465,8 @@ def run_preflight(model, loader, criterion, optimizer, device, steps):
         "status": "PASS",
         "candidate": model.candidate,
         "steps": int(steps),
+        "frozen_backbone_features": True,
+        "parameter_free_aligner_fusion": True,
         "losses": losses,
         "source_usage": reports,
         "changed_parameter_count": len(changed),
@@ -464,7 +506,7 @@ def save_checkpoint(path, model, optimizer, epoch, global_step, best_val, config
 
 
 def load_checkpoint(path, model, optimizer, expected_hash, device):
-    p = torch.load(path, map_location=device, weights_only=False)
+    p = torch.load(path, map_location="cpu", weights_only=False)
     if p.get("resolved_config_sha256") != expected_hash:
         raise FullTrainError("resume config mismatch")
     model.load_state_dict(p["model"], strict=True)
@@ -479,15 +521,16 @@ def load_checkpoint(path, model, optimizer, expected_hash, device):
     return int(p["epoch"]), int(p["global_step"]), p.get("best_val")
 
 
-def validate(model, loader, criterion, device):
+def validate(model, loader, criterion, device, protocol=None):
     model.eval()
     sums = {"total_loss": 0.0, "bce": 0.0, "dice": 0.0}
     n = 0
     with torch.no_grad():
         for batch in loader:
             batch = move_to_device(batch, device)
-            logits, _ = model(batch)
-            out = criterion(logits, batch["mask"])
+            with amp_context(protocol, device):
+                logits, _ = model(batch)
+                out = criterion(logits, batch["mask"])
             if not bool(torch.isfinite(out["loss"])):
                 raise FullTrainError("validation loss NaN/Inf")
             sums["total_loss"] += float(out["loss"].detach().cpu())
@@ -515,7 +558,8 @@ def lock_payload(resolved):
     keys = [
         "category", "seed", "adapter", "backbone", "input", "projection",
         "fusion", "decoder", "loss", "training", "data_fingerprints",
-        "cache_producer_sha256", "git_commit", "runner_sha256",
+        "cache_producer_sha256", "git_commit", "runner_sha256", "checkpoint_rule",
+        "data_loader", "day05_config_sha256",
     ]
     return {k: resolved[k] for k in keys}
 
@@ -539,6 +583,12 @@ def train_candidate(args):
     day05 = read_yaml(args.day05_config)
     protocol = read_yaml(args.training_protocol)
     verify_protocol(protocol)
+    validate_day05(day05)
+    if (args.r, args.d, args.seed) != (32, 384, 42):
+        raise FullTrainError("Day-05 locked adapter/seed are r32,d384,seed42")
+    if not args.adapter_selection_report:
+        raise FullTrainError("Provide the real Day-04 selection report")
+    validate_selection(args.adapter_selection_report)
 
     candidate = args.candidate.upper()
     if candidate not in {"R0", "R1", "R2"}:
@@ -555,6 +605,7 @@ def train_candidate(args):
     train_records = filter_records(load_training_records(args.train_records), args.category, "train")
     val_records = filter_records(load_training_records(args.val_records), args.category, "val")
 
+    validate_record_sources(train_records, val_records)
     tp, vp = known_positive_count(train_records), known_positive_count(val_records)
     if tp == 0:
         raise FullTrainError("TRAIN-core explicitly has zero anomaly samples; dense BCE+Dice training is invalid")
@@ -569,6 +620,11 @@ def train_candidate(args):
         allow_unverified=args.allow_unverified_cache_provenance,
     )
     in_channels = infer_in_channels(reader, train_records[0])
+    if in_channels != 384:
+        raise FullTrainError("ViT-S/16 cache must have 384 feature channels")
+    expected_sig = protocol["data"].get("expected_producer_signature")
+    if expected_sig is not None and expected_sig != provenance["producer_signature"]:
+        raise FullTrainError("cache differs from Day-04 protocol producer signature")
 
     mask_root = None if args.mask_root is None else Path(args.mask_root)
     train_ds = make_dataset(Path(args.cache_dir), train_records, protocol, mask_root)
@@ -580,13 +636,17 @@ def train_candidate(args):
 
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
-        raise FullTrainError("CUDA requested but unavailable")
+        raise FullTrainError("BLOCKED_MISSING_GPU: CUDA requested but unavailable")
 
     runner_path = Path(__file__).resolve()
     resolved = {
         "schema": "msila.day05.full_train.resolved.v1",
         "candidate": candidate,
         "representation": day05["representations"][candidate],
+        "day05_config": day05,
+        "day05_config_sha256": sha256_json(day05),
+        "data_loader": {k: v for k, v in protocol["data"].items()
+                        if k not in {"cache_dir", "train_records", "val_records", "mask_root", "expected_producer_signature"}},
         "category": args.category,
         "seed": int(args.seed),
         "adapter": {
@@ -612,6 +672,10 @@ def train_candidate(args):
             "optimizer": protocol["training"]["optimizer"],
             "scheduler": protocol["training"].get("scheduler"),
             "gradient_clip_norm": protocol["training"].get("gradient_clip_norm"),
+            "amp": protocol["training"].get("amp", {}),
+            "deterministic_algorithms": protocol["training"].get("deterministic_algorithms", True),
+            "deterministic_warn_only": protocol["training"].get("deterministic_warn_only", False),
+            "sampler_rule": "separate_generator_seed_plus_epoch_minus_one",
             "updates_per_epoch": len(train_loader),
             "total_update_budget": int(protocol["training"]["epochs"]) * len(train_loader),
         },
@@ -620,6 +684,8 @@ def train_candidate(args):
             "val_source_sha256": sha256_file(args.val_records),
             "train_filtered_sha256": records_fingerprint(train_records),
             "val_filtered_sha256": records_fingerprint(val_records),
+            "train_masks_sha256": masks_fingerprint(train_records, mask_root),
+            "val_masks_sha256": masks_fingerprint(val_records, mask_root),
         },
         "cache_producer_sha256": reader.manifest.get("producer_sha256"),
         "cache": {
@@ -628,7 +694,7 @@ def train_candidate(args):
             "provenance_check": provenance,
             "in_channels": in_channels,
         },
-        "checkpoint_rule": {"monitor": "val_total_loss", "mode": "min"},
+        "checkpoint_rule": dict(protocol["checkpoint"]),
         "git_branch": git_value("branch", "--show-current"),
         "git_commit": git_value("rev-parse", "HEAD"),
         "runner_sha256": sha256_file(runner_path),
@@ -659,6 +725,10 @@ def train_candidate(args):
     if manifest_path.is_file():
         old = json.loads(manifest_path.read_text(encoding="utf-8"))
         if old.get("status") == "COMPLETE":
+            for name in ("best.pt", "last.pt", "training_log.csv", "epoch_log.csv", "preflight_report.json", "selection_record.json", "sample_anomaly_map.png"):
+                path = run_dir / name
+                if not path.is_file() or old.get("artifact_sha256", {}).get(name) != sha256_file(path):
+                    raise FullTrainError(f"COMPLETE artifact missing/modified: {path}")
             print(f"[SKIP] already COMPLETE: {run_dir}")
             return run_dir
 
@@ -678,10 +748,10 @@ def train_candidate(args):
     }
     save_json(manifest, manifest_path)
 
-    criterion = make_criterion(day05).to(device)
+    criterion = make_criterion(day05, protocol).to(device)
 
     # Disposable exact-final-r,d preflight.
-    seed_everything(args.seed)
+    seed_everything(args.seed, protocol)
     pf_model = Day05RepresentationModel(
         day05_config=day05,
         candidate=candidate,
@@ -694,7 +764,7 @@ def train_candidate(args):
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
     pf = run_preflight(
-        pf_model, train_loader, criterion, pf_opt, device, args.preflight_steps
+        pf_model, train_loader, criterion, pf_opt, device, args.preflight_steps, protocol
     )
     pf["peak_vram_mb"] = (
         float(torch.cuda.max_memory_allocated(device) / (1024**2))
@@ -705,8 +775,13 @@ def train_candidate(args):
     if device.type == "cuda":
         torch.cuda.empty_cache()
 
+    if getattr(args, "preflight_only", False):
+        manifest["status"] = "PREFLIGHT_PASS"
+        save_json(manifest, manifest_path)
+        return run_dir
+
     # Fresh actual model.
-    seed_everything(args.seed)
+    seed_everything(args.seed, protocol)
     model = Day05RepresentationModel(
         day05_config=day05,
         candidate=candidate,
@@ -729,6 +804,21 @@ def train_candidate(args):
         start_epoch = done_epoch + 1
         print(f"[RESUME] {candidate}: epoch={done_epoch}, step={global_step}, best={best_val}")
 
+    if last_path.is_file() and not args.resume:
+        raise FullTrainError("Partial run exists; use --resume")
+    # Roll back append-only logs to the last committed epoch before replaying.
+    if args.resume:
+        for log in (train_log, epoch_log):
+            if log.is_file():
+                with log.open(newline="", encoding="utf-8") as f:
+                    reader_log = csv.DictReader(f)
+                    fields = reader_log.fieldnames
+                    rows = [r for r in reader_log if int(r["epoch"]) < start_epoch]
+                with log.open("w", newline="", encoding="utf-8") as f:
+                    writer_log = csv.DictWriter(f, fieldnames=fields)
+                    writer_log.writeheader()
+                    writer_log.writerows(rows)
+
     epochs = int(protocol["training"]["epochs"])
     grad_clip = protocol["training"].get("gradient_clip_norm")
     t0 = time.perf_counter()
@@ -736,6 +826,8 @@ def train_candidate(args):
         torch.cuda.reset_peak_memory_stats(device)
 
     for epoch in range(start_epoch, epochs + 1):
+        # Same sampler order after epoch-boundary resume, independent of preflight.
+        train_loader.sampler.generator.manual_seed(args.seed + epoch - 1)
         model.train()
         sums = {"total_loss": 0.0, "bce": 0.0, "dice": 0.0, "grad_norm": 0.0}
         n = 0
@@ -744,8 +836,9 @@ def train_candidate(args):
         for step_in_epoch, batch in enumerate(train_loader, start=1):
             batch = move_to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
-            logits, _ = model(batch)
-            out = criterion(logits, batch["mask"])
+            with amp_context(protocol, device):
+                logits, _ = model(batch)
+                out = criterion(logits, batch["mask"])
             loss = out["loss"]
             if not bool(torch.isfinite(loss)):
                 raise FullTrainError(f"NaN/Inf loss at epoch={epoch}, step={step_in_epoch}")
@@ -788,7 +881,7 @@ def train_candidate(args):
         if n == 0:
             raise FullTrainError("no training batches")
 
-        val = validate(model, val_loader, criterion, device)
+        val = validate(model, val_loader, criterion, device, protocol)
         train_mean = {k: v / n for k, v in sums.items()}
         epoch_row = {
             "candidate": candidate,
@@ -842,6 +935,10 @@ def train_candidate(args):
     model.load_state_dict(best["model"], strict=True)
     save_preview(model, val_loader, device, run_dir / "sample_anomaly_map.png")
 
+    save_json({"rule": dict(protocol["checkpoint"]), "log_monitor": "val_total_loss",
+               "selected_epoch": best["epoch"], "selected_value": best["best_val"],
+               "checkpoint_sha256": sha256_file(best_path), "manual_selection": False},
+              run_dir / "selection_record.json")
     manifest.update({
         "status": "COMPLETE",
         "completed_epochs": epochs,
@@ -863,6 +960,9 @@ def train_candidate(args):
             "sample_anomaly_map": str(run_dir / "sample_anomaly_map.png"),
         },
     })
+    manifest["artifact_sha256"] = {name: sha256_file(run_dir / name) for name in
+        ("best.pt", "last.pt", "training_log.csv", "epoch_log.csv", "preflight_report.json",
+         "selection_record.json", "sample_anomaly_map.png", "resolved_config.yaml")}
     save_json(manifest, manifest_path)
     print(f"[PASS] COMPLETE: {run_dir}")
     return run_dir
@@ -886,6 +986,7 @@ def parse_args(argv: Sequence[str] | None = None):
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--preflight-steps", type=int, default=3)
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--preflight-only", action="store_true")
     p.add_argument("--allow-unverified-cache-provenance", action="store_true")
     return p.parse_args(argv)
 

@@ -93,3 +93,7 @@ Each experiment should record:
 ## Status
 
 Current phase: **Week 1 — Dataset audit and research protocol setup**
+
+## Day 05 — TV1/TV2 integration (DINOv3 ViT-S/16)
+
+See [the Day 05 Colab runbook](docs/DAY05_PIPELINE_RUNBOOK.md) for audit, preflight, sequential R0/R1/R2 training, native tiled inference, evaluation and resume. The runner preserves the full Day 04 notebook protocol; missing real assets or diagnostic locks stop their dependent gates.

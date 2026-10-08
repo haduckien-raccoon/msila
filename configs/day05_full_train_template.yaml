@@ -1,5 +1,5 @@
 schema: msila.day05.full_train.template.v1
-status: WAITING_FOR_DAY04_SELECTION
+status: WAITING_FOR_REAL_ASSETS
 category: fabric
 candidates:
 - R0
@@ -8,13 +8,14 @@ candidates:
 adapter:
   r: 32
   d: 384
-  selection_report: "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/msila_day04/e8_full_v3/selection_report.json"
+  selection_report: null
 data:
   cache_dir: null
   train_records: null
   val_records: null
   mask_root: null
   note: Locked TRAIN-core + DEV-synthetic artifacts; never Overfit-16/test.
-training_source: configs/day04_train_protocol.yaml
+training_source: configs/day05_day04_full_v3_protocol.yaml
 representation_source: configs/day05_representation.yaml
-output_root: /content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/outputs/day05/full_train
+output_root: null
+backbone: dinov3_vits16

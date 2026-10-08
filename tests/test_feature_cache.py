@@ -516,7 +516,9 @@ def test_numerical_comparator_rejects_error_at_or_above_tolerance():
         for key, value in online.items()
     }
 
-    cached["local_b8"][0, 0, 0, 0] = TOL
+    # float32(TOL) rounds below 1e-5; use the first representable value above it.
+    cached["local_b8"][0, 0, 0, 0] = torch.nextafter(
+        torch.tensor(TOL, dtype=torch.float32), torch.tensor(float("inf")))
 
     with pytest.raises(AssertionError, match="local_b8"):
         assert_online_cache_error_below_tolerance(
@@ -632,3 +634,12 @@ def test_real_built_cache_matches_fresh_online_extraction(
     print("\n[cache-vs-online max_abs_error]")
     for key in FEATURE_KEYS:
         print(f"  {key:12s}: {errors[key]:.8e}")
+
+
+def test_numerical_comparator_rejects_exact_representable_boundary():
+    boundary = 2.0 ** -16
+    online = {key: torch.zeros((1, 2, 2, 2)) for key in FEATURE_KEYS}
+    cached = {key: value.clone() for key, value in online.items()}
+    cached["local_b8"][0, 0, 0, 0] = boundary
+    with pytest.raises(AssertionError, match="local_b8"):
+        assert_online_cache_error_below_tolerance(online, cached, tolerance=boundary)

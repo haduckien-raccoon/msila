@@ -1,15 +1,17 @@
+import os
+from pathlib import Path
 import pytest
 import torch
 
 from src.models.dinov3_extractor import DINOv3FeatureExtractor
 
 
-DINOV3_REPO = "/content/dinov3"
+DINOV3_REPO = os.getenv("DINOV3_REPO", "/content/dinov3")
 
-CHECKPOINT = (
+CHECKPOINT = os.getenv("DINOV3_CHECKPOINT", (
     "/content/drive/MyDrive/[Q3-4] 2026/[S7] Computer Vision/CV-Nhóm 9/weights/"
     "dinov3_vits16_pretrain_lvd1689m.pth"
-)
+))
 
 
 # ============================================================
@@ -24,6 +26,10 @@ def extractor():
     Important for Colab/CPU:
     avoids loading the backbone again for every test.
     """
+    if not (Path(DINOV3_REPO)/"hubconf.py").is_file() or not Path(CHECKPOINT).is_file():
+        if os.getenv("DINOV3_REPO") or os.getenv("DINOV3_CHECKPOINT"):
+            pytest.fail("Explicit real DINO source/checkpoint path is invalid")
+        pytest.skip("Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT")
     model = DINOv3FeatureExtractor(
         repo_dir=DINOV3_REPO,
         weights=CHECKPOINT,

@@ -6,9 +6,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-spec = importlib.util.spec_from_file_location('compare_delivery', Path(__file__).with_name('compare_representation.py'))
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
+from src.eval import compare_representation as m
 
 
 def make_fixture(tmp_path):

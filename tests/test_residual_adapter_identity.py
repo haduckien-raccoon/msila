@@ -5,8 +5,9 @@ from src.models.residual_adapter import ResidualAdapter2d
 
 def test_adapter_preserves_shape():
     adapter = ResidualAdapter2d(
-        in_channels=384,
-        bottleneck_channels=96,
+        in_dim=384,
+        bottleneck_dim=96,
+        projection_dim=384,
     )
 
     x = torch.randn(2, 384, 32, 32)
@@ -18,8 +19,9 @@ def test_adapter_preserves_shape():
 
 def test_gamma_zero_is_exact_identity():
     adapter = ResidualAdapter2d(
-        in_channels=384,
-        bottleneck_channels=96,
+        in_dim=384,
+        bottleneck_dim=96,
+        projection_dim=384,
         gamma_init=0.0,
     )
 
@@ -47,8 +49,9 @@ def test_gamma_zero_is_exact_identity():
 
 def test_gamma_is_trainable():
     adapter = ResidualAdapter2d(
-        in_channels=64,
-        bottleneck_channels=16,
+        in_dim=64,
+        bottleneck_dim=16,
+        projection_dim=64,
         gamma_init=0.0,
     )
 
@@ -74,8 +77,9 @@ def test_gamma_is_trainable():
 
 def test_nonzero_gamma_changes_features():
     adapter = ResidualAdapter2d(
-        in_channels=64,
-        bottleneck_channels=16,
+        in_dim=64,
+        bottleneck_dim=16,
+        projection_dim=64,
         gamma_init=1.0,
     )
 

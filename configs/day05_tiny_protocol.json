@@ -1,0 +1,8 @@
+{
+  "tiny_area_px": 1024,
+  "area_unit": "original_image_pixels",
+  "connectivity": 8,
+  "max_fpr": 0.05,
+  "locked_before_candidate_results": false,
+  "threshold_basis": "Proposed COCO-inspired small-area cutoff of 32^2 native foreground pixels; pending GT coverage review."
+}

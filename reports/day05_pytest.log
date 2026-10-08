@@ -1,0 +1,30 @@
+........................................................................ [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 33%]
+......................................ss..............................s. [ 44%]
+...........................................................sssssssss.... [ 55%]
+........s.............................................s..........ss..... [ 66%]
+........................................................................ [ 77%]
+...............................................................s........ [ 88%]
+...................................................s.................... [ 99%]
+....                                                                     [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_day03_cached_train_step.py:516: Set FEATURE_CACHE_DIR and FEATURE_TRAIN_INDEX to run the real-cache acceptance gate.
+SKIPPED [1] tests/test_day04_fairness.py:737: E9 fairness manifest not configured. Set DAY04_FAIRNESS_MANIFEST or create configs/day04_fairness.json. SKIP is not an E9 scientific PASS.
+SKIPPED [1] tests/test_day05.py:421: CUDA not available
+SKIPPED [1] tests/test_dino_features.py:75: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:90: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:104: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:113: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:137: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:152: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:167: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:176: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dino_features.py:191: Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT
+SKIPPED [1] tests/test_dinov3_extractor.py:233: Set DINOV3_REPO and DINOV3_WEIGHTS for real-backbone smoke test.
+SKIPPED [1] tests/test_feature_cache.py:535: Real integration test requires DINOV3_REPO and DINOV3_WEIGHTS.
+SKIPPED [1] tests/test_full_forward.py:57: DINOv3 repository not found: /content/dinov3
+SKIPPED [1] tests/test_full_forward.py:102: DINOv3 repository not found: /content/dinov3
+SKIPPED [1] tests/test_representation_shapes.py:82: Real MVTec sources missing; set MSILA_MVTEC_AD2_ROOT
+SKIPPED [1] tests/test_trainable_parameters.py:102: Real DINO source missing; set DINOV3_REPO
+634 passed, 18 skipped in 19.15s

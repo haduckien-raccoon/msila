@@ -1,0 +1,8 @@
+{
+  "tiny_area_px": null,
+  "area_unit": "original_image_pixels",
+  "connectivity": 8,
+  "max_fpr": 0.05,
+  "locked_before_candidate_results": false,
+  "threshold_basis": ""
+}

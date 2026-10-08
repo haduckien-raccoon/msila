@@ -9,11 +9,7 @@ import torch
 from torch import nn
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "models" / "dinov3_extractor.py"
-spec = importlib.util.spec_from_file_location("dinov3_extractor", MODULE_PATH)
-assert spec is not None and spec.loader is not None
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+import src.models.dinov3_extractor as mod
 DINOv3FeatureExtractor = mod.DINOv3FeatureExtractor
 
 

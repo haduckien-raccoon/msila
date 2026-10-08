@@ -1,0 +1,10 @@
+{
+  "boundary_mode": "image_border_band",
+  "band_width_px": null,
+  "connectivity": 8,
+  "max_fpr": 0.05,
+  "prediction_threshold": 0.5,
+  "tolerance_px": null,
+  "locked_before_candidate_results": false,
+  "rule_basis": ""
+}

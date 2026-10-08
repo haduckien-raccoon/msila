@@ -1,0 +1,10 @@
+{
+  "boundary_mode": "image_border_band",
+  "band_width_px": 32,
+  "connectivity": 8,
+  "max_fpr": 0.05,
+  "prediction_threshold": 0.5,
+  "tolerance_px": 2,
+  "locked_before_candidate_results": false,
+  "rule_basis": "Proposed image-edge diagnostic with a fixed 32-pixel band and 2-pixel contour tolerance; pending GT coverage review."
+}

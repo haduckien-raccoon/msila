@@ -7,9 +7,7 @@ import numpy as np
 import pytest
 from scipy.ndimage import label
 
-spec = importlib.util.spec_from_file_location('region_stats_delivery', Path(__file__).with_name('region_stats.py'))
-m = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(m)
+from src.eval import region_stats as m
 
 
 def fixture_data(tmp_path):

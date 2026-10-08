@@ -34,11 +34,47 @@ def load_array(base, value):
         return np.array(image)
 
 
+def validate_map_provenance(manifest, base):
+    """New Day-05 maps must be tied to actual TV1 checkpoints and explicit GT IDs."""
+    if manifest.get("schema") != "msila.day05.metric_manifest.v1":
+        return  # Preserve existing metric fixtures and Day-4 reference inputs.
+    from src.train.day05_contract import file_hash
+    handoff_path = Path(manifest["handoff_manifest"])
+    if not handoff_path.is_absolute(): handoff_path = base / handoff_path
+    if file_hash(handoff_path) != manifest["handoff_sha256"]:
+        raise ValueError("Handoff changed after inference")
+    handoff = json.loads(handoff_path.read_text())
+    if handoff.get("schema") != "msila.day05.handoff.v1":
+        raise ValueError("Metric manifest cannot use a metric manifest as its checkpoint handoff")
+    checkpoints = {r["candidate"]: r["checkpoint_sha256"] for r in handoff["runs"]}
+    if set(checkpoints) != set(CANDIDATES): raise ValueError("Incomplete checkpoint handoff")
+    for r in handoff["runs"]:
+        if file_hash(r["checkpoint_path"]) != r["checkpoint_sha256"]:
+            raise ValueError("Checkpoint changed after inference")
+    for sample in manifest["samples"]:
+        gt = Path(sample["gt_mask"]); gt = gt if gt.is_absolute() else base / gt
+        if file_hash(gt) != sample["gt_mask_sha256"]: raise ValueError("GT mask changed")
+        if set(sample.get("map_provenance", {})) != set(CANDIDATES):
+            raise ValueError("Map provenance must contain R0/R1/R2 IDs 1:1")
+        for candidate in CANDIDATES:
+            pp = Path(sample["map_provenance"][candidate]); pp = pp if pp.is_absolute() else base / pp
+            mp = Path(sample["maps"][candidate]); mp = mp if mp.is_absolute() else base / mp
+            prov = json.loads(pp.read_text())
+            expected = dict(candidate=candidate, image_id=sample["image_id"],
+                checkpoint_sha256=checkpoints[candidate], original_hw=sample["original_hw"],
+                split=manifest["split"], gt_mask_sha256=sample["gt_mask_sha256"])
+            if any(prov.get(k) != v for k, v in expected.items()) or prov.get("map_sha256") != file_hash(mp):
+                raise ValueError("Map/GT ID, checkpoint or map hash mismatch")
+            score = np.load(mp, allow_pickle=False)
+            if score.dtype != np.float32: raise ValueError("Raw Day-05 maps must be float32")
+
+
 def evaluate_manifest(manifest_path):
     manifest_path = Path(manifest_path).resolve()
     raw = manifest_path.read_bytes()
     manifest = json.loads(raw)
     base = manifest_path.parent
+    validate_map_provenance(manifest, base)
     hashes = evaluator_hashes()
     if hashes != manifest["evaluator_sha256"]:
         raise ValueError("Evaluator/metric SHA256 differs from the Day-4 lock.")

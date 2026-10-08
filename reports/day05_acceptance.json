@@ -1,0 +1,31 @@
+{
+  "code": "PASS",
+  "tests": {
+    "passed": 634,
+    "failed": 0,
+    "skipped": 18
+  },
+  "real_data": "BLOCKED_MISSING_DATA",
+  "full_training": "BLOCKED_MISSING_DATA",
+  "full_evaluation": "BLOCKED_MISSING_DATA",
+  "blockers": [
+    "real full cache/records and matching raw images",
+    "local DINO source/checkpoint",
+    "CUDA GPU",
+    "locked tiny/boundary protocol values"
+  ],
+  "backbone": "dinov3_vits16",
+  "adapter": {
+    "r": 32,
+    "d": 384
+  },
+  "fusion_dim": 64,
+  "day04_protocol": {
+    "epochs": 150,
+    "batch_size": 64,
+    "lr": 0.001,
+    "scheduler": null,
+    "amp": "bfloat16",
+    "checkpoint": "min val_loss"
+  }
+}

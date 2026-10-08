@@ -12,12 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.feature_cache import FEATURE_KEYS, FeatureCacheReader, FeatureCacheWriter
 
-MODULE_PATH = PROJECT_ROOT / "tools" / "benchmark_cache.py"
-spec = importlib.util.spec_from_file_location("benchmark_cache", MODULE_PATH)
-assert spec is not None and spec.loader is not None
-bench = importlib.util.module_from_spec(spec)
-sys.modules["benchmark_cache"] = bench
-spec.loader.exec_module(bench)
+import src.tools.benchmark_cache as bench
 
 
 def make_feature_dict(value: float = 0.0):

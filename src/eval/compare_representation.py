@@ -71,8 +71,11 @@ def select_plans(plans, limit):
 def load_display_image(base, value):
     path = Path(value)
     path = path if path.is_absolute() else base / path
-    with Image.open(path) as image:
-        arr = np.array(image.convert("RGB") if image.mode in {"P", "CMYK"} else image)
+    if path.suffix.lower() == ".npy":
+        arr = np.load(path, allow_pickle=False)
+    else:
+        with Image.open(path) as image:
+            arr = np.array(image.convert("RGB") if image.mode in {"P", "CMYK"} else image)
     if arr.ndim == 2:
         arr = np.repeat(arr[..., None], 3, axis=2)
     if arr.ndim != 3 or arr.shape[2] not in (3, 4):
