@@ -102,7 +102,7 @@ def record_split(r):
     return None if value is None else str(value).strip().lower().replace("-", "_")
 
 
-def filter_records(records, category: str, role: str):
+def filter_records(records, category: str, role: str, full_scale=False):
     out = [dict(r) for r in records if str(r.get("category", "")).lower() == category.lower()]
     if not out:
         raise FullTrainError(f"{role}: no records for category={category}")
@@ -110,7 +110,7 @@ def filter_records(records, category: str, role: str):
     forbidden = {"overfit16", "test_public", "test_private", "test_private_mixed", "validation"}
     if splits & forbidden:
         raise FullTrainError(f"{role}: forbidden splits: {sorted(splits & forbidden)}")
-    if role == "val" and splits != {"dev_synthetic"}:
+    if role == "val" and splits != ({"dev_tiny", "dev_mixed"} if full_scale else {"dev_synthetic"}):
         raise FullTrainError(f"val must be DEV-synthetic, got {sorted(splits)}")
     if role == "train" and splits and not splits.issubset({"train", "train_core"}):
         raise FullTrainError(f"train must be TRAIN-core/train, got {sorted(splits)}")
@@ -157,8 +157,6 @@ def known_positive_count(records):
 
 
 def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone: str, allow_unverified=False):
-    if expected_backbone != "dinov3_vits16":
-        raise FullTrainError("Day-05 cache validation is locked to dinov3_vits16")
     validate_cache(cache_dir)
     reader = FeatureCacheReader(cache_dir, mmap=True, shard_cache_size=1)
     missing = []
@@ -173,11 +171,23 @@ def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone:
         raise FullTrainError("Unverified backbone provenance is forbidden for Day-05")
     signature = reader.manifest.get("producer_signature")
     try:
-        validate_signature(signature)
+        validate_signature(signature, expected_backbone=expected_backbone)
     except ValueError as exc:
         raise FullTrainError(str(exc)) from exc
     if reader.manifest.get("producer_sha256") != sha256_json(signature):
         raise FullTrainError("cache producer signature/hash mismatch")
+    if signature.get('schema') == 'msila.full_scale.cache.v2':
+        from src.data.feature_cache import FEATURE_KEYS
+        spec = signature['architecture']
+        hw = [s//spec['patch_size'] for s in signature['model_input_size']]
+        for record in list(train_records)+list(val_records):
+            cached=reader.get(image_id=record['image_id'],category=record['category'])
+            for key in FEATURE_KEYS:
+                x=cached[key]
+                expected=(spec['channels'],*hw)
+                shape=tuple(x.shape[1:]) if x.ndim==4 and x.shape[0]==1 else tuple(x.shape)
+                if shape != expected:
+                    raise FullTrainError(f'Full-scale cache {record["image_id"]}/{key} shape {shape} != {expected}')
     return reader, {
         "verified": True, "producer_signature": signature,
         "producer_sha256": reader.manifest.get("producer_sha256"),
@@ -249,7 +259,9 @@ class Day05RepresentationModel(nn.Module):
                 bias=True,
             ) for b in self.blocks
         })
-        self.aligner = ContextToLocalAligner(check_finite=True, check_bounds=True)
+        deterministic_sampling = day05_config.get("schema") == "msila.full_scale.representation.v2"
+        self.aligner = ContextToLocalAligner(check_finite=True, check_bounds=True,
+                                            deterministic_sampling=deterministic_sampling)
         self.projection = SixFeatureProjection(
             in_channels=int(in_channels),
             fusion_dim=int(locked["projection"]["fusion_dim"]),
@@ -258,7 +270,8 @@ class Day05RepresentationModel(nn.Module):
             check_finite=True,
         )
         self.fusion = MeanFusion(validate=True, return_weights=True)
-        self.decoder = BasicDecoder(in_channels=int(locked["projection"]["fusion_dim"]))
+        self.decoder = BasicDecoder(in_channels=int(locked["projection"]["fusion_dim"]),
+                                    deterministic_resize=deterministic_sampling)
         self._freeze_inactive()
 
     def _freeze_inactive(self):
@@ -336,8 +349,11 @@ def verify_protocol(protocol):
         raise FullTrainError("non-null scheduler not implemented: lock it explicitly before training")
     if int(t["epochs"]) <= 0 or int(t["batch_size"]) <= 0:
         raise FullTrainError("epochs/batch_size must be >0")
+    if int(t.get('checkpoint_interval_steps',100)) <= 0:
+        raise FullTrainError('checkpoint_interval_steps must be positive')
     rule = protocol.get("checkpoint", {})
-    if rule.get("monitor") not in {"val_loss", "val_total_loss"} or rule.get("mode") != "min":
+    if not ((rule.get("monitor") in {"val_loss", "val_total_loss"} and rule.get("mode") == "min")
+            or (rule.get("monitor") == "dev_aupro" and rule.get("mode") == "max")):
         raise FullTrainError("Unsupported Day-04 checkpoint rule; cannot silently replace it")
     if float(t["optimizer"]["lr"]) <= 0:
         raise FullTrainError("optimizer lr must be >0")
@@ -387,7 +403,7 @@ def make_criterion(day05, protocol=None):
     return AnomalySegmentationLoss(
         bce_weight=float(loss["bce_weight"]),
         dice_weight=float(loss["dice_weight"]),
-        dice_eps=1e-6 if protocol is None else float(protocol["model"]["loss"]["dice_eps"]),
+        dice_eps=1e-6 if protocol is None else float(protocol.get("model", {}).get("loss", {}).get("dice_eps",1e-6)),
     )
 
 
@@ -484,7 +500,7 @@ def append_csv(path: Path, row):
         w.writerow(row)
 
 
-def save_checkpoint(path, model, optimizer, epoch, global_step, best_val, config_hash):
+def save_checkpoint(path, model, optimizer, epoch, global_step, best_val, config_hash, progress=None):
     payload = {
         "schema": "msila.day05.full_train.checkpoint.v1",
         "model": model.state_dict(),
@@ -493,6 +509,7 @@ def save_checkpoint(path, model, optimizer, epoch, global_step, best_val, config
         "global_step": int(global_step),
         "best_val": best_val,
         "resolved_config_sha256": config_hash,
+        "progress": progress,
         "rng": {
             "python": random.getstate(),
             "numpy": np.random.get_state(),
@@ -503,6 +520,11 @@ def save_checkpoint(path, model, optimizer, epoch, global_step, best_val, config
     tmp = path.with_suffix(path.suffix + ".tmp")
     torch.save(payload, tmp)
     os.replace(tmp, path)
+    if progress is not None:
+        sha_path = path.with_suffix(path.suffix + '.sha256')
+        tmp_sha = sha_path.with_suffix(sha_path.suffix + '.tmp')
+        tmp_sha.write_text(sha256_file(path) + '\n')
+        os.replace(tmp_sha, sha_path)
 
 
 def load_checkpoint(path, model, optimizer, expected_hash, device):
@@ -511,6 +533,7 @@ def load_checkpoint(path, model, optimizer, expected_hash, device):
         raise FullTrainError("resume config mismatch")
     model.load_state_dict(p["model"], strict=True)
     optimizer.load_state_dict(p["optimizer"])
+    model._resume_partial = p.get("progress") or {}
     rng = p.get("rng", {})
     if rng:
         random.setstate(rng["python"])
@@ -525,6 +548,10 @@ def validate(model, loader, criterion, device, protocol=None):
     model.eval()
     sums = {"total_loss": 0.0, "bce": 0.0, "dice": 0.0}
     n = 0
+    metrics = None
+    if protocol is not None and protocol.get("evaluation", {}).get("synthetic_protocol"):
+        from src.eval.full_scale import DEVMetricAccumulator
+        metrics = DEVMetricAccumulator(protocol["evaluation"]["synthetic_protocol"], per_region=False,disk_backed=True)
     with torch.no_grad():
         for batch in loader:
             batch = move_to_device(batch, device)
@@ -533,13 +560,28 @@ def validate(model, loader, criterion, device, protocol=None):
                 out = criterion(logits, batch["mask"])
             if not bool(torch.isfinite(out["loss"])):
                 raise FullTrainError("validation loss NaN/Inf")
-            sums["total_loss"] += float(out["loss"].detach().cpu())
-            sums["bce"] += float(out["bce"].detach().cpu())
-            sums["dice"] += float(out["dice"].detach().cpu())
-            n += 1
+            weight = int(logits.shape[0]) if metrics is not None else 1
+            sums["total_loss"] += weight * float(out["loss"].detach().cpu())
+            sums["bce"] += weight * float(out["bce"].detach().cpu())
+            sums["dice"] += weight * float(out["dice"].detach().cpu())
+            n += weight
+            if metrics is not None:
+                scores = logits.float().sigmoid().cpu().numpy()
+                masks = batch["mask"].cpu().numpy()
+                for i, meta in enumerate(batch["meta"]):
+                    metrics.add(scores[i,0], masks[i,0], split=meta["split"],
+                                image_id=str(meta.get("native_image_id", i)))
     if n == 0:
         raise FullTrainError("validation loader empty")
-    return {k: v / n for k, v in sums.items()}
+    result = {k: v / n for k, v in sums.items()}
+    if metrics is not None:
+        report = metrics.result()
+        if report["dev_aupro"] is None:
+            raise FullTrainError("DEV tiny/mixed AU-PRO is undefined; selection cannot proceed")
+        result.update(dev_aupro=report["dev_aupro"],
+                      dev_tiny_aupro=report["groups"]["dev_tiny"]["aupro_0_05"],
+                      dev_mixed_aupro=report["groups"]["dev_mixed"]["aupro_0_05"])
+    return result
 
 
 def save_preview(model, loader, device, path):
@@ -561,7 +603,10 @@ def lock_payload(resolved):
         "cache_producer_sha256", "git_commit", "runner_sha256", "checkpoint_rule",
         "data_loader", "day05_config_sha256",
     ]
-    return {k: resolved[k] for k in keys}
+    payload = {k: resolved[k] for k in keys}
+    if resolved.get('day05_config', {}).get('schema') == 'msila.full_scale.representation.v2':
+        payload['evaluation'] = resolved['evaluation']
+    return payload
 
 
 def enforce_lock(output_root, payload):
@@ -580,32 +625,41 @@ def enforce_lock(output_root, payload):
 
 
 def train_candidate(args):
+    candidate_started = time.perf_counter()
     day05 = read_yaml(args.day05_config)
     protocol = read_yaml(args.training_protocol)
     verify_protocol(protocol)
     validate_day05(day05)
-    if (args.r, args.d, args.seed) != (32, 384, 42):
+    full = day05.get("schema") == "msila.full_scale.representation.v2"
+    if getattr(args, "backbone", None) and args.backbone != day05["locked"]["backbone"]["name"]:
+        raise FullTrainError("CLI backbone differs from the model config")
+    if full and day05["locked"]["training"]["seed"] != args.seed:
+        raise FullTrainError("CLI seed differs from resolved representation config")
+    if not full and (args.r, args.d, args.seed) != (32, 384, 42):
         raise FullTrainError("Day-05 locked adapter/seed are r32,d384,seed42")
-    if not args.adapter_selection_report:
+    if not full and not args.adapter_selection_report:
         raise FullTrainError("Provide the real Day-04 selection report")
-    validate_selection(args.adapter_selection_report)
+    if not full:
+        validate_selection(args.adapter_selection_report)
+    elif protocol["checkpoint"] != {"monitor": "dev_aupro", "mode": "max"}:
+        raise FullTrainError("Full-scale checkpoint selection requires locked DEV AU-PRO, mode=max")
 
     candidate = args.candidate.upper()
     if candidate not in {"R0", "R1", "R2"}:
         raise FullTrainError("candidate must be R0/R1/R2")
     if args.r <= 0 or args.d <= 0:
         raise FullTrainError("r,d must be final locked Day-04 winner >0")
-    if day05["locked"]["backbone"]["name"] != "dinov3_vits16":
+    if not full and day05["locked"]["backbone"]["name"] != "dinov3_vits16":
         raise FullTrainError("Day-05 full runner is locked to dinov3_vits16")
     if day05["locked"]["fusion"]["type"] != "mean" or day05["locked"]["fusion"]["trainable"]:
         raise FullTrainError("Day-05 must use parameter-free MeanFusion")
     if day05["experiment"]["candidate_ids"] != ["R0", "R1", "R2"]:
         raise FullTrainError("candidate config drift")
 
-    train_records = filter_records(load_training_records(args.train_records), args.category, "train")
-    val_records = filter_records(load_training_records(args.val_records), args.category, "val")
+    train_records = filter_records(load_training_records(args.train_records), args.category, "train", full)
+    val_records = filter_records(load_training_records(args.val_records), args.category, "val", full)
 
-    validate_record_sources(train_records, val_records)
+    validate_record_sources(train_records, val_records, full_scale=full)
     tp, vp = known_positive_count(train_records), known_positive_count(val_records)
     if tp == 0:
         raise FullTrainError("TRAIN-core explicitly has zero anomaly samples; dense BCE+Dice training is invalid")
@@ -620,8 +674,20 @@ def train_candidate(args):
         allow_unverified=args.allow_unverified_cache_provenance,
     )
     in_channels = infer_in_channels(reader, train_records[0])
-    if in_channels != 384:
-        raise FullTrainError("ViT-S/16 cache must have 384 feature channels")
+    from src.models.backbone_registry import backbone_spec
+    spec = backbone_spec(day05["locked"]["backbone"]["name"])
+    if in_channels != spec.channels:
+        raise FullTrainError(f"Cache channel mismatch: {in_channels} != {spec.channels}")
+    if getattr(args, "dino_checkpoint", None):
+        validate_signature(provenance["producer_signature"], args.dino_checkpoint,
+                           expected_backbone=day05["locked"]["backbone"]["name"])
+    if full and provenance["producer_signature"].get("schema") != "msila.full_scale.cache.v2":
+        raise FullTrainError("Full-scale requires newly versioned tiny/mixed DEV cache")
+    if full and (protocol.get('evaluation', {}).get('synthetic_protocol') !=
+                 provenance['producer_signature']['synthetic_protocol']):
+        raise FullTrainError('Evaluation protocol differs from the predeclared synthetic producer')
+    if provenance["producer_signature"]["logical_layers_1based"] != day05["locked"]["backbone"]["feature_blocks"]:
+        raise FullTrainError("Cache physical blocks differ from model config")
     expected_sig = protocol["data"].get("expected_producer_signature")
     if expected_sig is not None and expected_sig != provenance["producer_signature"]:
         raise FullTrainError("cache differs from Day-04 protocol producer signature")
@@ -695,6 +761,7 @@ def train_candidate(args):
             "in_channels": in_channels,
         },
         "checkpoint_rule": dict(protocol["checkpoint"]),
+        "evaluation": protocol.get("evaluation", {}),
         "git_branch": git_value("branch", "--show-current"),
         "git_commit": git_value("rev-parse", "HEAD"),
         "runner_sha256": sha256_file(runner_path),
@@ -707,8 +774,11 @@ def train_candidate(args):
     }
 
     output_root = Path(args.output_root)
-    lock_sha = enforce_lock(output_root, lock_payload(resolved))
+    lock_root = output_root/'protocol_locks'/f'seed_{args.seed}'/args.category if full else output_root
+    lock_sha = enforce_lock(lock_root, lock_payload(resolved))
     resolved["protocol_lock_sha256"] = lock_sha
+    if full:
+        resolved['protocol_lock_path'] = str(lock_root/'protocol_lock.json')
 
     run_dir = output_root / f"seed_{args.seed}" / args.category / candidate
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -729,6 +799,10 @@ def train_candidate(args):
                 path = run_dir / name
                 if not path.is_file() or old.get("artifact_sha256", {}).get(name) != sha256_file(path):
                     raise FullTrainError(f"COMPLETE artifact missing/modified: {path}")
+            if full:
+                for name in ('best.pt.sha256','last.pt.sha256','trainable_parameters.json'):
+                    if old.get('artifact_sha256',{}).get(name) != sha256_file(run_dir/name):
+                        raise FullTrainError(f'COMPLETE artifact missing/modified: {name}')
             print(f"[SKIP] already COMPLETE: {run_dir}")
             return run_dir
 
@@ -746,6 +820,9 @@ def train_candidate(args):
         "protocol_lock_sha256": lock_sha,
         "started_at_unix": time.time(),
     }
+    if full:
+        manifest.update(backbone=day05['locked']['backbone'],
+                        total_update_budget=resolved['training']['total_update_budget'])
     save_json(manifest, manifest_path)
 
     criterion = make_criterion(day05, protocol).to(device)
@@ -760,6 +837,15 @@ def train_candidate(args):
         adapter_d=args.d,
     ).to(device)
     pf_opt = build_optimizer(pf_model, protocol)
+    if full:
+        parts = {name: sum(p.numel() for p in module.parameters() if p.requires_grad)
+                 for name, module in (("adapter", pf_model.adapters), ("projection", pf_model.projection),
+                                       ("decoder", pf_model.decoder), ("fusion", pf_model.fusion))}
+        save_json(dict(trainable_parameters=sum(parts.values()), parts=parts,
+                       backbone_frozen=True, backbone=args.backbone if getattr(args, "backbone", None)
+                       else day05["locked"]["backbone"]["name"], in_channels=in_channels,
+                       adapter_r=args.r, adapter_d=args.d,
+                       fusion_dim=day05["locked"]["projection"]["fusion_dim"]),run_dir/"trainable_parameters.json")
     if device.type == "cuda":
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(device)
@@ -798,9 +884,21 @@ def train_candidate(args):
 
     start_epoch, global_step, best_val = 1, 0, None
     if args.resume and last_path.is_file():
+        if full:
+            sidecar = last_path.with_suffix('.pt.sha256')
+            if not sidecar.is_file() or sidecar.read_text().strip() != sha256_file(last_path):
+                raise FullTrainError("Resume checkpoint checksum missing or invalid; configuration preserved")
         done_epoch, global_step, best_val = load_checkpoint(
             last_path, model, optimizer, resolved_hash, device
         )
+        if full:
+            progress=getattr(model,'_resume_partial',{})
+            step=int(progress.get('step_in_epoch',0))
+            count=len(train_loader)
+            if (not 0 <= done_epoch <= int(protocol['training']['epochs']) or not 0 <= step <= count
+                    or progress.get('epoch') != done_epoch+1 or global_step != done_epoch*count+step
+                    or (step and int(progress.get('n',-1)) != step)):
+                raise FullTrainError('Resume checkpoint epoch/update progress is inconsistent')
         start_epoch = done_epoch + 1
         print(f"[RESUME] {candidate}: epoch={done_epoch}, step={global_step}, best={best_val}")
 
@@ -813,7 +911,8 @@ def train_candidate(args):
                 with log.open(newline="", encoding="utf-8") as f:
                     reader_log = csv.DictReader(f)
                     fields = reader_log.fieldnames
-                    rows = [r for r in reader_log if int(r["epoch"]) < start_epoch]
+                    rows = [r for r in reader_log if (int(r["global_step"]) <= global_step
+                            if full and log == train_log else int(r["epoch"]) < start_epoch)]
                 with log.open("w", newline="", encoding="utf-8") as f:
                     writer_log = csv.DictWriter(f, fieldnames=fields)
                     writer_log.writeheader()
@@ -822,6 +921,10 @@ def train_candidate(args):
     epochs = int(protocol["training"]["epochs"])
     grad_clip = protocol["training"].get("gradient_clip_norm")
     t0 = time.perf_counter()
+    manifest['preparation_elapsed_sec'] = t0-candidate_started
+    partial = getattr(model, '_resume_partial', {}) if full else {}
+    previous_elapsed = float(partial.get('elapsed_sec', 0.))
+    previous_peak = float(partial.get('peak_vram_mb', 0.))
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
 
@@ -831,9 +934,17 @@ def train_candidate(args):
         model.train()
         sums = {"total_loss": 0.0, "bce": 0.0, "dice": 0.0, "grad_norm": 0.0}
         n = 0
+        skip_steps = 0
+        if full and partial.get('epoch') == epoch:
+            skip_steps = int(partial.get('step_in_epoch', 0))
+            if skip_steps:
+                sums = dict(partial['sums'])
+                n = int(partial['n'])
         e0 = time.perf_counter()
 
         for step_in_epoch, batch in enumerate(train_loader, start=1):
+            if step_in_epoch <= skip_steps:
+                continue
             batch = move_to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
             with amp_context(protocol, device):
@@ -872,11 +983,19 @@ def train_candidate(args):
                 "elapsed_sec": float(elapsed),
                 "peak_vram_mb": peak,
             }
+            if full:
+                row['elapsed_sec'] += previous_elapsed
+                row['peak_vram_mb'] = max(previous_peak,row['peak_vram_mb'])
             append_csv(train_log, row)
             sums["total_loss"] += row["total_loss"]
             sums["bce"] += row["bce"]
             sums["dice"] += row["dice"]
             sums["grad_norm"] += row["grad_norm"]
+            if full and step_in_epoch % int(protocol['training'].get('checkpoint_interval_steps', 100)) == 0:
+                save_checkpoint(last_path, model, optimizer, epoch-1, global_step, best_val, resolved_hash,
+                    progress=dict(epoch=epoch,step_in_epoch=step_in_epoch,sums=sums,n=n,
+                                  elapsed_sec=previous_elapsed+time.perf_counter()-t0,
+                                  peak_vram_mb=max(previous_peak,peak)))
 
         if n == 0:
             raise FullTrainError("no training batches")
@@ -903,12 +1022,18 @@ def train_candidate(args):
                 if device.type == "cuda" else 0.0
             ),
         }
+        if full:
+            epoch_row.update({k:val[k] for k in ('dev_aupro','dev_tiny_aupro','dev_mixed_aupro')})
+            epoch_row['elapsed_sec'] += previous_elapsed
+            epoch_row['peak_vram_mb'] = max(previous_peak,epoch_row['peak_vram_mb'])
         append_csv(epoch_log, epoch_row)
-
-        if best_val is None or val["total_loss"] < best_val:
-            best_val = float(val["total_loss"])
-            save_checkpoint(best_path, model, optimizer, epoch, global_step, best_val, resolved_hash)
-        save_checkpoint(last_path, model, optimizer, epoch, global_step, best_val, resolved_hash)
+        monitor = val["dev_aupro"] if full else val["total_loss"]
+        progress = dict(epoch=epoch+1,step_in_epoch=0,elapsed_sec=previous_elapsed+time.perf_counter()-t0,
+                        peak_vram_mb=max(previous_peak,epoch_row['peak_vram_mb'])) if full else None
+        if best_val is None or (monitor > best_val if full else monitor < best_val):
+            best_val = float(monitor)
+            save_checkpoint(best_path, model, optimizer, epoch, global_step, best_val, resolved_hash, progress)
+        save_checkpoint(last_path, model, optimizer, epoch, global_step, best_val, resolved_hash, progress)
 
         manifest.update({
             "status": "RUNNING",
@@ -935,7 +1060,7 @@ def train_candidate(args):
     model.load_state_dict(best["model"], strict=True)
     save_preview(model, val_loader, device, run_dir / "sample_anomaly_map.png")
 
-    save_json({"rule": dict(protocol["checkpoint"]), "log_monitor": "val_total_loss",
+    save_json({"rule": dict(protocol["checkpoint"]), "log_monitor": "dev_aupro" if full else "val_total_loss",
                "selected_epoch": best["epoch"], "selected_value": best["best_val"],
                "checkpoint_sha256": sha256_file(best_path), "manual_selection": False},
               run_dir / "selection_record.json")
@@ -963,6 +1088,13 @@ def train_candidate(args):
     manifest["artifact_sha256"] = {name: sha256_file(run_dir / name) for name in
         ("best.pt", "last.pt", "training_log.csv", "epoch_log.csv", "preflight_report.json",
          "selection_record.json", "sample_anomaly_map.png", "resolved_config.yaml")}
+    if full:
+        manifest.pop('best_val_total_loss', None)
+        manifest.update(best_dev_aupro=best_val, selection_data='DEV_tiny+DEV_mixed_cached_native_tiles',
+                        total_elapsed_sec=previous_elapsed+time.perf_counter()-t0,
+                        peak_vram_mb=max(previous_peak,manifest['peak_vram_mb']))
+        manifest['artifact_sha256'].update({name:sha256_file(run_dir/name) for name in
+                                            ('best.pt.sha256','last.pt.sha256','trainable_parameters.json')})
     save_json(manifest, manifest_path)
     print(f"[PASS] COMPLETE: {run_dir}")
     return run_dir
@@ -972,8 +1104,10 @@ def parse_args(argv: Sequence[str] | None = None):
     p = argparse.ArgumentParser()
     p.add_argument("--candidate", required=True, choices=["R0", "R1", "R2"])
     p.add_argument("--category", default="fabric")
-    p.add_argument("--r", required=True, type=int)
-    p.add_argument("--d", required=True, type=int)
+    p.add_argument("--r", "--adapter-r", dest="r", required=True, type=int)
+    p.add_argument("--d", "--adapter-d", dest="d", required=True, type=int)
+    p.add_argument("--backbone", default=None)
+    p.add_argument("--dino-checkpoint", default=None)
     p.add_argument("--cache-dir", required=True)
     p.add_argument("--train-records", required=True)
     p.add_argument("--val-records", required=True)

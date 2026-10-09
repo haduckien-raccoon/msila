@@ -81,82 +81,96 @@ class SampleRecord:
     category: str
     split: str
     mask_path: Optional[str]
+    defect_type: str = "good"
+    gt_status: str = "normal_zero"
+    mask_candidates: Tuple[str, ...] = ()
+
+    @property
+    def is_normal(self) -> bool:
+        return self.defect_type in {"good", "normal", "ok"}
 
 
-def scan_mvtec_ad2(data_root: str | Path) -> List[SampleRecord]:
+def _layout_identity(path: Path, root: Path):
+    parts = path.relative_to(root).parts
+    splits = [(i, _canonical_split(x)) for i, x in enumerate(parts[:-1])
+              if _canonical_split(x) is not None]
+    if len(splits) != 1 or splits[0][0] == 0:
+        return None
+    idx, split = splits[0]
+    # Supports category/split/{good,bad}/..., category/split/ground_truth/bad/...
+    # and category/ground_truth/split/bad/...; unscoped GT is never guessed.
+    tail = [x for x in parts[idx+1:-1] if _norm_token(x) not in MASK_DIR_TOKENS]
+    defect = _norm_token(tail[0]) if tail else ("good" if split == "train" else "unknown")
+    identity = tuple(tail[1:]) + (_canonical_stem(path.stem),)
+    return parts[0], split, defect, identity
+
+
+def scan_mvtec_ad2(data_root: str | Path, *, require_pixel_gt: bool = False,
+                   split: Optional[str] = None, categories: Optional[Sequence[str]] = None) -> List[SampleRecord]:
     root = Path(data_root)
     if not root.exists():
         raise FileNotFoundError(f"DATA_ROOT does not exist: {root}")
-
-    all_files = [
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
-    ]
-
-    images = []
-    masks = []
-
-    for p in all_files:
-        rel = p.relative_to(root)
-        parts = list(rel.parts)
-
-        split = None
-        for part in parts:
-            s = _canonical_split(part)
-            if s is not None:
-                split = s
-                break
-
-        if split is None:
+    images, masks = [], {}
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in IMAGE_EXTS:
             continue
-
-        category = parts[0] if parts else "unknown"
-
-        item = {
-            "path": str(p),
-            "category": category,
-            "split": split,
-            "stem": _canonical_stem(p.stem),
-        }
-
-        if _is_mask_path(p):
-            masks.append(item)
+        key = _layout_identity(p, root)
+        if key is None:
+            continue
+        if split is not None and key[1] != split:
+            continue
+        if categories is not None and key[0] not in categories:
+            continue
+        if _is_mask_path(p.relative_to(root)):
+            masks.setdefault(key, []).append(str(p))
         else:
-            images.append(item)
-
-    # Pair mask conservatively by category + split + canonical stem.
-    mask_index: Dict[Tuple[str, str, str], List[str]] = {}
-    for m in masks:
-        key = (m["category"], m["split"], m["stem"])
-        mask_index.setdefault(key, []).append(m["path"])
-
-    # Fallback index ignores split, useful when ground-truth is stored
-    # under a parallel directory layout.
-    mask_fallback: Dict[Tuple[str, str], List[str]] = {}
-    for m in masks:
-        key = (m["category"], m["stem"])
-        mask_fallback.setdefault(key, []).append(m["path"])
-
+            images.append((p, key))
     records = []
-    for im in images:
-        key = (im["category"], im["split"], im["stem"])
-        candidates = mask_index.get(key, [])
-
-        if not candidates:
-            candidates = mask_fallback.get((im["category"], im["stem"]), [])
-
-        mask_path = candidates[0] if len(candidates) == 1 else None
-
-        records.append(
-            SampleRecord(
-                image_path=im["path"],
-                category=im["category"],
-                split=im["split"],
-                mask_path=mask_path,
-            )
-        )
-
+    image_counts = {}
+    for _, key in images:
+        image_counts[key] = image_counts.get(key, 0) + 1
+    for p, key in images:
+        category, role, defect, _ = key
+        candidates = tuple(masks.get(key, ()))
+        normal = defect in {"good", "normal", "ok"}
+        status = "normal_zero" if normal else ("matched" if len(candidates) == 1 else
+                                               "ambiguous" if candidates else "missing")
+        if not normal and image_counts[key] > 1:
+            status = "ambiguous"
+        if require_pixel_gt and not normal and status != "matched":
+            raise ValueError(f"{status} pixel GT (abnormal GT): category={category}, split={role}, "
+                             f"defect={defect}, image={p}, candidates={candidates}")
+        records.append(SampleRecord(str(p), category, role,
+                                   candidates[0] if status == "matched" else None,
+                                   defect, status, candidates))
     return records
+
+
+def audit_mvtec_ad2(data_root: str | Path) -> dict:
+    records = scan_mvtec_ad2(data_root)
+    rows, counts, errors = [], {}, []
+    for r in records:
+        key = f"{r.category}/{r.split}"
+        count = counts.setdefault(key, dict(normal=0, abnormal=0, normal_zero=0, matched=0, missing=0, ambiguous=0))
+        count["normal" if r.is_normal else "abnormal"] += 1
+        if r.gt_status in count:
+            count[r.gt_status] += 1
+        with Image.open(r.image_path) as im:
+            hw = [im.height, im.width]
+        row = dict(image=r.image_path, category=r.category, split=r.split,
+                   defect_type=r.defect_type, native_hw=hw, gt_status=r.gt_status,
+                   mask=r.mask_path, candidates=list(r.mask_candidates))
+        if r.gt_status in {"missing", "ambiguous"}:
+            errors.append(dict(image=r.image_path, error=r.gt_status))
+        if r.mask_path:
+            with Image.open(r.mask_path) as im:
+                row["mask_hw"] = [im.height, im.width]
+                row['mask_requires_nearest_resize'] = row['mask_hw'] != hw
+                if not np.asarray(im).any():
+                    errors.append(dict(image=r.image_path, error="abnormal GT is empty"))
+        rows.append(row)
+    return dict(schema="msila.dataset_audit.v2", root=str(data_root), counts=counts,
+                images=rows, errors=errors, status="PASS" if records and not errors else "FAIL")
 
 
 def load_rgb_native(path: str | Path) -> torch.Tensor:
@@ -229,12 +243,14 @@ class MVTecAD2HighResDataset(Dataset):
         categories: Optional[Sequence[str]] = None,
         mean: Sequence[float] = DINOV3_MEAN,
         std: Sequence[float] = DINOV3_STD,
+        require_pixel_gt: bool = True,
     ):
         self.data_root = Path(data_root)
         self.mean = tuple(float(v) for v in mean)
         self.std = tuple(float(v) for v in std)
 
-        records = scan_mvtec_ad2(self.data_root)
+        records = scan_mvtec_ad2(self.data_root, require_pixel_gt=require_pixel_gt,
+                                  split=split, categories=categories)
 
         if split is not None:
             records = [r for r in records if r.split == split]
@@ -259,9 +275,11 @@ class MVTecAD2HighResDataset(Dataset):
         image = load_rgb_native(rec.image_path)
         _, h, w = image.shape
 
-        mask = None
+        mask = torch.zeros((h, w), dtype=torch.uint8) if rec.is_normal else None
         if rec.mask_path is not None:
             mask = load_mask_native(rec.mask_path, target_hw=(h, w))
+            if not rec.is_normal and not bool(mask.any()):
+                raise ValueError(f"Abnormal GT is empty: {rec.image_path}, mask={rec.mask_path}")
             if tuple(mask.shape) != (h, w):
                 raise AssertionError(
                     f"Mask shape {tuple(mask.shape)} != image shape {(h,w)}"
@@ -278,6 +296,8 @@ class MVTecAD2HighResDataset(Dataset):
                 "W": w,
                 "path": rec.image_path,
                 "mask_path": rec.mask_path,
+                "defect_type": rec.defect_type,
+                "is_anomaly": not rec.is_normal,
             },
         }
 

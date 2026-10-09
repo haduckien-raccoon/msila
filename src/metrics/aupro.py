@@ -168,11 +168,45 @@ def _normalized_partial_auc(
         x = np.concatenate([x, [max_fpr]])
         y = np.concatenate([y, [y_at_max]])
 
-    area = float(np.trapz(y, x))
+    integrate = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+    area = float(integrate(y, x))
     normalized = area / max_fpr
 
     # Numerical round-off only; a valid normalized AU-PRO is in [0, 1].
     return float(np.clip(normalized, 0.0, 1.0))
+
+
+def aupro_from_parts(normal_parts, components, max_fpr=0.05, *, sorted_normals=False):
+    """Exact same empirical AU-PRO using chunked (optionally mmap) background.
+
+    Normal-only events between two foreground events have constant PRO. Their
+    counts at each foreground event therefore suffice to reproduce the curve,
+    including before/after counts for tied scores. This avoids concatenating
+    every native background pixel for large full-scale DEV collections.
+    """
+    if not 0 < max_fpr <= 1:
+        raise ValueError('max_fpr must be in (0,1]')
+    if not components:
+        return dict(aupro=None,status='NO_REGIONS')
+    values, increments = _aggregate_component_events(components)
+    greater = np.zeros(len(values),dtype=np.int64)
+    greater_equal = np.zeros(len(values),dtype=np.int64)
+    total = 0
+    for part in normal_parts:
+        part = np.asarray(part)
+        if part.ndim != 1 or not np.isfinite(part).all():
+            raise ValueError('Background chunks must be finite 1D score arrays')
+        ordered = part if sorted_normals else np.sort(part)
+        total += ordered.size
+        greater += ordered.size-np.searchsorted(ordered,values,side='right')
+        greater_equal += ordered.size-np.searchsorted(ordered,values,side='left')
+    if not total:
+        return dict(aupro=None,status='NO_NORMAL_PIXELS')
+    after = np.cumsum(increments[::-1])
+    before = after-increments[::-1]
+    fpr = np.concatenate(([0.],np.column_stack((greater[::-1]/total,greater_equal[::-1]/total)).ravel(),[1.]))
+    pro = np.concatenate(([0.],np.column_stack((before,after)).ravel(),[1.]))
+    return dict(aupro=_normalized_partial_auc(fpr,pro,float(max_fpr)),status='OK')
 
 
 def aupro(

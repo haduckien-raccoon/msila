@@ -346,7 +346,7 @@ def _validate_shard_header(
 
 def _new_manifest(signature: Mapping[str, Any]) -> dict[str, Any]:
     signature = _to_jsonable(dict(signature))
-    return {
+    manifest = {
         "schema_name": SCHEMA_NAME,
         "schema_version": SCHEMA_VERSION,
         "storage": {
@@ -360,6 +360,17 @@ def _new_manifest(signature: Mapping[str, Any]) -> dict[str, Any]:
         "num_shards": 0,
         "index": {},
     }
+    if signature.get('schema') == 'msila.full_scale.cache.v2':
+        manifest['shard_sha256'] = {}
+    return manifest
+
+
+def _file_sha256(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as handle:
+        for chunk in iter(lambda:handle.read(1024*1024),b''):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 class FeatureCacheWriter:
@@ -479,6 +490,8 @@ class FeatureCacheWriter:
 
         # 1) Commit shard.
         _atomic_torch_save(shard_path, payload)
+        if 'shard_sha256' in self.manifest:
+            self.manifest['shard_sha256'][shard_rel] = _file_sha256(shard_path)
 
         # 2) Update manifest only after shard exists.
         for key in self._pending:
@@ -553,6 +566,7 @@ class FeatureCacheReader:
             raise SchemaError("Manifest feature_keys mismatch")
 
         self.producer_sha256 = self.manifest["producer_sha256"]
+        self._verified_shards = {}
         if expected_producer_signature is not None:
             expected_hash = producer_hash(expected_producer_signature)
             if expected_hash != self.producer_sha256:
@@ -584,6 +598,14 @@ class FeatureCacheReader:
         shard_path = self.root / shard_rel
         if not shard_path.is_file():
             raise FileNotFoundError(shard_path)
+        if self.manifest['producer_signature'].get('schema') == 'msila.full_scale.cache.v2':
+            stat = shard_path.stat()
+            stamp = (stat.st_size,stat.st_mtime_ns)
+            if self._verified_shards.get(shard_rel) != stamp:
+                expected = self.manifest.get('shard_sha256',{}).get(shard_rel)
+                if expected is None or _file_sha256(shard_path) != expected:
+                    raise ProducerMismatchError(f'Full-scale cache shard checksum missing or invalid: {shard_rel}')
+                self._verified_shards[shard_rel] = stamp
 
         shard = _safe_torch_load(shard_path, mmap=self.mmap)
         _validate_shard_header(

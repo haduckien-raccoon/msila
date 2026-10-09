@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sequential Day-05 gates, using the existing training and evaluation modules."""
+"""Day-05 gates and full-scale backbone × adapter × representation × seed training."""
 from __future__ import annotations
 import argparse
 import csv
@@ -20,7 +20,13 @@ class Blocked(RuntimeError): pass
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--stage', choices=['audit','preflight','train','inference','evaluate','all'], default='audit')
+    p.add_argument('--stage', choices=['audit','preflight','train','inference','evaluate','all','test-public'], default=None)
+    p.add_argument('--train-all', action='store_true', help='Run every declared full-scale Cartesian configuration')
+    p.add_argument('--grid-config', type=Path)
+    p.add_argument('--backbone', choices=['dinov3_vits16','dinov3_vits16plus','dinov3_vitb16','dinov3_vitl16','dinov3_vith16plus'])
+    p.add_argument('--adapter-r', type=int)
+    p.add_argument('--adapter-d', type=int)
+    p.add_argument('--representation', choices=['R0','R1','R2'])
     p.add_argument('--dry-run',action='store_true')
     p.add_argument('--cache-dir',type=Path)
     p.add_argument('--train-records',type=Path)
@@ -33,8 +39,8 @@ def parse_args(argv=None):
     p.add_argument('--output-root',type=Path,default=Path('outputs/day05'))
     p.add_argument('--day05-config',type=Path,default=Path('configs/day05_representation.yaml'))
     p.add_argument('--training-protocol',type=Path,default=Path('configs/day05_day04_full_v3_protocol.yaml'))
-    p.add_argument('--category',choices=['fabric'],default='fabric',help='Phase 1 gate; Phase 2 needs a new explicit protocol')
-    p.add_argument('--seed',type=int,choices=[42],default=42)
+    p.add_argument('--category',default='fabric')
+    p.add_argument('--seed',type=int,default=42)
     p.add_argument('--device',default='cuda:0')
     p.add_argument('--preflight-steps',type=int,default=3)
     p.add_argument('--resume',action='store_true')
@@ -45,7 +51,10 @@ def parse_args(argv=None):
     p.add_argument('--boundary-protocol',type=Path)
     p.add_argument('--seg-f1-threshold',type=float)
     p.add_argument('--efficiency-csv',type=Path,action='append')
-    return p.parse_args(argv)
+    args=p.parse_args(argv)
+    if args.stage is None:
+        args.stage='all' if args.train_all or args.grid_config else 'audit'
+    return args
 
 
 def audit(a):
@@ -243,6 +252,13 @@ def evaluate(a):
 def main(argv=None):
     a=parse_args(argv)
     try:
+        if a.train_all or a.grid_config:
+            from src.train.full_scale import run_full_scale
+            report=run_full_scale(a)
+            print(json.dumps({k:v for k,v in report.items() if k not in ('declared_jobs','completed')},indent=2))
+            return 0
+        if a.stage=='test-public':
+            raise ValueError('--stage test-public requires --grid-config/--train-all and an intact DEV selection lock')
         report=audit(a)
         if a.stage=='audit' or a.dry_run:
             print(json.dumps(report,indent=2));return 0

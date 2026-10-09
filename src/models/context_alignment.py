@@ -51,6 +51,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
+from .bilinear_sampling import deterministic_bilinear_sample
+
 try:
     from geometry.view_meta import ViewGeometryMeta
 except Exception:  # pragma: no cover - type convenience for standalone reuse
@@ -234,6 +236,7 @@ class ContextToLocalAligner(nn.Module):
         check_finite: bool = False,
         check_bounds: bool = True,
         bounds_tolerance: float = 1e-5,
+        deterministic_sampling: bool = False,
     ) -> None:
         super().__init__()
         if mode not in {"bilinear", "nearest"}:
@@ -246,6 +249,8 @@ class ContextToLocalAligner(nn.Module):
             )
         if bounds_tolerance < 0:
             raise ValueError("bounds_tolerance must be >= 0.")
+        if deterministic_sampling and (mode != "bilinear" or padding_mode == "reflection"):
+            raise ValueError("Deterministic alignment requires bilinear zeros/border sampling.")
 
         self.mode = mode
         self.padding_mode = padding_mode
@@ -253,6 +258,7 @@ class ContextToLocalAligner(nn.Module):
         self.check_finite = bool(check_finite)
         self.check_bounds = bool(check_bounds)
         self.bounds_tolerance = float(bounds_tolerance)
+        self.deterministic_sampling = bool(deterministic_sampling)
 
     @staticmethod
     def _validate_feature(name: str, x: Tensor) -> None:
@@ -406,13 +412,16 @@ class ContextToLocalAligner(nn.Module):
         packed = torch.cat(tensors, dim=1)
 
         grid = self.build_sampling_grid(packed, geometry, target_hw=target_hw)
-        aligned_packed = F.grid_sample(
-            packed,
-            grid,
-            mode=self.mode,
-            padding_mode=self.padding_mode,
-            align_corners=False,
-        )
+        if self.deterministic_sampling:
+            aligned_packed = deterministic_bilinear_sample(packed, grid, padding_mode=self.padding_mode)
+        else:
+            aligned_packed = F.grid_sample(
+                packed,
+                grid,
+                mode=self.mode,
+                padding_mode=self.padding_mode,
+                align_corners=False,
+            )
         aligned = torch.split(aligned_packed, channels, dim=1)
 
         out = {key: value for key, value in zip(_OUTPUT_KEYS, aligned)}

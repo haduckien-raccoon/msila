@@ -1,0 +1,14 @@
+{
+  "schema": "msila.pre_redesign.audit.v2",
+  "historical_dev_gt_status": "UNAVAILABLE_IN_WORKSPACE",
+  "historical_gt_distribution_measured": false,
+  "dataset_checkpoint_status": "UNAVAILABLE_IN_WORKSPACE",
+  "legacy_generator": {
+    "dev_operation": "cutpaste",
+    "source_crop_hw": [768, 768],
+    "bbox_area_ratio_envelope": [0.002, 0.08],
+    "note": "Configuration audit only; actual connected-component areas require historical GT files."
+  },
+  "required_historical_audit_command": "python -m scripts.audit_synthetic_gt --inputs OLD_DEV_RECORDS.json --mask-root OLD_MASK_ROOT --output OLD_DEV_GT_AUDIT.json",
+  "new_distribution_basis": "Synthetic proxy in native pixels; no real TEST defects consulted. Bins must be locked before any model metrics."
+}

@@ -1,0 +1,634 @@
+{
+  "schema": "msila.local_validation.v2",
+  "recorded_at_utc": "2026-10-09T04:38:31.872581+00:00",
+  "base_commit": "6ad23e66f10af08a70e6f5731de336db7de159c8",
+  "software_status": "PASS",
+  "scientific_experimental_status": "UNVERIFIED",
+  "local_environment": {
+    "python": "3.12.3",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "torch": "2.6.0+cpu",
+      "torchvision": "0.21.0+cpu",
+      "numpy": "1.26.4",
+      "scipy": "1.11.4",
+      "Pillow": "10.2.0",
+      "PyYAML": "6.0.1",
+      "pytest": "7.4.4",
+      "matplotlib": "3.6.3",
+      "safetensors": "0.5.3"
+    },
+    "cuda_available": false,
+    "torch_cuda_version": null
+  },
+  "verification": {
+    "command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/qa/bin/python -m pytest -q tests --junitxml=reports/full_scale_pytest.xml",
+    "tests": 727,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 20,
+    "passed": 707,
+    "warnings": 2,
+    "warnings_reason": "Legacy notebook attempts Matplotlib show with non-GUI Agg backend.",
+    "elapsed_sec": 34.654,
+    "junit_sha256": "66cd081c156cf4b8086acae407cb379f613af5a1d1359015c841158244fda64f",
+    "skipped_gates": [
+      {
+        "test": "test_cuda_strict_deterministic_alignment_resize_backward[dtype0]",
+        "module": "tests.test_bilinear_sampling",
+        "reason": "requires CUDA for strict deterministic backward"
+      },
+      {
+        "test": "test_cuda_strict_deterministic_alignment_resize_backward[dtype1]",
+        "module": "tests.test_bilinear_sampling",
+        "reason": "requires CUDA for strict deterministic backward"
+      },
+      {
+        "test": "test_external_real_cache_one_training_step",
+        "module": "tests.test_day03_cached_train_step",
+        "reason": "Set FEATURE_CACHE_DIR and FEATURE_TRAIN_INDEX to run the real-cache acceptance gate."
+      },
+      {
+        "test": "test_day04_candidate_configs_differ_only_in_r_and_d",
+        "module": "tests.test_day04_fairness",
+        "reason": "E9 fairness manifest not configured. Set DAY04_FAIRNESS_MANIFEST or create configs/day04_fairness.json. SKIP is not an E9 scientific PASS."
+      },
+      {
+        "test": "test_device_mismatch_fails_when_cuda_is_available",
+        "module": "tests.test_day05",
+        "reason": "CUDA not available"
+      },
+      {
+        "test": "test_correct_blocks",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_backbone_frozen",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_exact_three_features",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_feature_shapes",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_features_are_finite",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_train_does_not_unfreeze_dino",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_feature_keys",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_feature_contract",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_dynamic_spatial_shape",
+        "module": "tests.test_dino_features",
+        "reason": "Real DINO source/checkpoint missing; set DINOV3_REPO and DINOV3_CHECKPOINT"
+      },
+      {
+        "test": "test_optional_real_dinov3_smoke",
+        "module": "tests.test_dinov3_extractor",
+        "reason": "Set DINOV3_REPO and DINOV3_WEIGHTS for real-backbone smoke test."
+      },
+      {
+        "test": "test_real_built_cache_matches_fresh_online_extraction",
+        "module": "tests.test_feature_cache",
+        "reason": "Real integration test requires DINOV3_REPO and DINOV3_WEIGHTS."
+      },
+      {
+        "test": "test_full_forward",
+        "module": "tests.test_full_forward",
+        "reason": "DINOv3 repository not found: /content/dinov3"
+      },
+      {
+        "test": "test_parent_train_keeps_dino_frozen",
+        "module": "tests.test_full_forward",
+        "reason": "DINOv3 repository not found: /content/dinov3"
+      },
+      {
+        "test": "test_representations_on_one_real_train_batch",
+        "module": "tests.test_representation_shapes",
+        "reason": "Real MVTec sources missing; set MSILA_MVTEC_AD2_ROOT"
+      },
+      {
+        "test": "test_real_backbone_frozen_and_day05_gradient_ownership",
+        "module": "tests.test_trainable_parameters",
+        "reason": "Real DINO source missing; set DINOV3_REPO"
+      }
+    ],
+    "compileall": "PASS",
+    "git_diff_whitespace_check": "PASS",
+    "cli_help": "PASS"
+  },
+  "actual_training_software_fixture": {
+    "optimizer_updates_executed": true,
+    "epochs_per_fixture_job": 2,
+    "real_DINO_backbone_used": false,
+    "real_MVTec_data_used": false,
+    "exact_mid_epoch_resume_model_equality": true,
+    "complete_run_checkpoint_verified_and_skipped": true,
+    "native_cache_train_R2_infer_metric_resume_tamper_checks": "PASS"
+  },
+  "full_grid": {
+    "training_jobs": 3240,
+    "epochs_per_job": 150,
+    "batch_size": 64,
+    "representations": [
+      "R0",
+      "R1",
+      "R2"
+    ],
+    "seeds": [
+      17,
+      42,
+      2026
+    ],
+    "categories": [
+      "can",
+      "fabric",
+      "fruit_jelly",
+      "rice",
+      "sheet_metal",
+      "vial",
+      "wallplugs",
+      "walnuts"
+    ],
+    "backbones": {
+      "dinov3_vits16": {
+        "channels": 384,
+        "depth": 12,
+        "patch_size": 16,
+        "physical_blocks": [
+          4,
+          8,
+          12
+        ],
+        "adapter_pairs": [
+          [
+            32,
+            128
+          ],
+          [
+            32,
+            256
+          ],
+          [
+            32,
+            384
+          ],
+          [
+            64,
+            128
+          ],
+          [
+            64,
+            256
+          ],
+          [
+            64,
+            384
+          ],
+          [
+            128,
+            128
+          ],
+          [
+            128,
+            256
+          ],
+          [
+            128,
+            384
+          ]
+        ]
+      },
+      "dinov3_vits16plus": {
+        "channels": 384,
+        "depth": 12,
+        "patch_size": 16,
+        "physical_blocks": [
+          4,
+          8,
+          12
+        ],
+        "adapter_pairs": [
+          [
+            32,
+            128
+          ],
+          [
+            32,
+            256
+          ],
+          [
+            32,
+            384
+          ],
+          [
+            64,
+            128
+          ],
+          [
+            64,
+            256
+          ],
+          [
+            64,
+            384
+          ],
+          [
+            128,
+            128
+          ],
+          [
+            128,
+            256
+          ],
+          [
+            128,
+            384
+          ]
+        ]
+      },
+      "dinov3_vitb16": {
+        "channels": 768,
+        "depth": 12,
+        "patch_size": 16,
+        "physical_blocks": [
+          4,
+          8,
+          12
+        ],
+        "adapter_pairs": [
+          [
+            64,
+            256
+          ],
+          [
+            64,
+            512
+          ],
+          [
+            64,
+            768
+          ],
+          [
+            128,
+            256
+          ],
+          [
+            128,
+            512
+          ],
+          [
+            128,
+            768
+          ],
+          [
+            256,
+            256
+          ],
+          [
+            256,
+            512
+          ],
+          [
+            256,
+            768
+          ]
+        ]
+      },
+      "dinov3_vitl16": {
+        "channels": 1024,
+        "depth": 24,
+        "patch_size": 16,
+        "physical_blocks": [
+          8,
+          16,
+          24
+        ],
+        "adapter_pairs": [
+          [
+            88,
+            344
+          ],
+          [
+            88,
+            688
+          ],
+          [
+            88,
+            1024
+          ],
+          [
+            176,
+            344
+          ],
+          [
+            176,
+            688
+          ],
+          [
+            176,
+            1024
+          ],
+          [
+            344,
+            344
+          ],
+          [
+            344,
+            688
+          ],
+          [
+            344,
+            1024
+          ]
+        ]
+      },
+      "dinov3_vith16plus": {
+        "channels": 1280,
+        "depth": 32,
+        "patch_size": 16,
+        "physical_blocks": [
+          11,
+          21,
+          32
+        ],
+        "adapter_pairs": [
+          [
+            112,
+            432
+          ],
+          [
+            112,
+            856
+          ],
+          [
+            112,
+            1280
+          ],
+          [
+            216,
+            432
+          ],
+          [
+            216,
+            856
+          ],
+          [
+            216,
+            1280
+          ],
+          [
+            432,
+            432
+          ],
+          [
+            432,
+            856
+          ],
+          [
+            432,
+            1280
+          ]
+        ]
+      }
+    },
+    "locally_executed": false
+  },
+  "synthetic_fixture_coverage": {
+    "status": "PASS",
+    "dev_tiny_strata": 16,
+    "dev_mixed_strata": 24,
+    "report": "reports/full_scale_synthetic_fixture_coverage.json",
+    "sha256": "2999b1b43b541f0d0b5001bda12db9f51a1b4a8c922a57f6f7731d60b45e0327",
+    "real_dataset_distribution_measured": false
+  },
+  "unverified": [
+    "Actual MVTec AD 2 filesystem layout and all real TEST_PUBLIC GT matches.",
+    "Historical DEV connected-component distribution; historical GT assets are absent.",
+    "Real pretrained DINOv3 S/S+/B/L/H+ forward, cache extraction, optimization and accuracy.",
+    "CUDA strict deterministic backward, bfloat16 behavior, full batch VRAM and runtime on Colab Pro.",
+    "Full 3240-job 150-epoch training, native DEV model ranking and final selected TEST_PUBLIC metrics.",
+    "Bitwise CUDA resume and reproducibility across different GPU models or package versions."
+  ],
+  "patch": {
+    "path": "reports/full_scale_changes.patch",
+    "base_commit": "6ad23e66f10af08a70e6f5731de336db7de159c8",
+    "apply_check": "PASS",
+    "reconstruction_byte_comparison": "PASS",
+    "self_included": false,
+    "included_file_count": 37
+  },
+  "changed_files": [
+    {
+      "path": ".gitignore",
+      "status": "modified",
+      "reason": "Ignore local QA virtualenv and disposable test artifacts."
+    },
+    {
+      "path": "README.md",
+      "status": "modified",
+      "reason": "Link full-scale training instructions and scientific limitations."
+    },
+    {
+      "path": "configs/full_scale_grid.yaml",
+      "status": "new",
+      "reason": "Declare every backbone, scaled adapter candidate, representation, seed and category."
+    },
+    {
+      "path": "configs/full_scale_synthetic.yaml",
+      "status": "new",
+      "reason": "Lock native-pixel synthetic proxy, bins, placements, signal and contour protocol before evaluation."
+    },
+    {
+      "path": "configs/full_scale_train.yaml",
+      "status": "new",
+      "reason": "Declare unchanged 150-epoch/batch-64 update budget, AMP and strict determinism; select by DEV AU-PRO."
+    },
+    {
+      "path": "docs/FULL_SCALE_TRAINING.md",
+      "status": "new",
+      "reason": "Document data roles, actual training/resume, Colab setup, selected TEST evaluation and verification limits."
+    },
+    {
+      "path": "reports/full_scale_changes.patch",
+      "status": "new",
+      "reason": "Provide a portable uncommitted patch against the recorded base commit; excludes itself."
+    },
+    {
+      "path": "reports/full_scale_initial_audit.json",
+      "status": "new",
+      "reason": "Record unavailable historic GT and configuration-only legacy generator audit without invented dataset statistics."
+    },
+    {
+      "path": "reports/full_scale_pytest.xml",
+      "status": "new",
+      "reason": "Capture complete pytest evidence, including every skipped external acceptance gate."
+    },
+    {
+      "path": "reports/full_scale_report.md",
+      "status": "new",
+      "reason": "Explain root causes, implemented design, test results and remaining experimental requirements in Vietnamese."
+    },
+    {
+      "path": "reports/full_scale_synthetic_fixture_coverage.json",
+      "status": "new",
+      "reason": "Record measured coverage of all declared DEV strata on a clearly labelled constant-image software fixture."
+    },
+    {
+      "path": "reports/full_scale_validation.json",
+      "status": "new",
+      "reason": "Record verified software results, environments, unverified experiments and exact changed-file inventory."
+    },
+    {
+      "path": "requirements.txt",
+      "status": "new",
+      "reason": "Declare reproducible dependency constraints compatible with the local tested stack and Colab CUDA installation."
+    },
+    {
+      "path": "scripts/audit_dataset.py",
+      "status": "new",
+      "reason": "Export loader matching, dimensions and missing/ambiguous GT audit."
+    },
+    {
+      "path": "scripts/audit_synthetic_gt.py",
+      "status": "new",
+      "reason": "Audit existing GT component distribution and Local tile geometry before examining model predictions."
+    },
+    {
+      "path": "scripts/build_day05_cache.py",
+      "status": "modified",
+      "reason": "Extend the existing builder with source-disjoint native tiny/mixed data, per-backbone caches and GT coverage statistics."
+    },
+    {
+      "path": "scripts/build_evaluation_manifest.py",
+      "status": "modified",
+      "reason": "Validate full-scale checkpoint/config/backbone/adapter/blocks identities during native inference."
+    },
+    {
+      "path": "scripts/day05_full_inference.py",
+      "status": "modified",
+      "reason": "Keep native resolution, normal zero GT and correct shallow/middle/deep cache slots for every physical backbone depth."
+    },
+    {
+      "path": "scripts/run_day05_pipeline.py",
+      "status": "modified",
+      "reason": "Route declared full grid or single configuration to the existing trainer and guarded final TEST evaluator."
+    },
+    {
+      "path": "src/data/feature_cache.py",
+      "status": "modified",
+      "reason": "Checksum full-scale feature shards while preserving legacy manifests."
+    },
+    {
+      "path": "src/data/loader.py",
+      "status": "modified",
+      "reason": "Pair GT by category/split/defect/nested identity; prohibit cross-split fallback and missing abnormal zero substitution."
+    },
+    {
+      "path": "src/data/synthetic_anomaly.py",
+      "status": "modified",
+      "reason": "Add a separately versioned native tiny-defect generator with unchanged pixels outside GT; retain legacy behavior."
+    },
+    {
+      "path": "src/eval/full_scale.py",
+      "status": "new",
+      "reason": "Compute native/tile DEV AU-PRO, declared region groups and contour diagnostics using exact disk-backed backgrounds."
+    },
+    {
+      "path": "src/eval/region_stats.py",
+      "status": "modified",
+      "reason": "Provide reusable native component geometry and explicit image-edge diagnostics."
+    },
+    {
+      "path": "src/metrics/aupro.py",
+      "status": "modified",
+      "reason": "Support NumPy integration versions and exact chunked-background AU-PRO without dropping pixels or regions."
+    },
+    {
+      "path": "src/models/backbone_registry.py",
+      "status": "new",
+      "reason": "Validate official S/S+/B/L/H+ architecture, thirds blocks and explicitly declared adapter candidates."
+    },
+    {
+      "path": "src/models/basic_decoder.py",
+      "status": "modified",
+      "reason": "Retain trainable decoder architecture and add equivalent deterministic full-scale bilinear resize."
+    },
+    {
+      "path": "src/models/bilinear_sampling.py",
+      "status": "new",
+      "reason": "Implement fixed-geometry bilinear gather/index-select for strict CUDA backward with unchanged half-pixel semantics."
+    },
+    {
+      "path": "src/models/context_alignment.py",
+      "status": "modified",
+      "reason": "Enable equivalent deterministic sampling only in full-scale mode; preserve legacy alignment default."
+    },
+    {
+      "path": "src/models/dinov3_extractor.py",
+      "status": "modified",
+      "reason": "Validate loaded architecture, freeze backbone, map physical blocks and read exact local checkpoint instead of basename cache aliases."
+    },
+    {
+      "path": "src/train/day05_contract.py",
+      "status": "modified",
+      "reason": "Validate full-scale cache/representation provenance and disjoint TRAIN/DEV roles while retaining legacy checks."
+    },
+    {
+      "path": "src/train/full_scale.py",
+      "status": "new",
+      "reason": "Orchestrate complete actual grid training, native DEV seed-mean ranking, selection locks, stage resources and post-selection TEST."
+    },
+    {
+      "path": "src/train/screen_representation.py",
+      "status": "modified",
+      "reason": "Extend the existing optimization loop with dynamic C/r/d/seed, DEV AU-PRO monitoring, exact partial resume and run evidence."
+    },
+    {
+      "path": "tests/test_bilinear_sampling.py",
+      "status": "new",
+      "reason": "Compare fixed-grid/resize values and gradients with PyTorch reference; expose skipped strict CUDA gates."
+    },
+    {
+      "path": "tests/test_day05.py",
+      "status": "modified",
+      "reason": "Make the legacy fake ViT-S fixture match official C=384 for strict architecture validation."
+    },
+    {
+      "path": "tests/test_full_scale_contracts.py",
+      "status": "new",
+      "reason": "Test all five mocked architectures, full 3240 grid, independent adapter/fusion dimensions, synthetic strata and exact metrics/ranking."
+    },
+    {
+      "path": "tests/test_full_scale_training.py",
+      "status": "new",
+      "reason": "Execute real CPU fixture optimization, interrupted/resumed equality, native R2 integration, tamper rejection and unchanged OOM configuration."
+    },
+    {
+      "path": "tests/test_loader_identity.py",
+      "status": "new",
+      "reason": "Test split/defect/nested collisions, missing/ambiguous GT, normal zeros and audit behavior."
+    }
+  ]
+}

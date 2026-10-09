@@ -8,6 +8,8 @@ import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
+from .bilinear_sampling import deterministic_bilinear_resize
+
 
 class BasicDecoder(nn.Module):
     """
@@ -28,8 +30,10 @@ class BasicDecoder(nn.Module):
         self,
         in_channels: int,
         hidden_channels: int | None = None,
+        deterministic_resize: bool = False,
     ):
         super().__init__()
+        self.deterministic_resize = bool(deterministic_resize)
 
         if hidden_channels is None:
             hidden_channels = max(in_channels // 2, 1)
@@ -62,12 +66,15 @@ class BasicDecoder(nn.Module):
 
         # [B,1,h,w]
 
-        logits = F.interpolate(
-            logits,
-            size=output_size,
-            mode="bilinear",
-            align_corners=False,
-        )
+        if self.deterministic_resize:
+            logits = deterministic_bilinear_resize(logits, output_size)
+        else:
+            logits = F.interpolate(
+                logits,
+                size=output_size,
+                mode="bilinear",
+                align_corners=False,
+            )
 
         # [B,1,H,W]
 

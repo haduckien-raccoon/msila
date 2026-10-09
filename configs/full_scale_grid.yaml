@@ -1,0 +1,26 @@
+# Exactly 5 backbones × 9 adapter pairs × 3 representations × 3 seeds
+# × 8 categories = 3,240 actual training jobs. No implicit grid truncation.
+schema: msila.full_scale.grid.v2
+backbones:
+  dinov3_vits16:
+    checkpoint: /content/drive/MyDrive/msila/weights/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+  dinov3_vits16plus:
+    checkpoint: /content/drive/MyDrive/msila/weights/dinov3_vits16plus_pretrain_lvd1689m-4057cbaa.pth
+  dinov3_vitb16:
+    checkpoint: /content/drive/MyDrive/msila/weights/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
+  dinov3_vitl16:
+    checkpoint: /content/drive/MyDrive/msila/weights/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+  dinov3_vith16plus:
+    checkpoint: /content/drive/MyDrive/msila/weights/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
+adapter:
+  # Same 3×3 coarse search as Day 04, scaled with C, rounded up to 8.
+  # For S/S+: r=32,64,128 and d=128,256,384. These are candidates.
+  r_ratios: [0.08333333333333333, 0.16666666666666666, 0.3333333333333333]
+  d_ratios: [0.3333333333333333, 0.6666666666666666, 1.0]
+  round_to: 8
+representations: [R0, R1, R2]
+seeds: [17, 42, 2026]
+categories: [can, fabric, fruit_jelly, rice, sheet_metal, vial, wallplugs, walnuts]
+data_seed: 42
+synthetic_protocol: configs/full_scale_synthetic.yaml
+training_protocol: configs/full_scale_train.yaml

@@ -847,7 +847,7 @@ def test_dinov3_extractor_enforces_frozen_eval_mode(monkeypatch, tmp_path) -> No
 
     class FakeBackbone(torch.nn.Module):
         patch_size = 16
-        embed_dim = 8
+        embed_dim = 384  # The mocked architecture must match the official registry.
 
         def __init__(self) -> None:
             super().__init__()

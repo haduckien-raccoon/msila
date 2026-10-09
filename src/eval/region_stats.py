@@ -14,6 +14,25 @@ from src.eval.boundary_analysis import STRUCTURE, boundary_zone, validate_inputs
 from src.eval.tiny_analysis import binary_mask, load_array
 
 CANDIDATES = ("R0", "R1", "R2")
+
+
+def component_geometry(mask, boundary_band_px=2):
+    """Native-pixel geometry; boundary flag means image edge, not GT contour."""
+    mask = np.asarray(mask).astype(bool)
+    if mask.ndim != 2:
+        raise ValueError("Component audit requires a 2D mask")
+    labels, count = label(mask, structure=np.ones((3, 3), dtype=np.uint8))
+    rows = []
+    h, w = mask.shape
+    for rid in range(1, count + 1):
+        y, x = np.where(labels == rid)
+        edge = min(int(x.min()), int(y.min()), w-1-int(x.max()), h-1-int(y.max()))
+        rows.append(dict(region_id=rid, area=int(len(x)), width=int(x.max()-x.min()+1),
+                         height=int(y.max()-y.min()+1), area_ratio=float(len(x)/(h*w)),
+                         bbox_xyxy=[int(x.min()), int(y.min()), int(x.max()+1), int(y.max()+1)],
+                         centroid_xy=[float(x.mean()), float(y.mean())],
+                         distance_to_image_edge_px=edge, is_boundary=edge < boundary_band_px))
+    return rows
 FIELDS = [
     "image_id", "category", "split", "region_id", "area",
     "is_tiny", "is_boundary", "boundary_flag", "boundary_overlap_px",

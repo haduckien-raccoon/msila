@@ -762,3 +762,151 @@ __all__ = [
     "SyntheticAnomalyGenerator",
     "summarize_synthetic_metadata",
 ]
+
+
+NATIVE_DEFECT_TYPES = ("pinhole", "thin_scratch", "texture", "contamination")
+NATIVE_SYNTHETIC_VERSION = "native_tiny_proxy_v2"
+
+
+def validate_native_protocol(protocol):
+    """A predeclared proxy in native pixels, never fitted using TEST masks."""
+    if (protocol.get("version") != NATIVE_SYNTHETIC_VERSION
+            or protocol.get("locked_before_evaluation") is not True
+            or protocol.get("basis") != "synthetic_proxy_no_real_defect_calibration"
+            or protocol.get("area_unit") != "native_pixels"
+            or protocol.get("connectivity") != 8):
+        raise ValueError("Native synthetic protocol must be versioned and locked before evaluation")
+    bins = protocol["size_bins"]
+    if not bins or not protocol.get("rationale"):
+        raise ValueError("Declare native size bins and their rationale")
+    previous = 0
+    for name, bounds in bins.items():
+        if (len(bounds) != 2 or any(type(v) is not int for v in bounds)
+                or not (0 < bounds[0] <= bounds[1])):
+            raise ValueError(f"Size bins must be ordered, positive, disjoint: {name}={bounds}")
+    for name,bounds in sorted(bins.items(),key=lambda item:item[1][0]):
+        if previous >= bounds[0]:
+            raise ValueError(f'Size bins overlap: {name}={bounds}')
+        previous = bounds[1]
+    for role in ("dev_tiny", "dev_mixed", "train_core"):
+        if not protocol.get(role + "_bins") or not set(protocol[role + "_bins"]) <= bins.keys():
+            raise ValueError(f"Invalid predeclared bins for {role}")
+    if not set(protocol["dev_tiny_bins"]) <= set(protocol["dev_mixed_bins"]):
+        raise ValueError("DEV mixed must cover the tiny bins as well")
+    if (tuple(protocol["defect_types"]) != NATIVE_DEFECT_TYPES
+            or protocol["placements"] != ["interior", "image_boundary"]):
+        raise ValueError("Declare all four defect types and both placements")
+    lo, hi = protocol["contrast_range"]
+    if not 0 < lo <= hi <= .25:
+        raise ValueError("contrast_range must contain positive subtle intensities <=0.25")
+    if type(protocol["boundary_band_px"]) is not int or protocol["boundary_band_px"] < 1:
+        raise ValueError("boundary_band_px must be positive")
+    if not 0 < protocol["min_mean_abs_change"] <= lo:
+        raise ValueError("Minimum visibility must be positive and <= minimum contrast")
+    widths = protocol['scratch_width_px']
+    if len(widths) != 2 or any(type(v) is not int for v in widths) or not 1 <= widths[0] <= widths[1]:
+        raise ValueError('Declare a positive native-pixel scratch width range')
+    if (not 0 <= protocol['prediction_threshold'] <= 1 or
+            type(protocol['contour_tolerance_px']) is not int or protocol['contour_tolerance_px'] < 0):
+        raise ValueError('Declare a probability threshold and a nonnegative native contour tolerance')
+    return protocol
+
+
+class NativeTinyDefectGenerator:
+    """Generate a defect on the original image BEFORE Local/Context tiling.
+
+    Legacy generator above is unchanged. Exact GT support and unchanged
+    background are shared contracts; this version declares native area bins.
+    """
+    def __init__(self, protocol):
+        self.protocol = validate_native_protocol(protocol)
+
+    def __call__(self, image, *, seed, defect_type, size_bin, placement, normal=False):
+        SyntheticAnomalyGenerator._validate_image(image)
+        if defect_type not in NATIVE_DEFECT_TYPES or size_bin not in self.protocol["size_bins"]:
+            raise ValueError("Unknown native defect type/size bin")
+        if placement not in self.protocol["placements"]:
+            raise ValueError("Unknown native placement")
+        rng = np.random.default_rng(seed)
+        h, w = image.shape[-2:]
+        mask = torch.zeros((1, h, w), dtype=torch.float32, device=image.device)
+        meta = dict(version=NATIVE_SYNTHETIC_VERSION, seed=int(seed), defect_type=defect_type,
+                    size_bin=size_bin, placement=placement, native_hw=[h, w],
+                    is_anomaly=not normal, distribution_basis=self.protocol["basis"])
+        if normal:
+            return SyntheticAnomalySample(image.clone(), mask, dict(meta, area=0))
+        bounds = self.protocol["size_bins"][size_bin]
+        area = int(rng.integers(bounds[0], bounds[1]+1))
+        if defect_type == "thin_scratch":
+            band = self.protocol["boundary_band_px"]
+            margin = band + 1 if placement == "interior" else 0
+            widths = range(self.protocol['scratch_width_px'][0],self.protocol['scratch_width_px'][1]+1)
+            choices = [(math.ceil(area/t), t) for t in widths
+                       if math.ceil(area/t) + 2*margin <= w and t + 2*margin <= h]
+            choices += [(t, math.ceil(area/t)) for t in widths
+                        if math.ceil(area/t) + 2*margin <= h and t + 2*margin <= w]
+            if not choices:
+                raise ValueError(f"Thin scratch area={area} cannot fit native image {h,w} at declared widths")
+            bw, bh = choices[int(rng.integers(len(choices)))]
+        else:
+            # Ellipse/radial support; nearest radial ranks give a connected
+            # support of exactly `area` pixels without a rectangle/cutpaste.
+            aspect = 1.0 if defect_type == "pinhole" else float(rng.uniform(.6, 1.7))
+            bw = math.ceil(math.sqrt(area * aspect) * 1.35)
+            bh = math.ceil(area * 1.8 / bw)
+        band = self.protocol["boundary_band_px"]
+        margin = band + 1 if placement == "interior" else 0
+        if bw + 2*margin > w or bh + 2*margin > h:
+            raise ValueError(f"Native defect {defect_type}/{size_bin} bbox={bw,bh} does not fit {h,w}; "
+                             "configuration preserved, declare appropriate bins explicitly")
+        x = int(rng.integers(margin, w-bw-margin+1))
+        y = int(rng.integers(margin, h-bh-margin+1))
+        if placement == "image_boundary":
+            side = int(rng.integers(0, 4))
+            if side == 0: x = 0
+            elif side == 1: x = w-bw
+            elif side == 2: y = 0
+            else: y = h-bh
+        yy, xx = np.mgrid[:bh, :bw]
+        if defect_type == "thin_scratch":
+            order = np.arange(bh*bw)
+        else:
+            distance = ((xx-(bw-1)/2) / max(bw/2, 1))**2 + ((yy-(bh-1)/2) / max(bh/2, 1))**2
+            order = np.argsort(distance.ravel(), kind="stable")
+        support = np.zeros(bh*bw, dtype=np.float32)
+        support[order[:area]] = 1
+        support = support.reshape(bh, bw)
+        # Re-anchor the foreground itself to the image edge; an elliptical
+        # bounding rectangle may include empty columns/rows.
+        sy, sx = np.where(support > 0)
+        support = support[sy.min():sy.max()+1, sx.min():sx.max()+1]
+        bh, bw = support.shape
+        if placement == "image_boundary":
+            if side == 1: x = w-bw
+            elif side == 3: y = h-bh
+        mask[0, y:y+bh, x:x+bw] = torch.as_tensor(support, device=image.device)
+        original = image[:, y:y+bh, x:x+bw]
+        contrast = float(rng.uniform(*self.protocol["contrast_range"]))
+        sign = 1.0 if float(original.mean()) <= .5 else -1.0
+        delta = np.full((3, bh, bw), sign*contrast, dtype=np.float32)
+        if defect_type == "texture":
+            delta *= rng.uniform(.55, 1.0, delta.shape).astype(np.float32)
+        elif defect_type == "contamination":
+            delta *= rng.uniform(.6, 1.0, (3, 1, 1)).astype(np.float32)
+        elif defect_type == "pinhole":
+            delta *= .9
+        candidate = (original + torch.as_tensor(delta, device=image.device)).clamp(0, 1)
+        # Saturation can suppress a perturbation on some pixels. Guarantee
+        # visible support with a small per-pixel movement toward the interior.
+        weak = (candidate-original).abs() < self.protocol["min_mean_abs_change"]
+        fallback = torch.where(original <= .5, original + contrast, original - contrast).clamp(0, 1)
+        candidate = torch.where(weak, fallback, candidate)
+        output = image.clone()
+        output[:, y:y+bh, x:x+bw] = torch.where(
+            mask[:, y:y+bh, x:x+bw].bool(), candidate, original)
+        change = (output-image).abs()[:, mask[0].bool()].mean().item()
+        if change < self.protocol["min_mean_abs_change"]:
+            raise ValueError("Native synthetic visual signal too weak; no silent protocol adjustment")
+        return SyntheticAnomalySample(output, mask, dict(meta, area=int(mask.sum().item()),
+            area_ratio=float(mask.sum().item()/(h*w)), bbox_xyxy=[x, y, x+bw, y+bh],
+            contrast=contrast, mean_abs_change=change))

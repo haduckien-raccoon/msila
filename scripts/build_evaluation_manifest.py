@@ -8,24 +8,32 @@ import yaml
 from src.train.day05_contract import SOURCES, digest, file_hash, validate_day05, validate_signature
 from src.train.screen_representation import lock_payload
 from scripts.day05_legacy_handoff import model_config, verify_legacy
+from src.models.backbone_registry import backbone_spec
 
 
 def read_artifact(path, candidate):
     path = Path(path).absolute()
     cfg = yaml.safe_load((path / 'resolved_config.yaml').read_text(encoding='utf-8'))
     run = json.loads((path / 'run_manifest.json').read_text(encoding='utf-8'))
+    full = cfg.get('day05_config', {}).get('schema') == 'msila.full_scale.representation.v2'
     if cfg['candidate'] != candidate or run['candidate'] != candidate:
         raise ValueError(f'{candidate}: artifact candidate mismatch')
-    if run['status'] != 'COMPLETE' or cfg['seed'] != 42 or run['seed'] != 42:
+    if run['status'] != 'COMPLETE' or cfg['seed'] != run['seed'] or (not full and cfg['seed'] != 42):
         raise ValueError(f'{candidate}: need COMPLETE seed42 run')
     if cfg['category'] != run['category'] or cfg['git_commit'] != run['git_commit']:
         raise ValueError(f'{candidate}: manifest/config category or code identity mismatch')
     validate_day05(model_config(cfg))
-    validate_signature(cfg['cache']['provenance_check']['producer_signature'])
-    if cfg['cache']['in_channels'] != 384:
-        raise ValueError('ViT-S/16 feature channels must be 384')
-    if (cfg['adapter']['r'], cfg['adapter']['d']) != (32, 384):
+    bb = cfg['backbone']['name']
+    sig = cfg['cache']['provenance_check']['producer_signature']
+    validate_signature(sig, expected_backbone=bb)
+    if cfg['cache']['in_channels'] != backbone_spec(bb).channels:
+        raise ValueError('Backbone feature channels mismatch')
+    if sig['logical_layers_1based'] != cfg['backbone']['feature_blocks']:
+        raise ValueError('Cache/model physical block mismatch')
+    if not full and (cfg['adapter']['r'], cfg['adapter']['d']) != (32, 384):
         raise ValueError('Day-04 adapter lock mismatch')
+    if full and run['adapter'] != {k:cfg['adapter'][k] for k in ('r','d')}:
+        raise ValueError('Run manifest/model adapter mismatch')
     if cfg['representation']['sources'] != SOURCES[candidate] or run['sources'] != SOURCES[candidate]:
         raise ValueError(f'{candidate}: source mismatch')
     if digest(cfg) != run['resolved_config_sha256']:
@@ -36,10 +44,18 @@ def read_artifact(path, candidate):
     else:
         if cfg['protocol_lock_sha256'] != digest(lock_payload(cfg)):
             raise ValueError(f'{candidate}: controlled protocol hash mismatch')
+        if full:
+            control = json.loads(Path(cfg['protocol_lock_path']).read_text())
+            if control['sha256'] != cfg['protocol_lock_sha256'] or control['payload'] != lock_payload(cfg):
+                raise ValueError('Full-scale seed/category protocol lock changed')
         for name in ('best.pt', 'last.pt', 'resolved_config.yaml', 'preflight_report.json',
                      'selection_record.json', 'training_log.csv', 'epoch_log.csv', 'sample_anomaly_map.png'):
             if run.get('artifact_sha256', {}).get(name) != file_hash(path / name):
                 raise ValueError(f'{candidate}: missing or changed {name}')
+        if full:
+            for name in ('best.pt.sha256','last.pt.sha256','trainable_parameters.json'):
+                if run['artifact_sha256'].get(name) != file_hash(path/name):
+                    raise ValueError(f'{candidate}: missing or changed {name}')
     if run.get('completed_epochs') != cfg['training']['epochs'] or run.get('global_step') != cfg['training']['total_update_budget']:
         raise ValueError(f'{candidate}: incomplete epoch/update budget')
     if json.loads((path / 'preflight_report.json').read_text())['status'] != 'PASS':

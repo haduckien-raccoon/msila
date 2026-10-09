@@ -50,7 +50,10 @@ def make_tile_batch(image, record, extractor, device, context=True):
         features = extractor.extract_online_cache_features(x_local,
             normalize_dinov3(context_input).unsqueeze(0).to(device), strategy='sequential')
     else:
-        features = {f'local_{k}': v for k, v in extractor(x_local).items()}
+        single = extractor(x_local)
+        physical = getattr(extractor, 'blocks', (4,8,12))
+        features = {f'local_b{slot}': single[f'b{block}']
+                    for slot, block in zip((4,8,12),physical)}
     # Validate in the padded Context frame; translations cancel in L->C.
     lx0, ly0, lx1, ly1 = record.local_xyxy
     cx0, cy0, cx1, cy1 = record.context_xyxy
@@ -148,7 +151,7 @@ def load_inputs(args, cfg, validate_only=False):
             # Official loader has image_norm, but only native image is cropped here.
             iid=Path(r.image_path).relative_to(args.data_root).as_posix()
             with Image.open(r.image_path) as im: hw = [im.height, im.width]
-            normal = r.mask_path is None and Path(r.image_path).parent.name == 'good'
+            normal = r.is_normal
             if r.mask_path is None and not normal:
                 raise ValueError(f'Missing abnormal GT: {r.image_path}')
             mp=Path(r.mask_path).absolute() if r.mask_path else Path(args.output_dir).absolute()/'ground_truth'/(digest(iid)+'.png')
@@ -189,13 +192,20 @@ def run_inference(args):
     if len({row['protocol_lock_sha256'] for _, row in inspected}) != 1:
         raise ValueError('Representation protocol mismatch')
     samples = load_inputs(args, inspected[0][0])
+    bb = inspected[0][0]['backbone']['name']
+    blocks = inspected[0][0]['backbone']['feature_blocks']
+    if getattr(args,'backbone',None) and args.backbone != bb:
+        raise ValueError('CLI/inference run backbone mismatch')
     for cfg, _ in inspected:
-        validate_signature(cfg['cache']['provenance_check']['producer_signature'], args.dino_checkpoint)
+        if cfg['backbone']['name'] != bb or cfg['backbone']['feature_blocks'] != blocks:
+            raise ValueError('Inference runs have different backbone/block identities')
+        validate_signature(cfg['cache']['provenance_check']['producer_signature'], args.dino_checkpoint,
+                           expected_backbone=bb)
     device = torch.device(args.device)
     extractor = build_online_extractor(repo_dir=args.dinov3_repo, weights=args.dino_checkpoint,
-                                      model_name='dinov3_vits16', device=device)
-    if extractor.out_channels != 384 or extractor.patch_size != 16 or not extractor.backbone_is_frozen():
-        raise ValueError('Real backbone does not match frozen ViT-S/16')
+                                      model_name=bb, blocks=blocks, device=device)
+    if extractor.out_channels != inspected[0][0]['cache']['in_channels'] or not extractor.backbone_is_frozen():
+        raise ValueError('Real backbone does not match the frozen training backbone')
     root.mkdir(parents=True, exist_ok=True)
     verify_and_build_manifest(*runs, root / 'handoff_manifest.json')
     for s in samples:
@@ -251,6 +261,7 @@ def parse_args(argv=None):
     p.add_argument('--output-dir', type=Path, required=True)
     p.add_argument('--dinov3-repo', type=Path, required=True)
     p.add_argument('--dino-checkpoint', type=Path, required=True)
+    p.add_argument('--backbone', default=None)
     p.add_argument('--seg-f1-threshold', type=float, required=True)
     p.add_argument('--device', default='cuda:0')
     return p.parse_args(argv)

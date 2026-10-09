@@ -54,6 +54,7 @@ from typing import Literal, Sequence
 
 import torch
 from torch import Tensor, nn
+from .backbone_registry import backbone_spec, validate_blocks
 
 
 DEFAULT_BLOCKS: tuple[int, int, int] = (4, 8, 12)
@@ -75,6 +76,7 @@ def map_online_features_to_cache(
     features: dict[str, Tensor],
     *,
     to_cpu: bool = False,
+    blocks: Sequence[int] = DEFAULT_BLOCKS,
 ) -> dict[str, Tensor]:
     """Map online extractor outputs to the fixed feature-cache key names.
 
@@ -93,12 +95,17 @@ def map_online_features_to_cache(
     dict[str, Tensor]
         ``local_b4, local_b8, local_b12, context_b4, context_b8, context_b12``.
     """
-    missing = [key for key in ONLINE_TO_CACHE_KEYS if key not in features]
+    # The v1 cache names are stable shallow/middle/deep slots. Their physical
+    # block IDs live in the signed producer metadata, including for L/H+.
+    mapping = {f"{view}{block}": f"{prefix}_b{slot}"
+               for view, prefix in (("L", "local"), ("C", "context"))
+               for slot, block in zip(DEFAULT_BLOCKS, blocks)}
+    missing = [key for key in mapping if key not in features]
     if missing:
         raise KeyError(f"Online feature output missing required keys: {missing}")
 
     out: dict[str, Tensor] = {}
-    for online_key, cache_key in ONLINE_TO_CACHE_KEYS.items():
+    for online_key, cache_key in mapping.items():
         tensor = features[online_key]
         if not isinstance(tensor, Tensor):
             raise TypeError(
@@ -141,7 +148,7 @@ class DINOv3FeatureExtractor(nn.Module):
         repo_dir: str | Path,
         weights: str | Path,
         model_name: str = "dinov3_vits16",
-        blocks: Sequence[int] = DEFAULT_BLOCKS,
+        blocks: Sequence[int] | None = None,
         norm: bool = True,
         check_finite: bool = False,
     ) -> None:
@@ -150,21 +157,38 @@ class DINOv3FeatureExtractor(nn.Module):
         self.repo_dir = Path(repo_dir).expanduser().resolve()
         self.weights = str(weights)
         self.model_name = str(model_name)
-        self.blocks = tuple(int(b) for b in blocks)
+        spec = backbone_spec(self.model_name)
+        self.blocks = validate_blocks(spec.blocks if blocks is None else blocks, spec.depth)
         self.norm = bool(norm)
         self.check_finite = bool(check_finite)
 
         self._validate_config()
 
         # Reproducible source: use the user's pinned local DINOv3 checkout.
-        self.backbone = torch.hub.load(
-            repo_or_dir=str(self.repo_dir),
-            model=self.model_name,
-            source="local",
-            weights=self.weights,
-        )
+        local_weights = Path(self.weights).expanduser()
+        if local_weights.is_file():
+            # Official local-path loading uses load_state_dict_from_url(), whose
+            # basename cache can alias different checkpoint files. Construct the
+            # official architecture (including ViT-L SAT filename routing), then
+            # read this exact local file; never trust another cached basename.
+            self.weights = str(local_weights.resolve())
+            self.backbone = torch.hub.load(
+                repo_or_dir=str(self.repo_dir), model=self.model_name, source="local",
+                weights=self.weights, pretrained=False,
+            )
+            state = torch.load(self.weights, map_location="cpu", weights_only=True)
+            self.backbone.load_state_dict(state, strict=True)
+        else:
+            self.backbone = torch.hub.load(
+                repo_or_dir=str(self.repo_dir), model=self.model_name,
+                source="local", weights=self.weights,
+            )
 
         self._validate_backbone()
+        actual = (self.out_channels, len(self.backbone.blocks), self.patch_size)
+        expected = (spec.channels, spec.depth, spec.patch_size)
+        if actual != expected:
+            raise ValueError(f"Loaded {self.model_name} architecture mismatch: {actual} != {expected}")
 
         # Official get_intermediate_layers() consumes zero-based indices.
         self.block_indices = tuple(block - 1 for block in self.blocks)
@@ -462,7 +486,7 @@ class DINOv3FeatureExtractor(nn.Module):
             x_context=x_context,
             strategy=strategy,
         )
-        return map_online_features_to_cache(online, to_cpu=to_cpu)
+        return map_online_features_to_cache(online, to_cpu=to_cpu, blocks=self.blocks)
 
     # ------------------------------------------------------------------
     # Output validation
@@ -518,7 +542,7 @@ def build_online_extractor(
     weights: str | Path,
     device: str | torch.device | None = None,
     model_name: str = "dinov3_vits16",
-    blocks: Sequence[int] = DEFAULT_BLOCKS,
+    blocks: Sequence[int] | None = None,
     norm: bool = True,
     check_finite: bool = True,
 ) -> DINOv3FeatureExtractor:

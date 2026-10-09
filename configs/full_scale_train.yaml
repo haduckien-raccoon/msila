@@ -1,0 +1,34 @@
+# Full Day-04 update protocol, with explicitly redesigned DEV selection.
+version: 2
+data:
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: false
+  mmap: true
+  shard_cache_size: 4
+  mask_threshold: 0
+  mask_hw_source: record
+  allow_zero_mask_for_normal: true
+  squeeze_cached_batch_dim: true
+training:
+  epochs: 150
+  batch_size: 64
+  optimizer:
+    name: AdamW
+    lr: 0.001
+    kwargs:
+      weight_decay: 0.0
+  scheduler: null
+  gradient_clip_norm: null
+  deterministic_algorithms: true
+  deterministic_warn_only: false
+  amp:
+    enabled: true
+    dtype: bfloat16
+  checkpoint_interval_steps: 100
+checkpoint:
+  monitor: dev_aupro
+  mode: max
+  # Earliest epoch wins an exact tie. No early stopping; all 150 epochs run.

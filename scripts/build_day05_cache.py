@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Day-04 FULL-v3 source plan and synthetic generator, with native DEV images.
+"""DINOv3 full cache builder: native tiny/mixed DEV v2 and legacy Day-04 replay.
 
+--synthetic-protocol selects native v2 synthesis, source-disjoint DEV groups,
+all native Local/Context tiles and configurable S/S+/B/L/H+ frozen backbones.
+
+Legacy mode:
 One deterministic crop per raw TRAIN image, hash80/20 v3, alternating anomaly,
 TRAIN intensity/color/noise, DEV cutpaste. Reuses the sharded cache writer.
 --export-dev-only replays Day-04 records and verifies masks AND all six features
@@ -117,6 +121,10 @@ def write_mask(path, mask):
 
 
 def build(args):
+    if getattr(args, 'backbone', 'dinov3_vits16') != 'dinov3_vits16' and not getattr(args, 'synthetic_protocol', None):
+        args.synthetic_protocol = Path('configs/full_scale_synthetic.yaml')
+    if getattr(args, 'synthetic_protocol', None):
+        return build_native_cache(args)
     for path in (args.dino_checkpoint, args.dinov3_repo/'hubconf.py'):
         if not path.is_file(): raise FileNotFoundError(f'BLOCKED_MISSING_DATA: {path}')
     if args.export_dev_only and any(x is None for x in (args.cache_dir,args.train_records,args.val_records,args.mask_root)):
@@ -127,7 +135,7 @@ def build(args):
     root = Path(args.output_root).absolute()
     sig = dict(schema='msila.day05.full_cache.v1', dataset='MVTec_AD_2', categories=args.categories.split(','),
         smoke_only=False, full_source_coverage=True, source_split_version=SPLIT_VERSION, train_fraction=.8,
-        backbone='dinov3_vits16', checkpoint_sha256=file_hash(args.dino_checkpoint),
+        backbone=getattr(args, 'backbone', 'dinov3_vits16'), checkpoint_sha256=file_hash(args.dino_checkpoint),
         logical_layers_1based=[4,8,12], internal_indices_0based=[3,7,11], local_source_size=[512,512],
         context_source_size=[768,768], model_input_size=[512,512], normalization='ImageNet mean/std',
         train_anomaly_types=['intensity','color','noise'], dev_anomaly_types=['cutpaste'],
@@ -149,8 +157,10 @@ def build(args):
         reader = FeatureCacheReader(cache) if (cache/'manifest.json').exists() else None
         if reader and reader.manifest['producer_signature'] != sig: raise ValueError('Cache producer drift; use a new root')
     extractor = build_online_extractor(repo_dir=args.dinov3_repo, weights=args.dino_checkpoint,
-                                      device=args.device, model_name='dinov3_vits16')
-    if extractor.out_channels != 384 or extractor.patch_size != 16: raise ValueError('Not ViT-S/16')
+                                      device=args.device, model_name=getattr(args, 'backbone', 'dinov3_vits16'),
+                                      blocks=getattr(args, 'blocks', None))
+    if getattr(extractor,'blocks',(4,8,12)) != (4,8,12):
+        raise ValueError('Physical blocks differ from legacy cache; use --synthetic-protocol for full-scale cache')
     g = build_view_meta(source_hw=(768,768),local_box_xyxy=(128,128,640,640),context_box_xyxy=(0,0,768,768))
     geometry = dict(image_hw=[768,768],local_hw=[512,512],context_hw=[768,768],local_input_hw=[512,512],
         context_input_hw=[512,512],local_box=[128,128,640,640],context_box=[0,0,768,768],
@@ -211,7 +221,202 @@ def parse_args(argv=None):
     p.add_argument('--export-dev-only',action='store_true')
     for k in ('train-records','val-records','mask-root'):p.add_argument('--'+k,type=Path)
     p.add_argument('--dry-run',action='store_true')
+    from src.models.backbone_registry import BACKBONES
+    p.add_argument('--backbone', choices=list(BACKBONES), default='dinov3_vits16')
+    p.add_argument('--blocks', type=int, nargs=3)
+    p.add_argument('--seed', type=int, default=42, help='Data-generation seed, shared across training seeds')
+    p.add_argument('--synthetic-protocol', type=Path)
+    p.add_argument('--data-artifact-root', type=Path)
     return p.parse_args(argv)
+
+
+NATIVE_SPLIT_VERSION = 'train_normal_hash80_10_10_tiny_v2'
+
+
+def native_source_plan(data_root, categories, protocol, seed=42):
+    """Only official TRAIN normals; disjoint sources across TRAIN/tiny/mixed."""
+    from itertools import product
+    from src.data.synthetic_anomaly import validate_native_protocol
+    validate_native_protocol(protocol)
+    scanned = scan_mvtec_ad2(data_root, split='train', categories=categories)
+    rows = []
+    for cat in categories:
+        sources = sorted((r for r in scanned if r.category == cat and r.is_normal), key=lambda r: r.image_path)
+        roles = dict(train_core=[], dev_tiny=[], dev_mixed=[])
+        for r in sources:
+            sid = Path(r.image_path).relative_to(data_root).as_posix()
+            u = int(stable_hash(f'{NATIVE_SPLIT_VERSION}|{seed}|{sid}')[:8], 16) % 10000
+            role = 'train_core' if u < 8000 else 'dev_tiny' if u < 9000 else 'dev_mixed'
+            roles[role].append((sid, r.image_path))
+        if any(not values for values in roles.values()):
+            raise ValueError(f'{cat}: empty source-disjoint TRAIN/DEV partition; counts=' +
+                             str({k: len(v) for k, v in roles.items()}))
+        for role, items in roles.items():
+            variants = list(product(protocol['defect_types'], protocol[role+'_bins'], protocol['placements']))
+            for i, (sid, path) in enumerate(items):
+                # All DEV strata for each source, plus an unchanged normal.
+                # TRAIN uses a fixed, stratified defect per source plus normal;
+                # every native tile is retained, including negative tiles.
+                chosen = [variants[i % len(variants)]] if role == 'train_core' else variants
+                for j, variant in enumerate([None] + chosen):
+                    kind, size, placement = variant or variants[0]
+                    iid = f'{cat}_{role}_{stable_hash(sid)[:16]}_v{j:03d}'
+                    rows.append(dict(category=cat, split=role, image_id=iid, source_identity=sid,
+                                     source_path=path, make_anomaly=variant is not None,
+                                     defect_type=kind, size_bin=size, placement=placement,
+                                     synthetic_seed=int(stable_hash(f'{seed}|{iid}')[:15],16)))
+    return rows
+
+
+def build_native_cache(args):
+    import yaml
+    import subprocess
+    import time
+    import importlib.metadata
+    from collections import Counter
+    from src.data.synthetic_anomaly import NativeTinyDefectGenerator
+    from src.data.loader import load_rgb_native
+    from src.data.tiling import generate_tile_records, crop_with_padding
+    from src.eval.region_stats import component_geometry
+    from src.models.backbone_registry import backbone_spec, validate_blocks
+    from scripts.day05_full_inference import make_tile_batch
+
+    started = time.perf_counter()
+    for path in (args.dino_checkpoint, args.dinov3_repo/'hubconf.py'):
+        if not path.is_file():
+            raise FileNotFoundError(f'BLOCKED_MISSING_DATA: {path}')
+    if getattr(args, 'export_dev_only', False):
+        raise ValueError('Native v2 data cannot relabel legacy caches via --export-dev-only')
+    protocol = yaml.safe_load(Path(args.synthetic_protocol).read_text())
+    seed = getattr(args, 'seed', 42)
+    plan = native_source_plan(args.data_root, args.categories.split(','), protocol, seed)
+    spec = backbone_spec(args.backbone)
+    blocks = validate_blocks(spec.blocks if getattr(args, 'blocks', None) is None else args.blocks, spec.depth)
+    if args.dry_run:
+        return dict(status='ASSETS_VALID', backbone=args.backbone, physical_blocks=list(blocks),
+                    native_images=len(plan), extraction_executed=False, vram_validated=False)
+    device = torch.device(args.device)
+    if device.type == 'cuda' and not torch.cuda.is_available():
+        raise RuntimeError('BLOCKED_MISSING_GPU: CUDA requested but unavailable')
+    root = Path(args.output_root).absolute()
+    data_root = Path(getattr(args, 'data_artifact_root', None) or root/'dataset').absolute()
+    cache = Path(getattr(args, 'cache_dir', None) or root/'feature_cache').absolute()
+    unique_sources = {e['source_identity']:e['source_path'] for e in plan}
+    source_hashes = {sid:file_hash(path) for sid,path in unique_sources.items()}
+    try:
+        revision = subprocess.check_output(['git', '-C', str(args.dinov3_repo), 'rev-parse', 'HEAD'],
+                                           text=True,stderr=subprocess.DEVNULL).strip()
+    except subprocess.CalledProcessError:
+        revision = None
+    sig = dict(schema='msila.full_scale.cache.v2', dataset='MVTec_AD_2', categories=args.categories.split(','),
+        backbone=args.backbone, checkpoint_sha256=file_hash(args.dino_checkpoint),
+        architecture=dict(channels=spec.channels, depth=spec.depth, patch_size=spec.patch_size),
+        logical_layers_1based=list(blocks), internal_indices_0based=[b-1 for b in blocks],
+        cache_slot_blocks=dict(zip(('b4','b8','b12'),blocks)),
+        local_source_size=[512,512], context_source_size=[768,768], model_input_size=[512,512],
+        normalization='ImageNet mean/std', preprocessing='native_synthesis;all_tiles512_overlap128;reflect_RGB;'
+        'constant_zero_mask_padding;context768_bicubic_antialias_to512;normalize_after_resize',
+        source_split_version=NATIVE_SPLIT_VERSION, data_seed=seed, source_sha256=source_hashes,
+        synthetic_protocol=protocol, synthetic_protocol_sha256=digest(protocol),
+        source_plan_sha256=digest(plan), dinov3_git_revision=revision,
+        dinov3_source_sha256={str(p.relative_to(args.dinov3_repo)):file_hash(p)
+                             for p in sorted(Path(args.dinov3_repo).rglob('*.py')) if '.git' not in p.parts},
+        synthetic_code_sha256=file_hash(Path(__file__).parents[1]/'src/data/synthetic_anomaly.py'),
+        builder_sha256=file_hash(__file__), smoke_only=False, full_source_coverage=True,
+        feature_storage_dtype='float32', evaluation_unit='native_source_image',
+        feature_norm=True, extraction_amp=False,
+        producer_versions={name:importlib.metadata.version(name) for name in
+                           ('torch','torchvision','numpy','Pillow')},
+        training_sampling='every_tile_of_normal_and_one_stratified_defect_per_train_source')
+    validate_signature(sig, args.dino_checkpoint, expected_backbone=args.backbone)
+    if (cache/'manifest.json').is_file():
+        saved=FeatureCacheReader(cache,mmap=True,shard_cache_size=1)
+        if saved.manifest['producer_signature']!=sig:
+            raise ValueError('Native cache producer changed; use a new cache root')
+    if device.type == 'cuda':
+        torch.cuda.reset_peak_memory_stats(device)
+    extractor = None
+    generator = NativeTinyDefectGenerator(protocol)
+    records = dict(train_core=[], dev_tiny=[], dev_mixed=[])
+    inputs, stats = [], []
+    try:
+        with FeatureCacheWriter(cache, producer_signature=sig, max_samples_per_shard=16) as writer:
+            for e in plan:
+                raw = load_rgb_native(e['source_path'])
+                synth = generator(raw, seed=e['synthetic_seed'], defect_type=e['defect_type'],
+                                  size_bin=e['size_bin'], placement=e['placement'], normal=not e['make_anomaly'])
+                hw = list(raw.shape[-2:])
+                geometry = component_geometry(synth.mask[0].numpy(), protocol['boundary_band_px'])
+                if e['make_anomaly'] and (len(geometry) != 1 or geometry[0]['area'] != synth.metadata['area']):
+                    raise ValueError('Native generator must produce one connected region of declared area')
+                audit = dict(image_id=e['image_id'], category=e['category'], split=e['split'],
+                             native_hw=hw, synthetic=synth.metadata, native_components=geometry, tiles=[])
+                for tile in generate_tile_records(*hw):
+                    iid = f'{e["image_id"]}_tile{tile.tile_id:05d}'
+                    mask = crop_with_padding(synth.mask, tile.local_xyxy, pad_mode='constant')
+                    rel = Path(e['split'])/e['category']/(iid+'.png')
+                    write_mask(data_root/'masks'/rel, mask)
+                    key = sample_key(iid,e['category'])
+                    if key not in writer.manifest['index']:
+                        if extractor is None:
+                            extractor=build_online_extractor(repo_dir=args.dinov3_repo,weights=args.dino_checkpoint,
+                                                            model_name=args.backbone,blocks=blocks,device=device)
+                        features = make_tile_batch(synth.image, tile, extractor, device, context=True)
+                        g = features.pop('meta')[0]['geometry']
+                        features.pop('output_hw')
+                        features={key:value.detach().float() for key,value in features.items()}
+                        # The cache geometry describes both views in the Context frame.
+                        lx0,ly0,lx1,ly1=tile.local_xyxy;cx0,cy0,cx1,cy1=tile.context_xyxy
+                        g.update(image_hw=[768,768],local_hw=[512,512],context_hw=[768,768],
+                                 local_box=[lx0-cx0,ly0-cy0,lx1-cx0,ly1-cy0],context_box=[0,0,768,768])
+                        writer.add(dict(image_id=iid,category=e['category'],geometry=g,**features))
+                    components = component_geometry(mask[0].numpy(), protocol['boundary_band_px'])
+                    context_mask=crop_with_padding(synth.mask,tile.context_xyxy,pad_mode='constant')
+                    resized_context=F.interpolate(context_mask[None],size=(512,512),mode='nearest')[0,0].numpy()
+                    audit['tiles'].append(dict(tile_id=tile.tile_id, local_xyxy=list(tile.local_xyxy),
+                                               local_hw=[512,512], components=components,
+                                               context_resize_scale=512/768,
+                                               context_components=component_geometry(context_mask[0].numpy()),
+                                               context_input_components=component_geometry(resized_context),
+                                               component_coordinate_frame='local_tile_or_context_input',
+                                               boundary_definition='native_components refer to image edge; tile components refer to tile edge'))
+                    meta = dict(split=e['split'],source_identity=e['source_identity'], synthetic=synth.metadata,
+                                native_image_id=e['image_id'], native_hw=hw, tile_xyxy=list(tile.local_xyxy),
+                                smoke_only=False,full_source_coverage=True)
+                    records[e['split']].append(dict(image_id=iid,category=e['category'],mask_path=str(rel),
+                        mask_hw=[512,512],is_anomaly=bool(mask.any()),meta=meta))
+                stats.append(audit)
+                if e['split'] != 'train_core':
+                    ip=data_root/'images'/e['category']/(e['image_id']+'.npy')
+                    mp=data_root/'native_masks'/e['category']/(e['image_id']+'.png')
+                    write_array(ip,synth.image.permute(1,2,0).numpy().astype(np.float32));write_mask(mp,synth.mask)
+                    inputs.append(dict(image_id=e['image_id'],category=e['category'],split=e['split'],
+                        image=str(ip),gt_mask=str(mp),image_sha256=file_hash(ip),gt_mask_sha256=file_hash(mp),
+                        original_hw=hw,source_image_id=e['source_identity'],synthetic=synth.metadata))
+                print(f'[CACHE] {args.backbone}: {e["image_id"]}', flush=True)
+    except torch.cuda.OutOfMemoryError as exc:
+        save_json(dict(status='FAILED_OOM', backbone=args.backbone, reason=str(exc),
+                       configuration_preserved=True),root/'cache_failure.json')
+        raise
+    for role, rows in records.items():
+        save_json(rows, data_root/'records'/f'{role}.json')
+    save_json(records['dev_tiny']+records['dev_mixed'],data_root/'records/dev.json')
+    save_json(dict(schema='msila.full_scale.native_inputs.v2',samples=inputs,
+                   synthetic_protocol=protocol,synthetic_protocol_sha256=digest(protocol)),data_root/'dev_inputs.json')
+    coverage = Counter((e['split'], e['size_bin'], e['placement'], e['defect_type'])
+                       for e in plan if e['make_anomaly'])
+    save_json(dict(schema='msila.full_scale.gt_stats.v2', images=stats,
+                   coverage=[dict(split=k[0],size_bin=k[1],placement=k[2],defect_type=k[3],images=v)
+                             for k,v in sorted(coverage.items())],
+                   synthetic_proxy=True, real_defect_distribution_calibrated=False),data_root/'gt_statistics.json')
+    validate_cache(cache)
+    result = dict(status='COMPLETE', backbone=args.backbone, cache=str(cache), data_root=str(data_root),
+                  native_images=len(plan), tile_records=sum(map(len,records.values())),
+                  producer_sha256=digest(sig), elapsed_sec=time.perf_counter()-started,
+                  peak_vram_mb=torch.cuda.max_memory_allocated(device)/1024**2 if device.type=='cuda' else 0.,
+                  dev_inputs_sha256=file_hash(data_root/'dev_inputs.json'))
+    save_json(result,root/'COMPLETE.json')
+    return result
 
 
 if __name__=='__main__': print(json.dumps(build(parse_args()),indent=2))
