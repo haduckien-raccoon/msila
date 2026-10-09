@@ -1,0 +1,159 @@
+{
+  "branch": "codex/tv1-d2-preflight",
+  "commands": {
+    "cli_fixture": "pytest test_pipeline_cpu_preflight_records_cache_hashes_and_optimizer_contract invokes existing main(argv) with fixture cache/records/selection/repo/checkpoint, device=cpu, preflight_steps=2; no separate CLI and no scientific configuration edits",
+    "real_gate_executed": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLCONFIGDIR=/tmp/msila-tv1-d2-mpl PYTHONPATH=. .venv/qa/bin/python -m scripts.run_day05_pipeline --stage preflight --output-root /tmp/msila-tv1-d2-real-gate",
+    "real_preflight_when_assets_available": "PYTHONPATH=. .venv/qa/bin/python -m scripts.run_day05_pipeline --stage preflight --device cuda:0 --preflight-steps 3 --cache-dir REAL_CACHE --train-records TRAIN_RECORDS --val-records DEV_SYNTHETIC_RECORDS --mask-root MASK_ROOT --dinov3-repo PINNED_DINO_REPO --dino-checkpoint REAL_DINO_WEIGHTS --adapter-selection-report DAY04_SELECTION --training-protocol configs/day05_day04_full_v3_protocol.yaml --output-root NEW_PREFLIGHT_OUTPUT",
+    "targeted_pytest": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLCONFIGDIR=/tmp/msila-tv1-d2-mpl PYTHONPATH=. .venv/qa/bin/python -m pytest -q tests/test_day05_preflight.py tests/test_dinov3_extractor.py tests/test_residual_adapter_identity.py tests/test_day05.py::test_feature_selector_from_candidate_returns_exact_sources tests/test_day05.py::test_backward_routes_gradients_only_through_active_day05_path tests/test_day05_pipeline.py::test_backbone_metadata_has_no_filename_or_substring_bypass tests/test_day05_pipeline.py::test_preflight_updates_weights_and_every_selected_source tests/test_day05_pipeline.py::test_cache_contract_and_forbidden_unverified_flag tests/test_day05_pipeline.py::test_locked_bfloat16_amp_preflight_keeps_protocol tests/test_day05_pipeline.py::test_checkpoint_restores_rng_optimizer_and_sampler_order tests/test_day05_pipeline.py::test_dry_run_reports_missing_assets_without_training tests/test_day05_pipeline.py::test_pipeline_audit_rejects_silently_ignored_day05_overrides tests/test_day05_pipeline.py::test_pipeline_cpu_preflight_records_cache_hashes_and_optimizer_contract tests/test_day05_pipeline.py::test_day05_verify_cache_rejects_shape_in_any_source tests/test_day05_pipeline.py::test_real_tv1_class_checkpoint_strict_load_and_finite_forward --tb=short -rs --junitxml=/tmp/msila-tv1-d2-regression.xml"
+  },
+  "cpu_smoke": {
+    "cache_cli": "six fixture features [B,384,32,32] to logits [B,1,512,512]; PREFLIGHT_PASS per candidate; no best.pt/training_log.csv",
+    "candidates": [
+      "R0",
+      "R1",
+      "R2"
+    ],
+    "checkpoint": "existing save_checkpoint/load_checkpoint: strict state equality, optimizer state, config hash and SHA sidecar verified",
+    "existing_test_fixture_budget": "Existing artifacts fixture runs 2 isolated epochs per candidate to supply checkpoint fixtures; scientific YAML files/budgets unchanged",
+    "loss": "existing AnomalySegmentationLoss BCE+Dice",
+    "optimizer_steps_per_candidate": 2,
+    "scope": "CPU_FIXTURE_ONLY; not real-data/GPU or E1 evidence",
+    "tiny_features": [
+      1,
+      8,
+      4,
+      4
+    ],
+    "tiny_logits": [
+      1,
+      1,
+      16,
+      16
+    ],
+    "updates": "active adapter/projection/decoder update; inactive parameters unchanged; features detached"
+  },
+  "evidence": {
+    "baseline": {
+      "errors": 0,
+      "failures": 0,
+      "path": "reports/recheck/tv1_d2_artifacts/baseline.xml",
+      "seconds": "4.735",
+      "sha256": "5d995cd2625fcb372356001bf011209a241bb18459b7b6ee8acce15e24421269",
+      "skipped": 1,
+      "tests": 36
+    },
+    "cache-red": {
+      "errors": 0,
+      "failures": 3,
+      "path": "reports/recheck/tv1_d2_artifacts/cache-red.xml",
+      "seconds": "3.229",
+      "sha256": "9b0ac50ed9348ddd40065f70a9e00c6f4f3970266d786567275911e6e4e54d71",
+      "skipped": 0,
+      "tests": 3
+    },
+    "cli-red": {
+      "errors": 0,
+      "failures": 4,
+      "path": "reports/recheck/tv1_d2_artifacts/cli-red.xml",
+      "seconds": "7.995",
+      "sha256": "fb5f9a9b5de86830430bf7fc2500b3b683ddc5240de8dbf3d489e7b129b386b4",
+      "skipped": 0,
+      "tests": 5
+    },
+    "red": {
+      "errors": 0,
+      "failures": 4,
+      "path": "reports/recheck/tv1_d2_artifacts/red.xml",
+      "seconds": "2.975",
+      "sha256": "9913ad344c7a314f949b25159881291d983deb3008d7fd4d11ed9739397299ea",
+      "skipped": 0,
+      "tests": 4
+    },
+    "regression": {
+      "errors": 0,
+      "failures": 0,
+      "path": "reports/recheck/tv1_d2_artifacts/regression.xml",
+      "seconds": "10.371",
+      "sha256": "8908618118ba5b15bf3aa03985de8d5515eaa83c11a7b8e12299db8286ecc5dd",
+      "skipped": 1,
+      "tests": 57
+    }
+  },
+  "head": "bab1ba74fa00c967f8f599276124e600ed832242",
+  "next_task": "READY_FOR_TV1_D3; E1 remains separate, not implemented or aliased to R0",
+  "preserved_worktree_sha256": {
+    "docs/MSILA_CODEX_CONTEXT_V2.md": "163896613637992b08f681b583227a25537a8d27829474302cdb41ea18afae8c",
+    "reports/recheck/tv1_d1_architecture.md": "e231b917641baba620d848a5815d25771030e4afb7b317fb7d8ab3ae046cd113",
+    "reports/recheck/tv2_d1_data.md": "093f0e11a400abaa4e7e6bee149030568d1c0694939eb946e8b895013c044fc2",
+    "reports/recheck/tv2_d2_artifacts/contract-red.xml": "42ba44ee0d3914294db8024660884fb5aeebc54d3f134475221e0b4e601ab7a6",
+    "reports/recheck/tv2_d2_artifacts/input-red.xml": "f0a6b885d1cd4e516d9d8847cabf082c9de900331796a6acb97ffd736003b818",
+    "reports/recheck/tv2_d2_artifacts/layout-red.xml": "dcdf87a9d21c765abb5427b5a0f5c1bc33de4ccf85a101eda2a67b91f49284b6",
+    "reports/recheck/tv2_d2_artifacts/output-red.xml": "41f81baf90200c676c844e0f903a7bad5293f884235ffeda49405fa3f70ad1c1",
+    "reports/recheck/tv2_d2_artifacts/red.xml": "a68b8fa0bdf8e4f20034a52ab09a1bdb8660d6aec123d07e1ddfbf26700a6aad",
+    "reports/recheck/tv2_d2_artifacts/regression.xml": "e29e62f8ac6202fc2f0bca0a894ff63080dd9056d453ec7fe1e5bb2bb7072a6c",
+    "reports/recheck/tv2_d2_artifacts/run.json": "1b5ffb84602189f591e46e81b6af18a430401e2ca4645f64a61c6937b1d1a7b8",
+    "reports/recheck/tv2_d2_artifacts/wrapper-red.xml": "bb5a91aa94843016441d0cd74ec3aa1fb2a5a9aeb60fa1d89ca08fc4406f2029",
+    "reports/recheck/tv2_d2_changes.md": "cb025550654a409566ca2c874bf5eb320750ae66d0db7a735798b19c3ad364d1",
+    "scripts/audit_dataset.py": "ba9e91fd6d329554e25d14da399ec94a7d99ee7447d8f5f419b6a16f5c699455",
+    "src/data/dataset_audit.py": "7104bc7eb1e170e4bfe5588aa95a9ff31dd9ecf86c51dec3971cc5d5d4b5daaf",
+    "src/data/loader.py": "8443ff0bbd3e1a5960e71812aa18fb52d4c0a46b7dd3c6cd2cdd0191a09ff2a5",
+    "src/data/tiling.py": "e8dec3dfdb16843d72d34c33a279ded2fd58fe0998b19911b28bc5aa364bd8e6",
+    "tests/test_dataset_audit.py": "d6582228e9d48381a56302ebbc4cb6ddc62d6f0715b20dc0cacb2920b428ebbd",
+    "tests/test_masks.py": "c8e0932150ac37d60d60d49ff5138bdc8d2df4f6f7db22f99bfc36371a59df16"
+  },
+  "real_status": {
+    "cuda_available": false,
+    "cuda_devices": 0,
+    "environment": {
+      "DINOV3_CHECKPOINT": null,
+      "DINOV3_REPO": null,
+      "DINOV3_WEIGHTS": null,
+      "FEATURE_CACHE_DIR": null,
+      "FEATURE_TRAIN_INDEX": null,
+      "MSILA_DAY04_ADAPTER_D": null,
+      "MSILA_DAY04_ADAPTER_R": null,
+      "MSILA_MVTEC_AD2_ROOT": null
+    },
+    "gate": {
+      "reason": "BLOCKED_MISSING_DATA: cache_manifest=None; train_records=None; val_records=None; dino_checkpoint=None; adapter_selection_report=None; dino_source=None",
+      "stage": "preflight",
+      "status": "BLOCKED_MISSING_DATA"
+    },
+    "needs": [
+      "Pinned DINO source checkout and pretrained checkpoint",
+      "Verified cache manifest/shards, TRAIN/DEV-synthetic records, masks, producer signatures/source identities",
+      "Day04 selection report r32/d384; original Day05 protocol/seed42",
+      "CUDA runtime; actual Day05 R0/R1/R2 checkpoints for D3 strict checks"
+    ],
+    "scientific_training_started": false,
+    "status": "BLOCKED_REAL",
+    "torch": "2.6.0+cpu",
+    "weights_downloaded": false
+  },
+  "red_before_fix": {
+    "cache-red": "3 failures: wrong Day05 channel/spatial/saved batch dimensions accepted",
+    "cli-red": "4 failures/1 pass: wrong Day05 backbone/r/d/seed silently ignored",
+    "red": "4 failures: omitted/foreign optimizer parameters accepted; YAML and missing selection errors escaped CLI"
+  },
+  "source_sha256": {
+    "scripts/run_day05_pipeline.py": "c67e794cde78e610bf7f8bbe6c0a59fe1363fe2545241eb03b0bb85d26a536b7",
+    "src/train/screen_representation.py": "07caf2fd9d7cd5df7b185423cec4fc79b77968c1ad0c2e68b3e535e465b403ea",
+    "tests/test_day05_pipeline.py": "2439161661f5e31f792f79777884023d2fae92a56e16d1fd34699a930f30cc53",
+    "tests/test_day05_preflight.py": "01124ab4498b9f8e277116079722549829566e0ab8d93ca26429567caf2b2cf0"
+  },
+  "status": "CODE_READY / REAL_PENDING",
+  "task": "TV1-D2",
+  "test_counts_by_module": {
+    "tests.test_day05": 6,
+    "tests.test_day05_pipeline": 25,
+    "tests.test_day05_preflight": 9,
+    "tests.test_dinov3_extractor": 13,
+    "tests.test_residual_adapter_identity": 4
+  },
+  "unchanged_sha256": {
+    "configs/day05_day04_full_v3_protocol.yaml": "cd225b65dbe972ccf5f87550c8a4c1fb605e0ddc034ed1006a66f804fac45803",
+    "configs/day05_representation.yaml": "3cf7584e9551ce59a999a1cc1ac151f2a58eebadbe99cfa1d147b1d8cbe2d7ec",
+    "src/models/dinov3_extractor.py": "f2c394541090fa0d3c15161dd5ed719b7d77f9111cc838ef2f3b9127e097ebbd",
+    "src/train/day05_contract.py": "6be2e29402d97fd7f9a803964866a55097a22f4494b2609b4bdee619a0e040e1"
+  }
+}

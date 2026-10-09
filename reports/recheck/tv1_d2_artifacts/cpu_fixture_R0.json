@@ -1,0 +1,92 @@
+{
+  "evidence_scope": "CPU_FIXTURE_ONLY",
+  "logits_shape": [
+    1,
+    1,
+    16,
+    16
+  ],
+  "input_feature_shape": [
+    1,
+    8,
+    4,
+    4
+  ],
+  "checkpoint_sha256": "5e579d494d8e686cd8d6ba80a5c69e41603c7eae6c8430638dab1fc4bcd4cd38",
+  "resolved_config_sha256": "e702b1a25526cf084ec5d797098e366e22d963eab89be6211cc9a89db285fc5a",
+  "preflight": {
+    "status": "PASS",
+    "candidate": "R0",
+    "steps": 2,
+    "frozen_backbone_features": true,
+    "parameter_free_aligner_fusion": true,
+    "optimizer_parameters": {
+      "status": "PASS",
+      "optimizer": "AdamW",
+      "trainable_parameters": 35434,
+      "trainable_tensors": 15,
+      "groups": [
+        {
+          "index": 0,
+          "parameter_names": [
+            "adapters.b12.gamma",
+            "adapters.b12.down_proj.weight",
+            "adapters.b12.down_proj.bias",
+            "adapters.b12.dwconv.weight",
+            "adapters.b12.dwconv.bias",
+            "adapters.b12.mid_proj.weight",
+            "adapters.b12.mid_proj.bias",
+            "adapters.b12.out_proj.weight",
+            "adapters.b12.out_proj.bias",
+            "projection.projectors.b12.weight",
+            "projection.projectors.b12.bias",
+            "decoder.head.0.weight",
+            "decoder.head.0.bias",
+            "decoder.head.2.weight",
+            "decoder.head.2.bias"
+          ],
+          "parameters": 35434,
+          "lr": 0.001
+        }
+      ]
+    },
+    "losses": [
+      1.4672585725784302,
+      1.4139448404312134
+    ],
+    "source_usage": [
+      {
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.51171875
+        }
+      },
+      {
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.52734375
+        }
+      }
+    ],
+    "changed_parameter_count": 15,
+    "changed_parameters": [
+      "adapters.b12.gamma",
+      "adapters.b12.down_proj.weight",
+      "adapters.b12.down_proj.bias",
+      "adapters.b12.dwconv.weight",
+      "adapters.b12.dwconv.bias",
+      "adapters.b12.mid_proj.weight",
+      "adapters.b12.mid_proj.bias",
+      "adapters.b12.out_proj.weight",
+      "adapters.b12.out_proj.bias",
+      "projection.projectors.b12.weight",
+      "projection.projectors.b12.bias",
+      "decoder.head.0.weight",
+      "decoder.head.0.bias",
+      "decoder.head.2.weight",
+      "decoder.head.2.bias"
+    ]
+  }
+}

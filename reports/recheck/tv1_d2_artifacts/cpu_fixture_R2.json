@@ -1,0 +1,186 @@
+{
+  "evidence_scope": "CPU_FIXTURE_ONLY",
+  "logits_shape": [
+    1,
+    1,
+    16,
+    16
+  ],
+  "input_feature_shape": [
+    1,
+    8,
+    4,
+    4
+  ],
+  "checkpoint_sha256": "d914d3d1c7e2fbaf1dc53a7ce189df36cf2ad5d60bdfb5eac3fdecf517539d08",
+  "resolved_config_sha256": "a4794b56ae17e65cc728f04b114338c4a7c7afda5728aa4d87839f08a936d20b",
+  "preflight": {
+    "status": "PASS",
+    "candidate": "R2",
+    "steps": 2,
+    "frozen_backbone_features": true,
+    "parameter_free_aligner_fusion": true,
+    "optimizer_parameters": {
+      "status": "PASS",
+      "optimizer": "AdamW",
+      "trainable_parameters": 69308,
+      "trainable_tensors": 37,
+      "groups": [
+        {
+          "index": 0,
+          "parameter_names": [
+            "adapters.b4.gamma",
+            "adapters.b4.down_proj.weight",
+            "adapters.b4.down_proj.bias",
+            "adapters.b4.dwconv.weight",
+            "adapters.b4.dwconv.bias",
+            "adapters.b4.mid_proj.weight",
+            "adapters.b4.mid_proj.bias",
+            "adapters.b4.out_proj.weight",
+            "adapters.b4.out_proj.bias",
+            "adapters.b8.gamma",
+            "adapters.b8.down_proj.weight",
+            "adapters.b8.down_proj.bias",
+            "adapters.b8.dwconv.weight",
+            "adapters.b8.dwconv.bias",
+            "adapters.b8.mid_proj.weight",
+            "adapters.b8.mid_proj.bias",
+            "adapters.b8.out_proj.weight",
+            "adapters.b8.out_proj.bias",
+            "adapters.b12.gamma",
+            "adapters.b12.down_proj.weight",
+            "adapters.b12.down_proj.bias",
+            "adapters.b12.dwconv.weight",
+            "adapters.b12.dwconv.bias",
+            "adapters.b12.mid_proj.weight",
+            "adapters.b12.mid_proj.bias",
+            "adapters.b12.out_proj.weight",
+            "adapters.b12.out_proj.bias",
+            "projection.projectors.b4.weight",
+            "projection.projectors.b4.bias",
+            "projection.projectors.b8.weight",
+            "projection.projectors.b8.bias",
+            "projection.projectors.b12.weight",
+            "projection.projectors.b12.bias",
+            "decoder.head.0.weight",
+            "decoder.head.0.bias",
+            "decoder.head.2.weight",
+            "decoder.head.2.bias"
+          ],
+          "parameters": 69308,
+          "lr": 0.001
+        }
+      ]
+    },
+    "losses": [
+      1.485041618347168,
+      1.461265206336975
+    ],
+    "source_usage": [
+      {
+        "local_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        },
+        "local_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        },
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        },
+        "context_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        },
+        "context_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        },
+        "context_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08056640625
+        }
+      },
+      {
+        "local_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        },
+        "local_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        },
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        },
+        "context_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        },
+        "context_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        },
+        "context_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.08447265625
+        }
+      }
+    ],
+    "changed_parameter_count": 37,
+    "changed_parameters": [
+      "adapters.b4.gamma",
+      "adapters.b4.down_proj.weight",
+      "adapters.b4.down_proj.bias",
+      "adapters.b4.dwconv.weight",
+      "adapters.b4.dwconv.bias",
+      "adapters.b4.mid_proj.weight",
+      "adapters.b4.mid_proj.bias",
+      "adapters.b4.out_proj.weight",
+      "adapters.b4.out_proj.bias",
+      "adapters.b8.gamma",
+      "adapters.b8.down_proj.weight",
+      "adapters.b8.down_proj.bias",
+      "adapters.b8.dwconv.weight",
+      "adapters.b8.dwconv.bias",
+      "adapters.b8.mid_proj.weight",
+      "adapters.b8.mid_proj.bias",
+      "adapters.b8.out_proj.weight",
+      "adapters.b8.out_proj.bias",
+      "adapters.b12.gamma",
+      "adapters.b12.down_proj.weight",
+      "adapters.b12.down_proj.bias",
+      "adapters.b12.dwconv.weight",
+      "adapters.b12.dwconv.bias",
+      "adapters.b12.mid_proj.weight",
+      "adapters.b12.mid_proj.bias",
+      "adapters.b12.out_proj.weight",
+      "adapters.b12.out_proj.bias",
+      "projection.projectors.b4.weight",
+      "projection.projectors.b4.bias",
+      "projection.projectors.b8.weight",
+      "projection.projectors.b8.bias",
+      "projection.projectors.b12.weight",
+      "projection.projectors.b12.bias",
+      "decoder.head.0.weight",
+      "decoder.head.0.bias",
+      "decoder.head.2.weight",
+      "decoder.head.2.bias"
+    ]
+  }
+}

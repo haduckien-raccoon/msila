@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.099" timestamp="2026-10-09T13:26:21.991651" hostname="Raccoon2005"><testcase classname="tests.test_dataset_audit" name="test_cli_output_io_error_has_documented_exit_code" time="0.004"><failure message="IsADirectoryError: [Errno 21] Is a directory: '/tmp/pytest-of-haduckien/pytest-22/test_cli_output_io_error_has_d0'">tests/test_dataset_audit.py:304: in test_cli_output_io_error_has_documented_exit_code
+    assert main(["--padding-manifest", str(inputs), "--output", str(tmp_path)]) == 2
+scripts/audit_dataset.py:49: in main
+    a.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+/usr/lib/python3.12/pathlib.py:1049: in write_text
+    with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:
+/usr/lib/python3.12/pathlib.py:1015: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+E   IsADirectoryError: [Errno 21] Is a directory: '/tmp/pytest-of-haduckien/pytest-22/test_cli_output_io_error_has_d0'</failure></testcase></testsuite></testsuites>

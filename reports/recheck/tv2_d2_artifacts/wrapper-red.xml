@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="2.408" timestamp="2026-10-09T13:21:06.672044" hostname="Raccoon2005"><testcase classname="tests.test_day05_pipeline" name="test_source_plan_accepts_official_archive_wrapper" time="0.013"><failure message="FileNotFoundError: BLOCKED_MISSING_DATA: require one TRAIN/good root for fabric, found 0">tests/test_day05_pipeline.py:589: in test_source_plan_accepts_official_archive_wrapper
+    rows=source_plan(tmp_path,['fabric'])
+scripts/build_day05_cache.py:50: in source_plan
+    raise FileNotFoundError(f'BLOCKED_MISSING_DATA: require one TRAIN/good root for {cat}, found {len(roots)}')
+E   FileNotFoundError: BLOCKED_MISSING_DATA: require one TRAIN/good root for fabric, found 0</failure></testcase></testsuite></testsuites>

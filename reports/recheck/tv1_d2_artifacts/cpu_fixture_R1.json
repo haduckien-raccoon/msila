@@ -1,0 +1,156 @@
+{
+  "evidence_scope": "CPU_FIXTURE_ONLY",
+  "logits_shape": [
+    1,
+    1,
+    16,
+    16
+  ],
+  "input_feature_shape": [
+    1,
+    8,
+    4,
+    4
+  ],
+  "checkpoint_sha256": "1bdb0b47334b71a4c2caf9bb5847fdb33154c2ffb27f7e81c779b8bf8df1aebb",
+  "resolved_config_sha256": "c7973fa61a85fd47d8f6e1bed968295e178f6b085a54bdce8e444280e309437d",
+  "preflight": {
+    "status": "PASS",
+    "candidate": "R1",
+    "steps": 2,
+    "frozen_backbone_features": true,
+    "parameter_free_aligner_fusion": true,
+    "optimizer_parameters": {
+      "status": "PASS",
+      "optimizer": "AdamW",
+      "trainable_parameters": 69308,
+      "trainable_tensors": 37,
+      "groups": [
+        {
+          "index": 0,
+          "parameter_names": [
+            "adapters.b4.gamma",
+            "adapters.b4.down_proj.weight",
+            "adapters.b4.down_proj.bias",
+            "adapters.b4.dwconv.weight",
+            "adapters.b4.dwconv.bias",
+            "adapters.b4.mid_proj.weight",
+            "adapters.b4.mid_proj.bias",
+            "adapters.b4.out_proj.weight",
+            "adapters.b4.out_proj.bias",
+            "adapters.b8.gamma",
+            "adapters.b8.down_proj.weight",
+            "adapters.b8.down_proj.bias",
+            "adapters.b8.dwconv.weight",
+            "adapters.b8.dwconv.bias",
+            "adapters.b8.mid_proj.weight",
+            "adapters.b8.mid_proj.bias",
+            "adapters.b8.out_proj.weight",
+            "adapters.b8.out_proj.bias",
+            "adapters.b12.gamma",
+            "adapters.b12.down_proj.weight",
+            "adapters.b12.down_proj.bias",
+            "adapters.b12.dwconv.weight",
+            "adapters.b12.dwconv.bias",
+            "adapters.b12.mid_proj.weight",
+            "adapters.b12.mid_proj.bias",
+            "adapters.b12.out_proj.weight",
+            "adapters.b12.out_proj.bias",
+            "projection.projectors.b4.weight",
+            "projection.projectors.b4.bias",
+            "projection.projectors.b8.weight",
+            "projection.projectors.b8.bias",
+            "projection.projectors.b12.weight",
+            "projection.projectors.b12.bias",
+            "decoder.head.0.weight",
+            "decoder.head.0.bias",
+            "decoder.head.2.weight",
+            "decoder.head.2.bias"
+          ],
+          "parameters": 69308,
+          "lr": 0.001
+        }
+      ]
+    },
+    "losses": [
+      1.4749672412872314,
+      1.4431930780410767
+    ],
+    "source_usage": [
+      {
+        "local_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.1640625
+        },
+        "local_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.1640625
+        },
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.1640625
+        }
+      },
+      {
+        "local_b4": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.169921875
+        },
+        "local_b8": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.169921875
+        },
+        "local_b12": {
+          "grad_present": true,
+          "finite": true,
+          "grad_l1": 0.169921875
+        }
+      }
+    ],
+    "changed_parameter_count": 37,
+    "changed_parameters": [
+      "adapters.b4.gamma",
+      "adapters.b4.down_proj.weight",
+      "adapters.b4.down_proj.bias",
+      "adapters.b4.dwconv.weight",
+      "adapters.b4.dwconv.bias",
+      "adapters.b4.mid_proj.weight",
+      "adapters.b4.mid_proj.bias",
+      "adapters.b4.out_proj.weight",
+      "adapters.b4.out_proj.bias",
+      "adapters.b8.gamma",
+      "adapters.b8.down_proj.weight",
+      "adapters.b8.down_proj.bias",
+      "adapters.b8.dwconv.weight",
+      "adapters.b8.dwconv.bias",
+      "adapters.b8.mid_proj.weight",
+      "adapters.b8.mid_proj.bias",
+      "adapters.b8.out_proj.weight",
+      "adapters.b8.out_proj.bias",
+      "adapters.b12.gamma",
+      "adapters.b12.down_proj.weight",
+      "adapters.b12.down_proj.bias",
+      "adapters.b12.dwconv.weight",
+      "adapters.b12.dwconv.bias",
+      "adapters.b12.mid_proj.weight",
+      "adapters.b12.mid_proj.bias",
+      "adapters.b12.out_proj.weight",
+      "adapters.b12.out_proj.bias",
+      "projection.projectors.b4.weight",
+      "projection.projectors.b4.bias",
+      "projection.projectors.b8.weight",
+      "projection.projectors.b8.bias",
+      "projection.projectors.b12.weight",
+      "projection.projectors.b12.bias",
+      "decoder.head.0.weight",
+      "decoder.head.0.bias",
+      "decoder.head.2.weight",
+      "decoder.head.2.bias"
+    ]
+  }
+}

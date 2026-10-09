@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="1.099" timestamp="2026-10-09T13:24:00.285250" hostname="Raccoon2005"><testcase classname="tests.test_dataset_audit" name="test_optional_normal_gt_zero_is_valid_and_foreground_is_an_error" time="0.009"><failure message="AssertionError: assert ('FAIL' == 'PASS'&#10;  - PASS&#10;  + FAIL)">tests/test_dataset_audit.py:274: in test_optional_normal_gt_zero_is_valid_and_foreground_is_an_error
+    assert report["status"] == "PASS" and not report["inventory"]["orphan_gt"]
+E   AssertionError: assert ('FAIL' == 'PASS'
+E     - PASS
+E     + FAIL)</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_declared_test_source_cannot_be_used_for_train_or_dev" time="0.004"><failure message="AssertionError: assert 'PASS' == 'FAIL'&#10;  - FAIL&#10;  + PASS">tests/test_dataset_audit.py:295: in test_declared_test_source_cannot_be_used_for_train_or_dev
+    assert report["status"] == "FAIL"
+E   AssertionError: assert 'PASS' == 'FAIL'
+E     - FAIL
+E     + PASS</failure></testcase></testsuite></testsuites>

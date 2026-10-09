@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, csv, hashlib, json, math, os, random, subprocess, time
+import argparse, csv, hashlib, json, math, os, random, subprocess, sys, time
 from contextlib import nullcontext
 from src.train.day05_contract import validate_signature, validate_selection, validate_day05, validate_record_sources
 from pathlib import Path
@@ -70,7 +70,10 @@ def save_yaml(obj, path: Path):
 
 
 def read_yaml(path):
-    obj = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    try:
+        obj = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise FullTrainError(f"Invalid YAML config {path}: {exc}") from exc
     if not isinstance(obj, dict):
         raise FullTrainError(f"Expected YAML mapping: {path}")
     return obj
@@ -176,18 +179,19 @@ def verify_cache(cache_dir: Path, train_records, val_records, expected_backbone:
         raise FullTrainError(str(exc)) from exc
     if reader.manifest.get("producer_sha256") != sha256_json(signature):
         raise FullTrainError("cache producer signature/hash mismatch")
-    if signature.get('schema') == 'msila.full_scale.cache.v2':
-        from src.data.feature_cache import FEATURE_KEYS
-        spec = signature['architecture']
-        hw = [s//spec['patch_size'] for s in signature['model_input_size']]
-        for record in list(train_records)+list(val_records):
-            cached=reader.get(image_id=record['image_id'],category=record['category'])
-            for key in FEATURE_KEYS:
-                x=cached[key]
-                expected=(spec['channels'],*hw)
-                shape=tuple(x.shape[1:]) if x.ndim==4 and x.shape[0]==1 else tuple(x.shape)
-                if shape != expected:
-                    raise FullTrainError(f'Full-scale cache {record["image_id"]}/{key} shape {shape} != {expected}')
+    from src.data.feature_cache import FEATURE_KEYS
+    from src.models.backbone_registry import backbone_spec
+    spec = backbone_spec(expected_backbone)
+    hw = [s // spec.patch_size for s in signature['model_input_size']]
+    expected = (spec.channels, *hw)
+    scope = 'Full-scale' if signature.get('schema') == 'msila.full_scale.cache.v2' else 'Day-05'
+    for record in list(train_records) + list(val_records):
+        cached = reader.get(image_id=record['image_id'], category=record['category'])
+        for key in FEATURE_KEYS:
+            x = cached[key]
+            shape = tuple(x.shape[1:]) if x.ndim == 4 and x.shape[0] == 1 else tuple(x.shape)
+            if shape != expected:
+                raise FullTrainError(f'{scope} cache {record["image_id"]}/{key} shape {shape} != {expected}')
     return reader, {
         "verified": True, "producer_signature": signature,
         "producer_sha256": reader.manifest.get("producer_sha256"),
@@ -340,6 +344,30 @@ def build_optimizer(model, protocol):
     return torch.optim.AdamW(params, lr=float(cfg["lr"]), **dict(cfg.get("kwargs", {})))
 
 
+def verify_optimizer_parameters(model, optimizer):
+    """Every active head tensor must belong to the optimizer exactly once."""
+    named = {id(p): (name, p) for name, p in model.named_parameters()}
+    expected = {key for key, (_, p) in named.items() if p.requires_grad}
+    params = [p for group in optimizer.param_groups for p in group["params"]]
+    actual = [id(p) for p in params]
+    present = set(actual)
+    missing = sorted(named[key][0] for key in expected - present)
+    frozen = sorted(named[key][0] for key in present & named.keys() if key not in expected)
+    foreign = len(present - named.keys())
+    duplicates = len(actual) - len(present)
+    if not expected or missing or frozen or foreign or duplicates:
+        raise FullTrainError(f"optimizer parameter contract violated: missing={missing}, "
+                             f"frozen={frozen}, foreign={foreign}, duplicates={duplicates}")
+    return {
+        "status": "PASS", "optimizer": type(optimizer).__name__,
+        "trainable_parameters": sum(named[key][1].numel() for key in expected),
+        "trainable_tensors": len(expected),
+        "groups": [{"index": i, "parameter_names": [named[id(p)][0] for p in group["params"]],
+                    "parameters": sum(p.numel() for p in group["params"]),
+                    "lr": float(group["lr"])} for i, group in enumerate(optimizer.param_groups)],
+    }
+
+
 def verify_protocol(protocol):
     t = protocol["training"]
     for k in ("epochs", "batch_size", "optimizer"):
@@ -432,6 +460,7 @@ def amp_context(protocol, device):
 def run_preflight(model, loader, criterion, optimizer, device, steps, protocol=None):
     if steps < 2:
         raise FullTrainError("preflight_steps must be >=2 because gamma_init=0")
+    optimizer_parameters = verify_optimizer_parameters(model, optimizer)
     before = snapshot_trainable(model)
     it = iter(loader)
     reports, losses = [], []
@@ -483,6 +512,7 @@ def run_preflight(model, loader, criterion, optimizer, device, steps, protocol=N
         "steps": int(steps),
         "frozen_backbone_features": True,
         "parameter_free_aligner_fusion": True,
+        "optimizer_parameters": optimizer_parameters,
         "losses": losses,
         "source_usage": reports,
         "changed_parameter_count": len(changed),
@@ -1127,8 +1157,16 @@ def parse_args(argv: Sequence[str] | None = None):
 
 def main(argv=None):
     args = parse_args(argv)
-    train_candidate(args)
-    return 0
+    try:
+        train_candidate(args)
+        return 0
+    except (FullTrainError, ValueError, RuntimeError, OSError, KeyError, TypeError) as exc:
+        report = dict(status=str(exc).split(':')[0] if str(exc).startswith('BLOCKED_') else 'FAIL',
+                      reason=str(exc), candidate=args.candidate,
+                      stage='preflight' if args.preflight_only else 'train')
+        save_json(report, Path(args.output_root) / 'last_gate_report.json')
+        print(json.dumps(report, indent=2), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

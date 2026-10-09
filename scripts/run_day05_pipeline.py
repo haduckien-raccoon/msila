@@ -64,6 +64,12 @@ def audit(a):
     from src.data.cached_dataset import load_training_records
     cfg=read_yaml(a.day05_config);protocol=read_yaml(a.training_protocol)
     validate_day05(cfg);verify_protocol(protocol)
+    requested = {'backbone': (a.backbone, cfg['locked']['backbone']['name']),
+                 'adapter-r': (a.adapter_r, 32), 'adapter-d': (a.adapter_d, 384),
+                 'seed': (a.seed, cfg['locked']['training']['seed'])}
+    for option, (value, locked) in requested.items():
+        if value is not None and value != locked:
+            raise ValueError(f'Day-05 locked --{option}={locked}; received {value}')
     assets = dict(cache_manifest=None if a.cache_dir is None else a.cache_dir/'manifest.json',
                   train_records=a.train_records,val_records=a.val_records,
                   dino_checkpoint=a.dino_checkpoint,adapter_selection_report=a.adapter_selection_report,

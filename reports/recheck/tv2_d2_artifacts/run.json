@@ -1,0 +1,139 @@
+{
+  "blockers": [
+    {
+      "code": "BLOCKED_MISSING_DATA",
+      "needs": "Exact mounted MVTec AD 2 category root",
+      "owner": "TV2"
+    },
+    {
+      "code": "BLOCKED_MISSING_SOURCE_MANIFEST",
+      "needs": "metadata/dataset_sha256.csv: relative_path,file_size,sha256[,split,category,source_role]; explicit TRAIN/DEV source plan remains required",
+      "owner": "TV2/TV1"
+    },
+    {
+      "code": "BLOCKED_MISSING_CACHE_MASK_MAPPING",
+      "needs": "Exact tile-mask JSON plus saved masks: samples[].image_id,mask_path,source_hw,local_box or geometry.local_box",
+      "owner": "TV2"
+    },
+    {
+      "code": "BLOCKED_MISSING_PRODUCER_SIGNATURE",
+      "needs": "Actual cache manifest/shards, source identities, preprocessing/generator signatures, weights/config SHA",
+      "owner": "TV2-D3/TV1"
+    }
+  ],
+  "branch": "codex/tv2-d2-data-audit",
+  "checked_assets": {
+    "assets/dataset/gt_statistics.json": false,
+    "metadata/dataset_sha256.csv": false,
+    "outputs/day05/full_train/seed_42/fabric": false
+  },
+  "checked_roots": {
+    "/content/data/mvtec_ad2": false,
+    "/content/drive/MyDrive/msila/data/MVTec_AD_2": false,
+    "data": false
+  },
+  "environment": {
+    "FEATURE_CACHE_DIR": null,
+    "FEATURE_TRAIN_INDEX": null,
+    "MSILA_MVTEC_AD2_ROOT": null
+  },
+  "evidence": {
+    "contract-red": {
+      "errors": 0,
+      "failures": 2,
+      "path": "reports/recheck/tv2_d2_artifacts/contract-red.xml",
+      "seconds": "1.099",
+      "sha256": "42ba44ee0d3914294db8024660884fb5aeebc54d3f134475221e0b4e601ab7a6",
+      "skipped": 0,
+      "tests": 2
+    },
+    "input-red": {
+      "errors": 0,
+      "failures": 5,
+      "path": "reports/recheck/tv2_d2_artifacts/input-red.xml",
+      "seconds": "1.144",
+      "sha256": "f0a6b885d1cd4e516d9d8847cabf082c9de900331796a6acb97ffd736003b818",
+      "skipped": 0,
+      "tests": 5
+    },
+    "layout-red": {
+      "errors": 0,
+      "failures": 3,
+      "path": "reports/recheck/tv2_d2_artifacts/layout-red.xml",
+      "seconds": "1.030",
+      "sha256": "dcdf87a9d21c765abb5427b5a0f5c1bc33de4ccf85a101eda2a67b91f49284b6",
+      "skipped": 0,
+      "tests": 3
+    },
+    "output-red": {
+      "errors": 0,
+      "failures": 1,
+      "path": "reports/recheck/tv2_d2_artifacts/output-red.xml",
+      "seconds": "1.099",
+      "sha256": "41f81baf90200c676c844e0f903a7bad5293f884235ffeda49405fa3f70ad1c1",
+      "skipped": 0,
+      "tests": 1
+    },
+    "red": {
+      "errors": 0,
+      "failures": 10,
+      "path": "reports/recheck/tv2_d2_artifacts/red.xml",
+      "seconds": "1.081",
+      "sha256": "a68b8fa0bdf8e4f20034a52ab09a1bdb8660d6aec123d07e1ddfbf26700a6aad",
+      "skipped": 0,
+      "tests": 10
+    },
+    "regression": {
+      "errors": 0,
+      "failures": 0,
+      "path": "reports/recheck/tv2_d2_artifacts/regression.xml",
+      "seconds": "3.778",
+      "sha256": "e29e62f8ac6202fc2f0bca0a894ff63080dd9056d453ec7fe1e5bb2bb7072a6c",
+      "skipped": 0,
+      "tests": 48
+    },
+    "wrapper-red": {
+      "errors": 0,
+      "failures": 1,
+      "path": "reports/recheck/tv2_d2_artifacts/wrapper-red.xml",
+      "seconds": "2.408",
+      "sha256": "bb5a91aa94843016441d0cd74ec3aa1fb2a5a9aeb60fa1d89ca08fc4406f2029",
+      "skipped": 0,
+      "tests": 1
+    }
+  },
+  "evidence_scope": "CPU fixtures only; no real-data audit, GPU gate, training or native metric run",
+  "final_test_command": "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 MPLCONFIGDIR=/tmp/msila-tv2-d2-mpl PYTHONPATH=. .venv/qa/bin/python -m pytest -q tests/test_dataset_audit.py tests/test_loader_identity.py tests/test_loader.py tests/test_tiling.py tests/test_masks.py tests/test_day05_pipeline.py::test_day04_source_plan_is_deterministic_and_excludes_test tests/test_day05_pipeline.py::test_source_plan_accepts_official_archive_wrapper tests/test_day05_pipeline.py::test_synthesis_precedes_extraction_and_native_masks_match tests/test_day05_pipeline.py::test_builder_reuses_shards_and_verifies_day04_replay tests/test_full_scale_contracts.py::test_train_DEV_sources_disjoint_and_no_TEST_source_is_used tests/test_full_scale_contracts.py::test_mask_survives_native_tiling_padding_and_Hann_stitching --tb=short -rs --junitxml=/tmp/msila-tv2-d2-regression.xml",
+  "handoff": {
+    "dataset_schema": "msila.dataset_audit.v3",
+    "exit_codes": {
+      "0": "requested audit passed; inspect pixel eligibility/source-disjoint status separately",
+      "1": "findings",
+      "2": "input/I/O error",
+      "3": "missing padding mapping"
+    },
+    "hash_without_manifest": "NOT_CHECKED; never source-disjoint PASS",
+    "normal_gt": "normal_zero; optional GT must contain only zeros",
+    "padding_verification": "Saved mask bytes against declared source geometry only; producer provenance and actual historical-cache impact pending",
+    "paths": "root-relative POSIX for native image/GT rows",
+    "private_abnormal_gt": "missing/PRIVATE_HIDDEN, mask=null, pixel_evaluation_eligible=false",
+    "source_disjoint": "Requires complete verified hashes and explicit recognized TRAIN/DEV source_role assignments; raw role names preserved, no splits rewritten"
+  },
+  "red_evidence_notes": {
+    "contract-red": "Before correction: valid normal GT flagged orphan; declared TEST source accepted for DEV",
+    "input-red": "Before hardening: malformed CSV/JSON crashes and recorded Day05 roles miss overlap",
+    "layout-red": "Before shared-parser corrections: archive directory accepted, GT suffixes treated as images",
+    "output-red": "Before correction: output I/O error bypassed exit code 2",
+    "red": "Before implementation: orphan/layout false PASS, private GT false FAIL, missing audit/CLI contracts",
+    "wrapper-red": "Regression during implementation, corrected to preserve official category/category wrapper"
+  },
+  "reference_head": "bab1ba74fa00c967f8f599276124e600ed832242",
+  "source_sha256": {
+    "scripts/audit_dataset.py": "ba9e91fd6d329554e25d14da399ec94a7d99ee7447d8f5f419b6a16f5c699455",
+    "src/data/dataset_audit.py": "7104bc7eb1e170e4bfe5588aa95a9ff31dd9ecf86c51dec3971cc5d5d4b5daaf",
+    "src/data/loader.py": "8443ff0bbd3e1a5960e71812aa18fb52d4c0a46b7dd3c6cd2cdd0191a09ff2a5",
+    "tests/test_dataset_audit.py": "d6582228e9d48381a56302ebbc4cb6ddc62d6f0715b20dc0cacb2920b428ebbd"
+  },
+  "status": "CODE_READY, REAL_DATA_PENDING",
+  "task": "TV2-D2"
+}

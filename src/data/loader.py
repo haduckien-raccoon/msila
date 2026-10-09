@@ -27,6 +27,8 @@ MASK_DIR_TOKENS = {
     "segmentation", "segmentations",
 }
 
+MASK_FILE_SUFFIXES = ("_mask", "_gt", "_label", "_seg", "_segmentation")
+
 DINOV3_MEAN = (0.485, 0.456, 0.406)
 DINOV3_STD = (0.229, 0.224, 0.225)
 
@@ -61,15 +63,13 @@ def _is_mask_path(path: Path) -> bool:
     stem = _norm_token(path.stem)
     return (
         any(p in MASK_DIR_TOKENS for p in parts)
-        or stem.endswith("_mask")
-        or stem.endswith("_gt")
-        or stem.endswith("_label")
+        or stem.endswith(MASK_FILE_SUFFIXES)
     )
 
 
 def _canonical_stem(stem: str) -> str:
     s = _norm_token(stem)
-    for suffix in ("_mask", "_gt", "_label", "_seg", "_segmentation"):
+    for suffix in MASK_FILE_SUFFIXES:
         if s.endswith(suffix):
             s = s[:-len(suffix)]
     return s
@@ -97,6 +97,12 @@ def _layout_identity(path: Path, root: Path):
     if len(splits) != 1 or splits[0][0] == 0:
         return None
     idx, split = splits[0]
+    prefix = parts[1:idx]
+    # Official archives can wrap a category as category/category/split/...
+    if prefix and _norm_token(prefix[0]) == _norm_token(parts[0]):
+        prefix = prefix[1:]
+    if any(_norm_token(part) not in MASK_DIR_TOKENS for part in prefix):
+        return None
     # Supports category/split/{good,bad}/..., category/split/ground_truth/bad/...
     # and category/ground_truth/split/bad/...; unscoped GT is never guessed.
     tail = [x for x in parts[idx+1:-1] if _norm_token(x) not in MASK_DIR_TOKENS]
@@ -105,26 +111,31 @@ def _layout_identity(path: Path, root: Path):
     return parts[0], split, defect, identity
 
 
-def scan_mvtec_ad2(data_root: str | Path, *, require_pixel_gt: bool = False,
-                   split: Optional[str] = None, categories: Optional[Sequence[str]] = None) -> List[SampleRecord]:
+def _scan_inventory(data_root: str | Path):
+    """Shared physical inventory; audit also retains paths the loader cannot pair."""
     root = Path(data_root)
-    if not root.exists():
-        raise FileNotFoundError(f"DATA_ROOT does not exist: {root}")
-    images, masks = [], {}
+    if not root.is_dir():
+        raise FileNotFoundError(f"DATA_ROOT is not a directory: {root}")
+    images, masks, unrecognized = [], {}, []
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.suffix.lower() not in IMAGE_EXTS:
             continue
+        is_mask = _is_mask_path(p.relative_to(root))
+        if not p.resolve().is_relative_to(root.resolve()):
+            unrecognized.append((p, is_mask, "outside_data_root"))
+            continue
         key = _layout_identity(p, root)
         if key is None:
+            unrecognized.append((p, is_mask, "unrecognized_layout"))
             continue
-        if split is not None and key[1] != split:
-            continue
-        if categories is not None and key[0] not in categories:
-            continue
-        if _is_mask_path(p.relative_to(root)):
+        if is_mask:
             masks.setdefault(key, []).append(str(p))
         else:
             images.append((p, key))
+    return images, masks, unrecognized
+
+
+def _records_from_inventory(images, masks, *, require_pixel_gt=False):
     records = []
     image_counts = {}
     for _, key in images:
@@ -146,31 +157,21 @@ def scan_mvtec_ad2(data_root: str | Path, *, require_pixel_gt: bool = False,
     return records
 
 
-def audit_mvtec_ad2(data_root: str | Path) -> dict:
-    records = scan_mvtec_ad2(data_root)
-    rows, counts, errors = [], {}, []
-    for r in records:
-        key = f"{r.category}/{r.split}"
-        count = counts.setdefault(key, dict(normal=0, abnormal=0, normal_zero=0, matched=0, missing=0, ambiguous=0))
-        count["normal" if r.is_normal else "abnormal"] += 1
-        if r.gt_status in count:
-            count[r.gt_status] += 1
-        with Image.open(r.image_path) as im:
-            hw = [im.height, im.width]
-        row = dict(image=r.image_path, category=r.category, split=r.split,
-                   defect_type=r.defect_type, native_hw=hw, gt_status=r.gt_status,
-                   mask=r.mask_path, candidates=list(r.mask_candidates))
-        if r.gt_status in {"missing", "ambiguous"}:
-            errors.append(dict(image=r.image_path, error=r.gt_status))
-        if r.mask_path:
-            with Image.open(r.mask_path) as im:
-                row["mask_hw"] = [im.height, im.width]
-                row['mask_requires_nearest_resize'] = row['mask_hw'] != hw
-                if not np.asarray(im).any():
-                    errors.append(dict(image=r.image_path, error="abnormal GT is empty"))
-        rows.append(row)
-    return dict(schema="msila.dataset_audit.v2", root=str(data_root), counts=counts,
-                images=rows, errors=errors, status="PASS" if records and not errors else "FAIL")
+def scan_mvtec_ad2(data_root: str | Path, *, require_pixel_gt: bool = False,
+                   split: Optional[str] = None, categories: Optional[Sequence[str]] = None) -> List[SampleRecord]:
+    images, masks, _ = _scan_inventory(data_root)
+    images = [(p, key) for p, key in images
+              if (split is None or key[1] == split) and
+              (categories is None or key[0] in categories)]
+    return _records_from_inventory(images, masks, require_pixel_gt=require_pixel_gt)
+
+
+def audit_mvtec_ad2(data_root: str | Path, *, expected_categories=None,
+                   expected_splits=None, source_manifest=None) -> dict:
+    """Inventory audit; a private missing GT is ineligible, never a zero mask."""
+    from .dataset_audit import audit_inventory
+    return audit_inventory(data_root, expected_categories=expected_categories,
+                           expected_splits=expected_splits, source_manifest=source_manifest)
 
 
 def load_rgb_native(path: str | Path) -> torch.Tensor:

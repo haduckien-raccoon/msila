@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="1.030" timestamp="2026-10-09T13:19:19.912319" hostname="Raccoon2005"><testcase classname="tests.test_dataset_audit" name="test_archive_directory_cannot_be_silently_paired_as_category_split" time="0.009"><failure message="AssertionError: assert 'PASS' == 'FAIL'&#10;  - FAIL&#10;  + PASS">tests/test_dataset_audit.py:157: in test_archive_directory_cannot_be_silently_paired_as_category_split
+    assert report["status"] == "FAIL"
+E   AssertionError: assert 'PASS' == 'FAIL'
+E     - FAIL
+E     + PASS</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_gt_suffixes_use_same_mask_classification_as_identity[_seg]" time="0.002"><failure message="ValueError: ambiguous pixel GT (abnormal GT): category=fabric, split=test_public, defect=bad, image=/tmp/pytest-of-haduckien/pytest-15/test_gt_suffixes_use_same_mask0/fabric/test_public/bad/000.png, candidates=()">tests/test_dataset_audit.py:166: in test_gt_suffixes_use_same_mask_classification_as_identity
+    records = scan_mvtec_ad2(tmp_path, require_pixel_gt=True)
+src/data/loader.py:160: in scan_mvtec_ad2
+    return _records_from_inventory(images, masks, require_pixel_gt=require_pixel_gt)
+src/data/loader.py:146: in _records_from_inventory
+    raise ValueError(f"{status} pixel GT (abnormal GT): category={category}, split={role}, "
+E   ValueError: ambiguous pixel GT (abnormal GT): category=fabric, split=test_public, defect=bad, image=/tmp/pytest-of-haduckien/pytest-15/test_gt_suffixes_use_same_mask0/fabric/test_public/bad/000.png, candidates=()</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_gt_suffixes_use_same_mask_classification_as_identity[_segmentation]" time="0.002"><failure message="ValueError: ambiguous pixel GT (abnormal GT): category=fabric, split=test_public, defect=bad, image=/tmp/pytest-of-haduckien/pytest-15/test_gt_suffixes_use_same_mask1/fabric/test_public/bad/000.png, candidates=()">tests/test_dataset_audit.py:166: in test_gt_suffixes_use_same_mask_classification_as_identity
+    records = scan_mvtec_ad2(tmp_path, require_pixel_gt=True)
+src/data/loader.py:160: in scan_mvtec_ad2
+    return _records_from_inventory(images, masks, require_pixel_gt=require_pixel_gt)
+src/data/loader.py:146: in _records_from_inventory
+    raise ValueError(f"{status} pixel GT (abnormal GT): category={category}, split={role}, "
+E   ValueError: ambiguous pixel GT (abnormal GT): category=fabric, split=test_public, defect=bad, image=/tmp/pytest-of-haduckien/pytest-15/test_gt_suffixes_use_same_mask1/fabric/test_public/bad/000.png, candidates=()</failure></testcase></testsuite></testsuites>

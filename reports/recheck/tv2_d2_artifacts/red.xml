@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="10" time="1.081" timestamp="2026-10-09T13:15:46.114842" hostname="Raccoon2005"><testcase classname="tests.test_dataset_audit" name="test_orphan_and_unrecognized_files_cannot_pass_inventory" time="0.008"><failure message="AssertionError: assert 'PASS' == 'FAIL'&#10;  - FAIL&#10;  + PASS">tests/test_dataset_audit.py:36: in test_orphan_and_unrecognized_files_cannot_pass_inventory
+    assert report["status"] == "FAIL"
+E   AssertionError: assert 'PASS' == 'FAIL'
+E     - FAIL
+E     + PASS</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_private_missing_gt_is_hidden_but_never_zero" time="0.002"><failure message="AssertionError: assert ('FAIL' == 'PASS'&#10;  - PASS&#10;  + FAIL)">tests/test_dataset_audit.py:48: in test_private_missing_gt_is_hidden_but_never_zero
+    assert report["status"] == "PASS" and not report["errors"]
+E   AssertionError: assert ('FAIL' == 'PASS'
+E     - PASS
+E     + FAIL)</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_public_missing_gt_and_duplicate_gt_are_errors" time="0.002"><failure message="KeyError: 'inventory'">tests/test_dataset_audit.py:64: in test_public_missing_gt_and_duplicate_gt_are_errors
+    assert len(report["inventory"]["duplicate_gt"]) == 1
+E   KeyError: 'inventory'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_explicit_category_and_split_coverage" time="0.001"><failure message="TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'expected_categories'">tests/test_dataset_audit.py:70: in test_explicit_category_and_split_coverage
+    report = audit_mvtec_ad2(tmp_path, expected_categories=["fabric", "rice"],
+E   TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'expected_categories'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_verified_manifest_detects_duplicate_raw_source_across_splits" time="0.002"><failure message="TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'source_manifest'">tests/test_dataset_audit.py:80: in test_verified_manifest_detects_duplicate_raw_source_across_splits
+    report = audit_mvtec_ad2(root, source_manifest=manifest(root, paths, tmp_path / "sha.csv"))
+E   TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'source_manifest'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_stale_and_incomplete_manifest_is_not_hash_evidence" time="0.001"><failure message="TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'source_manifest'">tests/test_dataset_audit.py:94: in test_stale_and_incomplete_manifest_is_not_hash_evidence
+    report = audit_mvtec_ad2(root, source_manifest=path)
+E   TypeError: audit_mvtec_ad2() got an unexpected keyword argument 'source_manifest'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_unrequested_hash_check_is_not_source_disjoint_pass" time="0.001"><failure message="KeyError: 'source_integrity'">tests/test_dataset_audit.py:104: in test_unrequested_hash_check_is_not_source_disjoint_pass
+    assert report["source_integrity"]["status"] == "NOT_CHECKED"
+E   KeyError: 'source_integrity'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_cli_json_csv_and_private_eligibility" time="0.001"><failure message="ImportError: cannot import name 'main' from 'scripts.audit_dataset' (/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/scripts/audit_dataset.py)">tests/test_dataset_audit.py:109: in test_cli_json_csv_and_private_eligibility
+    from scripts.audit_dataset import main
+E   ImportError: cannot import name 'main' from 'scripts.audit_dataset' (/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/scripts/audit_dataset.py)</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_cached_padding_validator_detects_replicated_foreground" time="0.001"><failure message="ModuleNotFoundError: No module named 'src.data.dataset_audit'">tests/test_dataset_audit.py:124: in test_cached_padding_validator_detects_replicated_foreground
+    from src.data.dataset_audit import audit_cached_tile_padding
+E   ModuleNotFoundError: No module named 'src.data.dataset_audit'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_padding_without_source_mapping_is_blocked" time="0.001"><failure message="ModuleNotFoundError: No module named 'src.data.dataset_audit'">tests/test_dataset_audit.py:144: in test_padding_without_source_mapping_is_blocked
+    from src.data.dataset_audit import audit_cached_tile_padding
+E   ModuleNotFoundError: No module named 'src.data.dataset_audit'</failure></testcase></testsuite></testsuites>

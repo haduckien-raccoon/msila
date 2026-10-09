@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="3.229" timestamp="2026-10-09T13:45:00.902414" hostname="Raccoon2005"><testcase classname="tests.test_day05_pipeline" name="test_day05_verify_cache_rejects_shape_in_any_source[shape0]" time="0.046"><failure message="Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;">tests/test_day05_pipeline.py:667: in test_day05_verify_cache_rejects_shape_in_any_source
+    with pytest.raises(RuntimeError, match='source0/context_b12 shape'):
+E   Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;</failure></testcase><testcase classname="tests.test_day05_pipeline" name="test_day05_verify_cache_rejects_shape_in_any_source[shape1]" time="0.041"><failure message="Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;">tests/test_day05_pipeline.py:667: in test_day05_verify_cache_rejects_shape_in_any_source
+    with pytest.raises(RuntimeError, match='source0/context_b12 shape'):
+E   Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;</failure></testcase><testcase classname="tests.test_day05_pipeline" name="test_day05_verify_cache_rejects_shape_in_any_source[shape2]" time="0.053"><failure message="Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;">tests/test_day05_pipeline.py:667: in test_day05_verify_cache_rejects_shape_in_any_source
+    with pytest.raises(RuntimeError, match='source0/context_b12 shape'):
+E   Failed: DID NOT RAISE &lt;class 'RuntimeError'&gt;</failure></testcase></testsuite></testsuites>

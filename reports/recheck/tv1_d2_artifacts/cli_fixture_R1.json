@@ -1,0 +1,452 @@
+{
+  "evidence_scope": "CPU_FIXTURE_ONLY; fake DINO bytes and synthetic cached features; no backbone execution",
+  "manifest": {
+    "adapter": {
+      "d": 384,
+      "r": 32
+    },
+    "candidate": "R1",
+    "category": "fabric",
+    "git_branch": "codex/tv1-d2-preflight",
+    "git_commit": "bab1ba74fa00c967f8f599276124e600ed832242",
+    "protocol_lock_sha256": "9cc0b26384a8e0997ab81ceac05a5f6863f482dc3b9fdd9a4b0d8b7dad4c8ebe",
+    "resolved_config_sha256": "1caaec4fa1a27483e247b2fe50092b060e105b600068e9b91f4a2eb5298c6539",
+    "schema": "msila.day05.full_train.manifest.v1",
+    "seed": 42,
+    "sources": [
+      "local_b4",
+      "local_b8",
+      "local_b12"
+    ],
+    "started_at_unix": 1791528364.8084927,
+    "status": "PREFLIGHT_PASS"
+  },
+  "preflight": {
+    "candidate": "R1",
+    "changed_parameter_count": 37,
+    "changed_parameters": [
+      "adapters.b4.gamma",
+      "adapters.b4.down_proj.weight",
+      "adapters.b4.down_proj.bias",
+      "adapters.b4.dwconv.weight",
+      "adapters.b4.dwconv.bias",
+      "adapters.b4.mid_proj.weight",
+      "adapters.b4.mid_proj.bias",
+      "adapters.b4.out_proj.weight",
+      "adapters.b4.out_proj.bias",
+      "adapters.b8.gamma",
+      "adapters.b8.down_proj.weight",
+      "adapters.b8.down_proj.bias",
+      "adapters.b8.dwconv.weight",
+      "adapters.b8.dwconv.bias",
+      "adapters.b8.mid_proj.weight",
+      "adapters.b8.mid_proj.bias",
+      "adapters.b8.out_proj.weight",
+      "adapters.b8.out_proj.bias",
+      "adapters.b12.gamma",
+      "adapters.b12.down_proj.weight",
+      "adapters.b12.down_proj.bias",
+      "adapters.b12.dwconv.weight",
+      "adapters.b12.dwconv.bias",
+      "adapters.b12.mid_proj.weight",
+      "adapters.b12.mid_proj.bias",
+      "adapters.b12.out_proj.weight",
+      "adapters.b12.out_proj.bias",
+      "projection.projectors.b4.weight",
+      "projection.projectors.b4.bias",
+      "projection.projectors.b8.weight",
+      "projection.projectors.b8.bias",
+      "projection.projectors.b12.weight",
+      "projection.projectors.b12.bias",
+      "decoder.head.0.weight",
+      "decoder.head.0.bias",
+      "decoder.head.2.weight",
+      "decoder.head.2.bias"
+    ],
+    "frozen_backbone_features": true,
+    "losses": [
+      1.6787656545639038,
+      1.6657249927520752
+    ],
+    "optimizer_parameters": {
+      "groups": [
+        {
+          "index": 0,
+          "lr": 0.001,
+          "parameter_names": [
+            "adapters.b4.gamma",
+            "adapters.b4.down_proj.weight",
+            "adapters.b4.down_proj.bias",
+            "adapters.b4.dwconv.weight",
+            "adapters.b4.dwconv.bias",
+            "adapters.b4.mid_proj.weight",
+            "adapters.b4.mid_proj.bias",
+            "adapters.b4.out_proj.weight",
+            "adapters.b4.out_proj.bias",
+            "adapters.b8.gamma",
+            "adapters.b8.down_proj.weight",
+            "adapters.b8.down_proj.bias",
+            "adapters.b8.dwconv.weight",
+            "adapters.b8.dwconv.bias",
+            "adapters.b8.mid_proj.weight",
+            "adapters.b8.mid_proj.bias",
+            "adapters.b8.out_proj.weight",
+            "adapters.b8.out_proj.bias",
+            "adapters.b12.gamma",
+            "adapters.b12.down_proj.weight",
+            "adapters.b12.down_proj.bias",
+            "adapters.b12.dwconv.weight",
+            "adapters.b12.dwconv.bias",
+            "adapters.b12.mid_proj.weight",
+            "adapters.b12.mid_proj.bias",
+            "adapters.b12.out_proj.weight",
+            "adapters.b12.out_proj.bias",
+            "projection.projectors.b4.weight",
+            "projection.projectors.b4.bias",
+            "projection.projectors.b8.weight",
+            "projection.projectors.b8.bias",
+            "projection.projectors.b12.weight",
+            "projection.projectors.b12.bias",
+            "decoder.head.0.weight",
+            "decoder.head.0.bias",
+            "decoder.head.2.weight",
+            "decoder.head.2.bias"
+          ],
+          "parameters": 611876
+        }
+      ],
+      "optimizer": "AdamW",
+      "status": "PASS",
+      "trainable_parameters": 611876,
+      "trainable_tensors": 37
+    },
+    "parameter_free_aligner_fusion": true,
+    "peak_vram_mb": 0.0,
+    "source_usage": [
+      {
+        "local_b12": {
+          "finite": true,
+          "grad_l1": 0.17081555724143982,
+          "grad_present": true
+        },
+        "local_b4": {
+          "finite": true,
+          "grad_l1": 0.17081555724143982,
+          "grad_present": true
+        },
+        "local_b8": {
+          "finite": true,
+          "grad_l1": 0.17081555724143982,
+          "grad_present": true
+        }
+      },
+      {
+        "local_b12": {
+          "finite": true,
+          "grad_l1": 0.20139744877815247,
+          "grad_present": true
+        },
+        "local_b4": {
+          "finite": true,
+          "grad_l1": 0.20139744877815247,
+          "grad_present": true
+        },
+        "local_b8": {
+          "finite": true,
+          "grad_l1": 0.20139744877815247,
+          "grad_present": true
+        }
+      }
+    ],
+    "status": "PASS",
+    "steps": 2
+  },
+  "resolved": {
+    "adapter": {
+      "d": 384,
+      "gamma_init": 0.0,
+      "kernel_size": 3,
+      "r": 32,
+      "selection_report": "/tmp/pytest-of-haduckien/pytest-32/day05_fixture0/fixture_selection.json",
+      "selection_report_sha256": "32588c47b57b996d7a58f83684cb55ecb3f25f422e6903f5e241ed3f2b87511d"
+    },
+    "backbone": {
+      "feature_blocks": [
+        4,
+        8,
+        12
+      ],
+      "frozen": true,
+      "name": "dinov3_vits16"
+    },
+    "cache": {
+      "dir": "/tmp/pytest-of-haduckien/pytest-32/day05_fixture0/feature_cache",
+      "in_channels": 384,
+      "manifest_sha256": "52fa66064cc21ac1bd0cb2c7546a350f096bb15e9087042f53b88009d56d462b",
+      "provenance_check": {
+        "producer_sha256": "1e283146db36fa0b178f0c154ee9932441aa87c16cee25985806582f37ac5180",
+        "producer_signature": {
+          "backbone": "dinov3_vits16",
+          "categories": [
+            "fabric"
+          ],
+          "checkpoint_sha256": "3973b965e2a0de74538de8c6059edd7d234adec6853114495a871c8ceb7a5090",
+          "context_source_size": [
+            768,
+            768
+          ],
+          "dev_anomaly_types": [
+            "cutpaste"
+          ],
+          "full_source_coverage": true,
+          "local_source_size": [
+            512,
+            512
+          ],
+          "logical_layers_1based": [
+            4,
+            8,
+            12
+          ],
+          "model_input_size": [
+            512,
+            512
+          ],
+          "normalization": "ImageNet mean/std",
+          "schema": "unit_fixture_only",
+          "smoke_only": false,
+          "source_split_version": "day04_full_hash80_20_v3",
+          "train_anomaly_types": [
+            "intensity",
+            "color",
+            "noise"
+          ],
+          "train_fraction": 0.8
+        },
+        "verified": true
+      }
+    },
+    "cache_producer_sha256": "1e283146db36fa0b178f0c154ee9932441aa87c16cee25985806582f37ac5180",
+    "candidate": "R1",
+    "category": "fabric",
+    "checkpoint_rule": {
+      "mode": "min",
+      "monitor": "val_loss"
+    },
+    "cuda_version": null,
+    "data_fingerprints": {
+      "train_filtered_sha256": "6b39a1fc508e52221103bdcef418c9cd3fa939fc25ee3b81119d8debcdd7e344",
+      "train_masks_sha256": "39b5dd2f6307b3ef003a80176961390767d03e34e557e6b8ddc50b888020696b",
+      "train_source_sha256": "1384fefe597cb723ad56da5b18f743ecc096ceadaeb8b28bf00f92f5d915da5d",
+      "val_filtered_sha256": "4a127e9447e847cb815e1d8189e626366cd758ff0aad8cfe54dab7c6488addc4",
+      "val_masks_sha256": "dde7a19929bd924f4bb99e8c52a7b4ace8d337120cfa3a48eacf4b6d97506034",
+      "val_source_sha256": "6318319951a4cc990b7aa6012743b814314562d18bf863ff9d9423b3e81b2a91"
+    },
+    "data_loader": {
+      "allow_zero_mask_for_normal": true,
+      "drop_last": false,
+      "mask_hw_source": "record",
+      "mask_threshold": 0,
+      "mmap": true,
+      "num_workers": 0,
+      "persistent_workers": false,
+      "pin_memory": false,
+      "prefetch_factor": 2,
+      "shard_cache_size": 4,
+      "squeeze_cached_batch_dim": true
+    },
+    "day05_config": {
+      "experiment": {
+        "base_config": "msila/configs/default.yaml",
+        "candidate_ids": [
+          "R0",
+          "R1",
+          "R2"
+        ],
+        "name": "day05_representation_ablation",
+        "only_variable": "representation_source"
+      },
+      "forbidden_changes": {
+        "attention_fusion": true,
+        "brute_force_layer_combinations": true,
+        "candidate_specific_adapter": true,
+        "candidate_specific_decoder": true,
+        "candidate_specific_loss": true,
+        "candidate_specific_tile_or_context_size": true,
+        "illumination_loss": true
+      },
+      "locked": {
+        "adapter": {
+          "gamma_init": 0.0,
+          "kernel_size": 3,
+          "source": "day04_locked_selected_candidate",
+          "trainable": true
+        },
+        "backbone": {
+          "feature_blocks": [
+            4,
+            8,
+            12
+          ],
+          "frozen": true,
+          "name": "dinov3_vits16"
+        },
+        "decoder": {
+          "architecture": "conv3x3_gelu_conv1x1_bilinear",
+          "trainable": true,
+          "type": "basic_decoder"
+        },
+        "evaluation": {
+          "primary_metric": "au_pro_0.05"
+        },
+        "fusion": {
+          "allowed_num_sources": [
+            1,
+            3,
+            6
+          ],
+          "return_weights": true,
+          "trainable": false,
+          "type": "mean"
+        },
+        "geometry": {
+          "context_to_local_alignment": "required"
+        },
+        "input": {
+          "context_size": 768,
+          "overlap": 128,
+          "preserve_aspect_ratio": true,
+          "tile_size": 512
+        },
+        "loss": {
+          "bce_weight": 1.0,
+          "dice_weight": 1.0,
+          "illumination_weight": 0.0,
+          "type": "anomaly_segmentation"
+        },
+        "projection": {
+          "dimension_source": "locked_previous_day",
+          "enabled": true,
+          "fusion_dim": 64,
+          "share_across_views": true
+        },
+        "training": {
+          "seed": 42
+        }
+      },
+      "representations": {
+        "R0": {
+          "hypothesis": "Deep semantic feature alone is sufficient for localization.",
+          "mode": "deep_only",
+          "name": "deep_only",
+          "num_sources": 1,
+          "sources": [
+            "local_b12"
+          ]
+        },
+        "R1": {
+          "hypothesis": "Adding intermediate Local layers improves localization.",
+          "mode": "multi_local",
+          "name": "multi_layer_local",
+          "num_sources": 3,
+          "sources": [
+            "local_b4",
+            "local_b8",
+            "local_b12"
+          ]
+        },
+        "R2": {
+          "hypothesis": "Aligned Context adds information beyond multi-layer Local features.",
+          "mode": "multi_local_context",
+          "name": "multi_layer_local_context",
+          "num_sources": 6,
+          "sources": [
+            "local_b4",
+            "local_b8",
+            "local_b12",
+            "context_b4",
+            "context_b8",
+            "context_b12"
+          ]
+        }
+      },
+      "version": 1
+    },
+    "day05_config_sha256": "ae0cec8161780df28fc0ad4f3fbc91e5ad160bfd9f71218290a9854c99067d77",
+    "decoder": {
+      "architecture": "conv3x3_gelu_conv1x1_bilinear",
+      "trainable": true,
+      "type": "basic_decoder"
+    },
+    "evaluation": {},
+    "fusion": {
+      "allowed_num_sources": [
+        1,
+        3,
+        6
+      ],
+      "return_weights": true,
+      "trainable": false,
+      "type": "mean"
+    },
+    "git_branch": "codex/tv1-d2-preflight",
+    "git_commit": "bab1ba74fa00c967f8f599276124e600ed832242",
+    "input": {
+      "context_size": 768,
+      "overlap": 128,
+      "preserve_aspect_ratio": true,
+      "tile_size": 512
+    },
+    "loss": {
+      "bce_weight": 1.0,
+      "dice_weight": 1.0,
+      "illumination_weight": 0.0,
+      "type": "anomaly_segmentation"
+    },
+    "projection": {
+      "dimension_source": "locked_previous_day",
+      "enabled": true,
+      "fusion_dim": 64,
+      "share_across_views": true
+    },
+    "protocol_lock_sha256": "9cc0b26384a8e0997ab81ceac05a5f6863f482dc3b9fdd9a4b0d8b7dad4c8ebe",
+    "representation": {
+      "hypothesis": "Adding intermediate Local layers improves localization.",
+      "mode": "multi_local",
+      "name": "multi_layer_local",
+      "num_sources": 3,
+      "sources": [
+        "local_b4",
+        "local_b8",
+        "local_b12"
+      ]
+    },
+    "runner_sha256": "07caf2fd9d7cd5df7b185423cec4fc79b77968c1ad0c2e68b3e535e465b403ea",
+    "schema": "msila.day05.full_train.resolved.v1",
+    "seed": 42,
+    "torch_version": "2.6.0+cpu",
+    "training": {
+      "amp": {
+        "dtype": "bfloat16",
+        "enabled": false
+      },
+      "batch_size": 2,
+      "deterministic_algorithms": true,
+      "deterministic_warn_only": true,
+      "epochs": 2,
+      "gradient_clip_norm": null,
+      "optimizer": {
+        "kwargs": {
+          "weight_decay": 0.0
+        },
+        "lr": 0.001,
+        "name": "AdamW"
+      },
+      "sampler_rule": "separate_generator_seed_plus_epoch_minus_one",
+      "scheduler": null,
+      "total_update_budget": 2,
+      "updates_per_epoch": 1
+    }
+  },
+  "source_run": "/tmp/pytest-of-haduckien/pytest-32/test_pipeline_cpu_preflight_re0/preflight/seed_42/fabric/R1"
+}

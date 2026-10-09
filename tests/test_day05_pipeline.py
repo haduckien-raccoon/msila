@@ -598,3 +598,71 @@ def test_changed_masks_cannot_reuse_a_complete_training_run(artifacts):
         with pytest.raises(RuntimeError,match='PROTOCOL DRIFT'):
             train_candidate(SimpleNamespace(**artifacts.common,candidate='R0'))
     finally:p.write_bytes(old)
+
+
+@pytest.mark.parametrize('override', [[], ['--backbone', 'dinov3_vitb16'], ['--adapter-r', '64'],
+                                    ['--adapter-d', '128'], ['--seed', '17']])
+def test_pipeline_audit_rejects_silently_ignored_day05_overrides(artifacts, tmp_path, override, capsys):
+    repo = tmp_path / 'fixture_repo'
+    repo.mkdir()
+    (repo / 'hubconf.py').write_text('# Fixture only; no real DINO implementation or weights\n')
+    output = tmp_path / 'audit'
+    args = ['--stage', 'audit', '--device', 'cpu', '--output-root', str(output),
+            '--cache-dir', str(artifacts.root / 'feature_cache'),
+            '--train-records', str(artifacts.common['train_records']),
+            '--val-records', str(artifacts.common['val_records']),
+            '--training-protocol', str(artifacts.common['training_protocol']),
+            '--adapter-selection-report', str(artifacts.common['adapter_selection_report']),
+            '--dinov3-repo', str(repo), '--dino-checkpoint', str(artifacts.checkpoint)]
+    assert main(args + override) == (2 if override else 0)
+    if override:
+        report = json.loads((output / 'last_gate_report.json').read_text())
+        assert report['status'] == 'FAIL' and 'locked' in report['reason']
+    else:
+        report = json.loads(capsys.readouterr().out)
+        assert report['status'] == 'ASSETS_VALID' and report['real_forward_executed'] is False
+
+
+def test_pipeline_cpu_preflight_records_cache_hashes_and_optimizer_contract(artifacts, tmp_path):
+    repo = tmp_path / 'fixture_repo'
+    repo.mkdir()
+    (repo / 'hubconf.py').write_text('# Fixture only; this cache CLI does not execute DINO\n')
+    output = tmp_path / 'preflight'
+    assert main(['--stage', 'preflight', '--device', 'cpu', '--preflight-steps', '2',
+                 '--output-root', str(output), '--cache-dir', str(artifacts.root / 'feature_cache'),
+                 '--train-records', str(artifacts.common['train_records']),
+                 '--val-records', str(artifacts.common['val_records']),
+                 '--training-protocol', str(artifacts.common['training_protocol']),
+                 '--adapter-selection-report', str(artifacts.common['adapter_selection_report']),
+                 '--dinov3-repo', str(repo), '--dino-checkpoint', str(artifacts.checkpoint)]) == 0
+    from src.train.screen_representation import sha256_json, read_yaml
+    for candidate in SOURCES:
+        run = output / 'seed_42/fabric' / candidate
+        manifest = json.loads((run / 'run_manifest.json').read_text())
+        config = read_yaml(run / 'resolved_config.yaml')
+        preflight = json.loads((run / 'preflight_report.json').read_text())
+        assert manifest['status'] == 'PREFLIGHT_PASS' and manifest['sources'] == SOURCES[candidate]
+        assert manifest['resolved_config_sha256'] == sha256_json(config)
+        assert config['backbone']['frozen'] is True
+        assert config['cache']['manifest_sha256'] == file_hash(artifacts.root / 'feature_cache/manifest.json')
+        assert config['cache']['provenance_check']['producer_signature']['checkpoint_sha256'] == file_hash(artifacts.checkpoint)
+        assert config['training']['amp'] == artifacts.protocol['training']['amp']
+        assert preflight['status'] == preflight['optimizer_parameters']['status'] == 'PASS'
+        assert preflight['steps'] == 2 and set(preflight['source_usage'][-1]) == set(SOURCES[candidate])
+        assert not (run / 'best.pt').exists() and not (run / 'training_log.csv').exists()
+
+
+@pytest.mark.parametrize('shape', [(1, 8, 32, 32), (1, 384, 4, 4), (2, 384, 32, 32)])
+def test_day05_verify_cache_rejects_shape_in_any_source(tmp_path, shape):
+    checkpoint = tmp_path / 'fixture.pth'
+    checkpoint.write_bytes(b'fixture only, not pretrained DINO')
+    cache = tmp_path / 'cache'
+    record = dict(image_id='source0', category='fabric')
+    geometry = dict(local_box=[0, 0, 512, 512], context_box=[-128, -128, 640, 640],
+                    context_to_local=torch.eye(3).tolist())
+    features = {key: torch.zeros(1, 384, 32, 32) for key in FEATURE_KEYS}
+    features['context_b12'] = torch.zeros(shape)
+    with FeatureCacheWriter(cache, producer_signature=signature(checkpoint)) as writer:
+        writer.add(dict(record, geometry=geometry, **features))
+    with pytest.raises(RuntimeError, match='source0/context_b12 shape'):
+        verify_cache(cache, [record], [], 'dinov3_vits16')

@@ -79,3 +79,16 @@ def test_anomaly_crossing_multiple_tiles():
 
     assert torch.equal(recon, mask)
     assert iou(recon, mask) == 1.0
+
+
+def test_small_image_mask_padding_stays_zero():
+    mask = torch.zeros(2, 3, dtype=torch.uint8)
+    mask[-1, -1] = 1
+    records = generate_tile_records(*mask.shape)
+
+    tile = crop_mask_tiles(mask, records)[0]
+
+    assert tile.shape == (512, 512)
+    assert torch.equal(tile[:2, :3], mask)
+    assert tile.sum().item() == mask.sum().item()
+    assert torch.equal(stitch_mask_tiles([tile], records, mask.shape), mask)

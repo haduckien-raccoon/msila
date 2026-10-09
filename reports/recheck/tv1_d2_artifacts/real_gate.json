@@ -1,0 +1,5 @@
+{
+  "status": "BLOCKED_MISSING_DATA",
+  "reason": "BLOCKED_MISSING_DATA: cache_manifest=None; train_records=None; val_records=None; dino_checkpoint=None; adapter_selection_report=None; dino_source=None",
+  "stage": "preflight"
+}

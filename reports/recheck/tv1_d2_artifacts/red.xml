@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="2.975" timestamp="2026-10-09T13:37:50.603946" hostname="Raccoon2005"><testcase classname="tests.test_day05_preflight" name="test_preflight_rejects_omitted_active_parameter" time="1.047"><failure message="Failed: DID NOT RAISE &lt;class 'src.train.screen_representation.FullTrainError'&gt;">tests/test_day05_preflight.py:39: in test_preflight_rejects_omitted_active_parameter
+    with pytest.raises(training.FullTrainError, match='optimizer.*missing.*adapters.b4.gamma'):
+E   Failed: DID NOT RAISE &lt;class 'src.train.screen_representation.FullTrainError'&gt;</failure></testcase><testcase classname="tests.test_day05_preflight" name="test_preflight_rejects_foreign_optimizer_parameter" time="0.032"><failure message="Failed: DID NOT RAISE &lt;class 'src.train.screen_representation.FullTrainError'&gt;">tests/test_day05_preflight.py:48: in test_preflight_rejects_foreign_optimizer_parameter
+    with pytest.raises(training.FullTrainError, match='optimizer.*foreign'):
+E   Failed: DID NOT RAISE &lt;class 'src.train.screen_representation.FullTrainError'&gt;</failure></testcase><testcase classname="tests.test_day05_preflight" name="test_pipeline_invalid_yaml_is_a_structured_failure" time="0.004"><failure message="yaml.parser.ParserError: while parsing a flow node&#10;expected the node content, but found '&lt;stream end&gt;'&#10;  in &quot;&lt;unicode string&gt;&quot;, line 2, column 1:&#10;    &#10;    ^">tests/test_day05_preflight.py:57: in test_pipeline_invalid_yaml_is_a_structured_failure
+    assert pipeline.main(['--stage', 'audit', '--day05-config', str(broken), '--output-root', str(output)]) == 2
+scripts/run_day05_pipeline.py:262: in main
+    report=audit(a)
+scripts/run_day05_pipeline.py:65: in audit
+    cfg=read_yaml(a.day05_config);protocol=read_yaml(a.training_protocol)
+src/train/screen_representation.py:73: in read_yaml
+    obj = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+/usr/lib/python3/dist-packages/yaml/__init__.py:125: in safe_load
+    return load(stream, SafeLoader)
+/usr/lib/python3/dist-packages/yaml/__init__.py:81: in load
+    return loader.get_single_data()
+/usr/lib/python3/dist-packages/yaml/constructor.py:49: in get_single_data
+    node = self.get_single_node()
+/usr/lib/python3/dist-packages/yaml/composer.py:36: in get_single_node
+    document = self.compose_document()
+/usr/lib/python3/dist-packages/yaml/composer.py:55: in compose_document
+    node = self.compose_node(None, None)
+/usr/lib/python3/dist-packages/yaml/composer.py:84: in compose_node
+    node = self.compose_mapping_node(anchor)
+/usr/lib/python3/dist-packages/yaml/composer.py:133: in compose_mapping_node
+    item_value = self.compose_node(node, item_key)
+/usr/lib/python3/dist-packages/yaml/composer.py:82: in compose_node
+    node = self.compose_sequence_node(anchor)
+/usr/lib/python3/dist-packages/yaml/composer.py:110: in compose_sequence_node
+    while not self.check_event(SequenceEndEvent):
+/usr/lib/python3/dist-packages/yaml/parser.py:98: in check_event
+    self.current_event = self.state()
+/usr/lib/python3/dist-packages/yaml/parser.py:474: in parse_flow_sequence_first_entry
+    return self.parse_flow_sequence_entry(first=True)
+/usr/lib/python3/dist-packages/yaml/parser.py:495: in parse_flow_sequence_entry
+    return self.parse_flow_node()
+/usr/lib/python3/dist-packages/yaml/parser.py:268: in parse_flow_node
+    return self.parse_node()
+/usr/lib/python3/dist-packages/yaml/parser.py:369: in parse_node
+    raise ParserError("while parsing a %s node" % node, start_mark,
+E   yaml.parser.ParserError: while parsing a flow node
+E   expected the node content, but found '&lt;stream end&gt;'
+E     in "&lt;unicode string&gt;", line 2, column 1:
+E       
+E       ^</failure></testcase><testcase classname="tests.test_day05_preflight" name="test_training_cli_missing_selection_is_a_structured_failure" time="0.014"><failure message="src.train.screen_representation.FullTrainError: Provide the real Day-04 selection report">tests/test_day05_preflight.py:65: in test_training_cli_missing_selection_is_a_structured_failure
+    assert training.main(['--candidate', 'R0', '--r', '32', '--d', '384', '--device', 'cpu',
+src/train/screen_representation.py:1130: in main
+    train_candidate(args)
+src/train/screen_representation.py:641: in train_candidate
+    raise FullTrainError("Provide the real Day-04 selection report")
+E   src.train.screen_representation.FullTrainError: Provide the real Day-04 selection report</failure></testcase></testsuite></testsuites>

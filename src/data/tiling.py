@@ -110,7 +110,10 @@ def crop_with_padding(
         # Reflect requires input dimension > padding in some edge cases.
         # Fall back to replicate for very small images.
         effective_mode = pad_mode
-        if crop.shape[-1] <= max(pad_left, pad_right) or crop.shape[-2] <= max(pad_top, pad_bottom):
+        if effective_mode == "reflect" and (
+            crop.shape[-1] <= max(pad_left, pad_right)
+            or crop.shape[-2] <= max(pad_top, pad_bottom)
+        ):
             effective_mode = "replicate"
 
         if effective_mode == "constant":

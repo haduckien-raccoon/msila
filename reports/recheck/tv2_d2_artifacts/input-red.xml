@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="5" time="1.144" timestamp="2026-10-09T13:22:14.046345" hostname="Raccoon2005"><testcase classname="tests.test_dataset_audit" name="test_malformed_manifest_is_reported_without_crashing" time="0.009"><failure message="AttributeError: 'NoneType' object has no attribute 'lower'">tests/test_dataset_audit.py:239: in test_malformed_manifest_is_reported_without_crashing
+    report = audit_mvtec_ad2(root, source_manifest=source_manifest)
+src/data/loader.py:173: in audit_mvtec_ad2
+    return audit_inventory(data_root, expected_categories=expected_categories,
+src/data/dataset_audit.py:178: in audit_inventory
+    source_integrity = audit_source_manifest(root, images, source_manifest)
+src/data/dataset_audit.py:52: in audit_source_manifest
+    digest = row["sha256"].lower()
+E   AttributeError: 'NoneType' object has no attribute 'lower'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_malformed_padding_json_returns_input_error[23]" time="0.002"><failure message="AttributeError: 'int' object has no attribute 'get'">tests/test_dataset_audit.py:249: in test_malformed_padding_json_returns_input_error
+    assert main(["--padding-manifest", str(inputs), "--output", str(output)]) == 2
+scripts/audit_dataset.py:42: in main
+    report["cached_tile_padding"] = audit_cached_tile_padding(a.padding_manifest, mask_root=a.mask_root)
+src/data/dataset_audit.py:213: in audit_cached_tile_padding
+    rows = payload if isinstance(payload, list) else payload.get("samples", [])
+E   AttributeError: 'int' object has no attribute 'get'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_malformed_padding_json_returns_input_error[payload1]" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'get'">tests/test_dataset_audit.py:249: in test_malformed_padding_json_returns_input_error
+    assert main(["--padding-manifest", str(inputs), "--output", str(output)]) == 2
+scripts/audit_dataset.py:42: in main
+    report["cached_tile_padding"] = audit_cached_tile_padding(a.padding_manifest, mask_root=a.mask_root)
+src/data/dataset_audit.py:217: in audit_cached_tile_padding
+    identity = dict(index=index, image_id=row.get("image_id"))
+E   AttributeError: 'NoneType' object has no attribute 'get'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_malformed_padding_json_returns_input_error[payload2]" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'get'">tests/test_dataset_audit.py:249: in test_malformed_padding_json_returns_input_error
+    assert main(["--padding-manifest", str(inputs), "--output", str(output)]) == 2
+scripts/audit_dataset.py:42: in main
+    report["cached_tile_padding"] = audit_cached_tile_padding(a.padding_manifest, mask_root=a.mask_root)
+src/data/dataset_audit.py:217: in audit_cached_tile_padding
+    identity = dict(index=index, image_id=row.get("image_id"))
+E   AttributeError: 'NoneType' object has no attribute 'get'</failure></testcase><testcase classname="tests.test_dataset_audit" name="test_recorded_day05_roles_are_checked_without_reassigning_sources" time="0.003"><failure message="AssertionError: assert 'PASS' == 'FAIL'&#10;  - FAIL&#10;  + PASS">tests/test_dataset_audit.py:265: in test_recorded_day05_roles_are_checked_without_reassigning_sources
+    assert report["source_integrity"]["status"] == "FAIL"
+E   AssertionError: assert 'PASS' == 'FAIL'
+E     - FAIL
+E     + PASS</failure></testcase></testsuite></testsuites>
