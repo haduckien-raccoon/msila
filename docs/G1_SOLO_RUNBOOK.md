@@ -90,8 +90,10 @@ Regular training uses each selected TRAIN/good source, one normal variant plus
 `train_variants_per_image` synthetic variants, and all local tiles. TRAIN
 perturbations change deterministically by epoch; fixed DEV perturbations never
 backpropagate. TRAIN/DEV pools must have distinct image content, checked by
-SHA256 before source limits are applied. TEST images and real TEST masks are
-never loaded. No fallback split is created when VALIDATION/good is absent.
+SHA256 before source limits are applied. Training and synthetic DEV never load
+TEST images or real TEST masks. Optional final TEST_PUBLIC evaluation runs after
+the checkpoint has been selected on synthetic DEV. No fallback split is created
+when VALIDATION/good is absent.
 
 Adjust `epochs`, `batch_size`, `learning_rate`, `weight_decay`, `seed`, and
 `dev_seed` in YAML. `max_steps` caps cumulative updates, including resumed steps.
@@ -127,6 +129,52 @@ under `evaluation/` so training artifacts continue to describe `best.pt`.
 Training's `metrics.json` and final examples describe `best.pt`, chosen by the
 highest synthetic DEV AU-PRO@0.05; earliest epoch wins an exact tie. An existing
 run cannot be overwritten by a new training invocation; choose a new output root.
+
+## Colab: eight categories and final TEST_PUBLIC
+
+Open `notebooks/G1_E1_End_to_End_Colab.ipynb` in Colab. Cell 2 defaults to:
+
+```python
+TRAIN_CATEGORIES = ['can', 'fabric', 'fruit_jelly', 'rice', 'sheet_metal', 'vial', 'wallplugs', 'walnuts']
+RUN_TEST_PUBLIC = True
+```
+
+Use `TRAIN_CATEGORIES = ['rice']` for one category. This is a sequential set of
+eight independent E1 models on one GPU. Each category has its own smoke,
+Overfit-16, train checkpoint, QA, synthetic DEV and final public results. The
+epoch/step/minute budgets apply to each category. Cell 3 owns the output layout
+and `DRIVE_SYNC_EVERY_STEPS=20`; changing this to 10 changes Drive backup cadence,
+while local loss logging still records every optimizer step. Local checkpoints
+remain epoch/budget checkpoints. Re-running the same category list reuses
+completed stages and resumes interrupted stages with `last.pt` automatically.
+When moving from an earlier embedded-code snapshot, choose a new `RUN_ID`;
+the code provenance is intentionally checked rather than silently overwritten.
+
+All selected archives are copied to `/content` first. The training preparation
+extracts only TRAIN/good and VALIDATION/good. After training and synthetic DEV,
+cell 18 extracts TEST_PUBLIC images and masks from those local archives, then
+loads each category's selected `best.pt`. No TEST_PRIVATE files are extracted.
+If archives use a generic filename, set `ARCHIVE_PATTERNS=['*.tar.gz']`.
+
+The public evaluator can also run from the repository root:
+
+```bash
+.venv/bin/python -m src.eval.g1_test_public --config configs/g1_e1.yaml --checkpoint outputs/G1/E1/rice/best.pt --output-dir outputs/G1/E1/rice/test_public --device cuda
+```
+
+The config must match the training checkpoint's scientific settings and exact
+TRAIN/DEV/pretrained provenance. Public evaluation uses all public good/bad
+images, strict native image/GT geometry, existing Hann inference, map QA and
+disk-backed AU-PRO@0.05. Missing, ambiguous, empty abnormal masks and shape
+mismatches fail explicitly. Images and GT are never resized by this evaluator.
+TEST is used only for final scoring, not model selection or synthetic tuning.
+
+Public output: `train/test_public/{metrics.json,qa_report.json,source_manifest.json,test_public.log,examples/}`.
+The example limit controls files saved, not the metric population. Eight-category
+summaries live at `_batch/<RUN_ID>/category_summary.csv` and `.json`, with
+synthetic DEV and real public scores in separate columns. Public inference and
+Colab GPU execution remain NOT RUN on the CPU-only development machine; unit
+fixtures check the new evaluator's geometry, mask errors and checkpoint loading.
 
 ## Synthetic protocol
 
