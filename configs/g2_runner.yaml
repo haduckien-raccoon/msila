@@ -1,0 +1,43 @@
+# D6-TV1: only the selected backbone's 9 x 8 screen, then 8 E2 runs.
+version: g2_runner_v1
+model_config: configs/g2_experiments.yaml
+backbone: dinov3_vitb16
+output_root: outputs/G2/D6
+adapter_grids:
+  dinov3_vits16:
+    r_values: [32, 64, 128]
+    d_values: [128, 256, 384]
+  dinov3_vitb16:
+    r_values: [64, 128, 256]
+    d_values: [256, 512, 768]
+  dinov3_vith16plus:
+    r_values: [128, 256, 384]
+    d_values: [384, 768, 1280]
+
+# Declared before training. Exact equal scores use fewer Adapter parameters,
+# then smaller r, then smaller d. Each category contributes exactly 1/8.
+selection:
+  metric: macro_synthetic_dev_aupro_0_05
+  direction: max
+  tie_break: [adapter_trainable_parameters, r, d]
+  expected_screen_runs: 72
+  expected_main_runs: 8
+  require_all_categories: true
+  require_full_budget: true
+  checkpoint_tie_break: earliest_epoch
+
+# Budget/seed/loss/data come from model_config and are fixed across all pairs.
+training:
+  checkpoint_interval_steps: 20
+execution:
+  full_device: cuda
+  deterministic_resize: true
+
+# Separate output namespace; these results NEVER contribute to selection locks
+# or the reported real PASS/72 and PASS/8 counts. E2 still requires a full lock.
+smoke:
+  epochs: 1
+  max_steps: 2
+  max_train_sources: 2
+  max_dev_sources: 1
+  dev_variants_per_image: 3

@@ -1,0 +1,122 @@
+# D5-TV1 handoff manifest; no full training or E3--E5 runner is implemented here.
+version: g2_contract_v2
+categories: [can, fabric, fruit_jelly, rice, sheet_metal, vial, wallplugs, walnuts]
+fusion_methods: [mean, concat, weighted_sum, gated, attention]
+output_root: outputs/G2
+
+backbone:
+  # Change this one selector; channels/depth/patch size are resolved automatically.
+  name: dinov3_vitb16
+  repo_dir: third_party/dinov3
+  checkpoints:
+    dinov3_vits16: models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+    dinov3_vits16plus: models/dinov3_vits16plus_pretrain_lvd1689m-4057cbaa.pth
+    dinov3_vitb16: models/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
+    dinov3_vitl16: models/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth
+    dinov3_vith16plus: models/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
+  # Optional weights override for an exact local file; normally use the mapping.
+  frozen: true
+  norm: true
+
+adapter:
+  # null => scale with C; explicit positive integers override either width.
+  r: null
+  d: null
+  r_ratio: 0.16666666666666666  # C/6: S=64, B=128
+  d_ratio: 0.6666666666666666   # 2C/3: S=256, B=512
+  round_to: 8
+  kernel_size: 3
+  gamma_init: 0.0
+  bias: true
+  # These ratios are declared defaults, not an empirically selected optimum.
+
+fusion:
+  dim: 64  # Independent of Adapter d; every method restores this channel width.
+  feature_order: [local_b4, local_b8, local_b12, context_b4, context_b8, context_b12]
+  output_layout: BCHW
+
+decoder:
+  type: basic_decoder
+  hidden_channels: 64
+  output_size: [512, 512]
+  output_channels: 1
+  output: raw_logits
+
+experiments:
+  E1:
+    implementation: src.models.msila.E1
+    feature_mode: deepest
+    adapter: false
+    context: false
+    fusion: null
+  E2:
+    implementation: src.models.msila.E2
+    feature_mode: deepest
+    adapter: true
+    context: false
+    fusion: null
+  E3:
+    implementation: null
+    status: reserved_for_tv2
+  E4:
+    implementation: null
+    status: reserved_for_tv2
+  E5:
+    implementation: null
+    status: reserved_for_tv2
+
+data:
+  root: data/mvtec_ad2
+  tile_size: 512
+  overlap: 128
+  num_workers: 0
+  drop_last: false
+  train_split: TRAIN/good
+  dev_split: VALIDATION/good
+  final_test_split: TEST_PUBLIC
+  train_variants_per_image: 2
+  dev_variants_per_image: 6
+  # Reserved geometry for TV2's paired-view consumers; E1/E2 use only image.
+  local_source_fov: [512, 512]
+  context_source_fov: [768, 768]
+  context_input_size: [512, 512]
+
+synthetic_protocol: configs/full_scale_synthetic.yaml
+training:
+  # Same update budget and data seeds as G1; one fresh model per category/run.
+  seed: 2026
+  dev_seed: 17017
+  epochs: 20
+  batch_size: 4
+  optimizer:
+    name: AdamW
+    lr: 0.001
+    weight_decay: 0.0001
+    parameters: requires_grad_only
+  scheduler: null
+  max_grad_norm: null
+  amp: false
+  deterministic_algorithms: true
+  max_steps: null
+  max_minutes: null
+  train_synthetic_by_epoch: true
+  dev_synthetic_fixed: true
+
+loss:
+  type: bce_plus_positive_mask_dice
+  bce_weight: 1.0
+  dice_weight: 1.0
+  dice_eps: 1.0e-6
+
+checkpoint:
+  monitor: synthetic_dev_aupro_0_05
+  mode: max
+  tie_break: earliest_epoch
+  selection_split: VALIDATION/good
+
+evaluation:
+  tile_batch_size: 4
+  score_transform: sigmoid
+  stitching: hann_native_coordinates
+  max_fpr: 0.05
+  test_for_selection: false

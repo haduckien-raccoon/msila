@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Final, Mapping, TypedDict
+from typing import Final, Mapping, NotRequired, TypedDict
 
 import torch
 from torch import Tensor
@@ -377,4 +377,89 @@ def validate_multiview_features(
                 f"expected d={expected_channels}, "
                 f"got d={actual_channels}"
             )
+
+
+# G2 E1--E5 model boundary. The existing G1 tile collator already emits
+# image/mask/meta; optional context/view_meta are reserved for TV2 consumers.
+G2_OUTPUT_SIZE: Final[tuple[int, int]] = (512, 512)
+G2_FUSION_METHODS: Final[tuple[str, ...]] = (
+    "mean", "concat", "weighted_sum", "gated", "attention",
+)
+
+
+class G2Batch(TypedDict):
+    image: Tensor
+    mask: NotRequired[Tensor]
+    meta: NotRequired[list[Mapping[str, object]]]
+    context: NotRequired[Tensor]
+    view_meta: NotRequired[list[Mapping[str, object]]]
+
+
+def validate_g2_batch(
+    batch: Mapping[str, object], *, require_target: bool = True,
+) -> None:
+    """Lock 512px normalized RGB, binary targets and per-sample metadata.
+
+    Inference may omit mask/meta. Training requires both. Geometry generation
+    and normalization remain upstream responsibilities, outside the Model.
+    """
+    if not isinstance(batch, Mapping) or "image" not in batch:
+        raise ContractError("G2 batch requires an 'image' tensor")
+    image = batch["image"]
+    validate_image(image)
+    if tuple(image.shape[-2:]) != G2_OUTPUT_SIZE:
+        raise ContractError("G2 image must be [B,3,512,512]")
+
+    if require_target and not {"mask", "meta"} <= batch.keys():
+        raise ContractError("G2 training batch requires 'mask' and 'meta'")
+    if "mask" in batch:
+        mask = batch["mask"]
+        _validate_bchw(mask, "G2 mask")
+        if tuple(mask.shape) != (image.shape[0], 1, *G2_OUTPUT_SIZE):
+            raise ContractError("G2 mask must be [B,1,512,512]")
+        if mask.device != image.device:
+            raise ContractError("G2 mask/image device mismatch")
+        if not bool(((mask == 0) | (mask == 1)).all()):
+            raise ContractError("G2 mask must be binary (0=normal, 1=anomaly)")
+
+    if "context" in batch:
+        context = batch["context"]
+        validate_image(context)
+        if context.shape != image.shape:
+            raise ContractError("G2 context must match image [B,3,512,512]")
+        if context.device != image.device or context.dtype != image.dtype:
+            raise ContractError("G2 context/image device or dtype mismatch")
+
+    for key in ("meta", "view_meta"):
+        if key in batch:
+            records = batch[key]
+            if (not isinstance(records, list) or len(records) != image.shape[0]
+                    or any(not isinstance(record, Mapping) for record in records)):
+                raise ContractError(f"G2 {key} must be a list of B metadata mappings")
+
+
+def g2_input_image(image_or_batch: Tensor | Mapping[str, object]) -> Tensor:
+    """Accept the G2 batch boundary and preserve legacy E1 tensor calls."""
+    if isinstance(image_or_batch, Mapping):
+        validate_g2_batch(image_or_batch, require_target=False)
+        return image_or_batch["image"]
+    validate_image(image_or_batch)
+    return image_or_batch
+
+
+def validate_g2_fused_feature(
+    fused: Tensor, features: Mapping[str, Tensor], *, expected_channels: int,
+) -> None:
+    """Every G2 fusion method hands one [B,C,H,W] tensor to the decoder.
+
+    C is the common downstream fusion_dim, independent of Adapter d. A concat
+    method must restore C internally before returning its feature tensor.
+    """
+    validate_multiview_features(features, expected_channels=expected_channels)
+    _validate_bchw(fused, "G2 fused feature")
+    reference = features[MULTIVIEW_FEATURE_KEYS[0]]
+    if fused.shape != reference.shape:
+        raise ContractError("G2 Fusion output must preserve [B,C,H,W]")
+    if fused.device != reference.device or fused.dtype != reference.dtype:
+        raise ContractError("G2 Fusion output device or dtype mismatch")
 

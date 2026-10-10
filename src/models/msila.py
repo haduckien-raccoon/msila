@@ -20,6 +20,7 @@ post-processing remain outside this module.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -27,11 +28,14 @@ import torch
 from torch import Tensor, nn
 
 from .attention_fusion import AttentionFusion
+from .adapter_factory import AdapterCandidate, AdapterFactoryConfig, ResidualAdapterFactory
+from .backbone_registry import adapter_pairs, backbone_spec
 from .basic_decoder import BasicDecoder
 from .contracts import (
     DINO_FEATURE_KEYS,
     MULTIVIEW_FEATURE_KEYS,
     ContractError,
+    g2_input_image,
     validate_anomaly_logits,
     validate_dino_features,
     validate_image,
@@ -49,24 +53,180 @@ class E1(nn.Module):
     Input is normalized RGB; output is raw logits at the input tile size.
     """
 
-    def __init__(self, extractor: nn.Module, hidden_channels: int = 64):
+    def __init__(self, extractor: nn.Module, hidden_channels: int = 64,
+                 deterministic_resize: bool = False):
         super().__init__()
+        if not isinstance(extractor, nn.Module):
+            raise TypeError("extractor must be a torch.nn.Module")
         if getattr(extractor, "blocks", None) != (extractor.depth,):
             raise ValueError("E1 requires feature_mode='deepest'")
         self.extractor = extractor
         self.extractor.requires_grad_(False)
         self.extractor.eval()
-        self.decoder = BasicDecoder(extractor.out_channels, hidden_channels)
+        self.decoder = BasicDecoder(extractor.out_channels, hidden_channels,
+                                    deterministic_resize=deterministic_resize)
 
     def train(self, mode: bool = True):
         super().train(mode)
         self.extractor.eval()
         return self
 
-    def forward(self, image: Tensor) -> Tensor:
+    @property
+    def feature_key(self) -> str:
+        return f"b{self.extractor.depth}"
+
+    @property
+    def num_trainable_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def extract_deep_feature(self, image: Tensor) -> Tensor:
+        """Run exactly one frozen deepest feature, shared by E1 and E2."""
         with torch.no_grad():
-            feature = self.extractor(image)[f"b{self.extractor.depth}"]
-        return self.decoder(feature, output_size=image.shape[-2:])
+            features = self.extractor(image)
+        if not isinstance(features, Mapping) or set(features) != {self.feature_key}:
+            raise ContractError("E1/E2 extractor must return exactly one deepest feature")
+        return features[self.feature_key]
+
+    def _decoder_feature(self, feature: Tensor) -> Tensor:
+        return feature
+
+    def forward(
+        self, image: Tensor | Mapping[str, object], *, return_trace: bool = False,
+    ) -> Tensor | tuple[Tensor, dict[str, object]]:
+        """G2: model(batch); legacy G1: model(image). Return raw logits."""
+        image = g2_input_image(image)
+        feature = self.extract_deep_feature(image)
+        decoder_feature = self._decoder_feature(feature)
+        logits = self.decoder(decoder_feature, output_size=image.shape[-2:])
+        validate_anomaly_logits(logits, image)
+        if return_trace:
+            return logits, {
+                "dino": {self.feature_key: feature},
+                "decoder_feature": decoder_feature,
+            }
+        return logits
+
+
+class E2(E1):
+    """G2 E2 = E1 + one existing residual Adapter before the same decoder.
+
+    Frozen deepest DINOv3 -> C->r->DWConv->d->C Adapter -> BasicDecoder.
+    No Context, projection or Fusion module is constructed. Adapter r/d are
+    independent internal widths; the decoder still consumes backbone width C.
+    """
+
+    def __init__(
+        self,
+        extractor: nn.Module,
+        *,
+        adapter_bottleneck_dim: int,
+        adapter_projection_dim: int,
+        hidden_channels: int = 64,
+        adapter_kernel_size: int = 3,
+        gamma_init: float = 0.0,
+        adapter_bias: bool = True,
+        deterministic_resize: bool = False,
+    ) -> None:
+        super().__init__(extractor, hidden_channels=hidden_channels,
+                         deterministic_resize=deterministic_resize)
+        factory = ResidualAdapterFactory(AdapterFactoryConfig(
+            in_dim=extractor.out_channels,
+            kernel_size=adapter_kernel_size,
+            gamma_init=gamma_init,
+            bias=adapter_bias,
+        ))
+        self.adapter = factory.build_rd(
+            r=adapter_bottleneck_dim, d=adapter_projection_dim,
+        ).model
+
+    @property
+    def adapter_r(self) -> int:
+        return self.adapter.r
+
+    @property
+    def adapter_d(self) -> int:
+        return self.adapter.d
+
+    def _decoder_feature(self, feature: Tensor) -> Tensor:
+        # Only DINO extraction is no_grad; Adapter and decoder remain in graph.
+        return self.adapter(feature)
+
+
+def resolve_g2_config(
+    config: Mapping[str, Any], *, root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Resolve backbone metadata/checkpoint and Adapter widths without loading.
+
+    Only backbone.name selects the mapped checkpoint. C/depth/patch size come
+    from the existing registry, checked again by DINOv3FeatureExtractor when
+    loaded. Null r/d use declared ratios of C; explicit integer widths override
+    either ratio independently. The input config is never mutated.
+    """
+    resolved = deepcopy(dict(config))
+    backbone = resolved["backbone"]
+    spec = backbone_spec(backbone["name"])
+    if backbone.get("frozen", True) is not True:
+        raise ValueError("G2 requires a frozen DINOv3 backbone")
+    backbone.update(channels=spec.channels, deepest_block=spec.depth,
+                    feature_blocks=list(spec.blocks), patch_size=spec.patch_size)
+    weights = backbone.get("weights")
+    if weights is None:
+        try:
+            weights = backbone["checkpoints"][backbone["name"]]
+        except KeyError as exc:
+            raise KeyError(f"No checkpoint configured for {backbone['name']}") from exc
+    base = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    for key, value in (("repo_dir", backbone["repo_dir"]), ("weights", weights)):
+        path = Path(value).expanduser()
+        backbone[key] = str((base / path).resolve() if not path.is_absolute() else path.resolve())
+
+    adapter = resolved["adapter"]
+    if adapter.get("r") is None or adapter.get("d") is None:
+        # Reuse the existing C-based width rounding; no second Adapter design.
+        scaled_r, scaled_d = adapter_pairs(spec.channels, {
+            "r_ratios": [adapter.get("r_ratio", 1/6)],
+            "d_ratios": [adapter.get("d_ratio", 2/3)],
+            "round_to": adapter.get("round_to", 8),
+        })[0]
+        if adapter.get("r") is None:
+            adapter["r"] = scaled_r
+        if adapter.get("d") is None:
+            adapter["d"] = scaled_d
+    AdapterCandidate(adapter["r"], adapter["d"])
+    AdapterFactoryConfig(in_dim=spec.channels,
+                         kernel_size=adapter.get("kernel_size", 3),
+                         gamma_init=adapter.get("gamma_init", 0.0),
+                         bias=adapter.get("bias", True))
+    return resolved
+
+
+def build_g2_model(
+    config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
+) -> E1:
+    """Build E1/E2 from one backbone selector; E3--E5 remain TV2's work."""
+    if experiment not in {"E1", "E2"}:
+        raise NotImplementedError("build_g2_model currently supports only E1 and E2")
+    resolved = resolve_g2_config(config, root=root)
+    backbone, adapter = resolved["backbone"], resolved["adapter"]
+    if not Path(backbone["weights"]).is_file():
+        raise FileNotFoundError(f"DINOv3 checkpoint not found: {backbone['weights']}")
+    extractor = DINOv3FeatureExtractor(
+        repo_dir=backbone["repo_dir"], weights=backbone["weights"],
+        model_name=backbone["name"], norm=backbone.get("norm", True),
+        feature_mode="deepest", check_finite=True,
+    )
+    hidden_channels = resolved["decoder"]["hidden_channels"]
+    deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
+    if experiment == "E1":
+        return E1(extractor, hidden_channels=hidden_channels,
+                  deterministic_resize=deterministic_resize)
+    return E2(
+        extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
+        adapter_kernel_size=adapter.get("kernel_size", 3),
+        gamma_init=adapter.get("gamma_init", 0.0), adapter_bias=adapter.get("bias", True),
+        hidden_channels=hidden_channels,
+        deterministic_resize=deterministic_resize,
+    )
 
 
 class MSILA(nn.Module):
