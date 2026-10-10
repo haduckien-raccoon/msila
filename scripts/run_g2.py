@@ -525,7 +525,10 @@ def validate_selection(study):
     return record
 
 
-def execute_job(study, category, pair, stage, *, smoke, resume, device, selection_sha256=None, inference=False):
+def execute_job(study, category, pair, stage, *, smoke, resume, device, selection_sha256=None, inference=False,
+                model_factory=None, on_checkpoint=None):
+    if stage != "adapter_screen" and (model_factory is not None or on_checkpoint is not None):
+        raise ValueError("Colab callbacks are restricted to adapter_screen")
     context, pools = make_context(study, category, pair, stage, smoke=smoke,
                                  selection_sha256=selection_sha256)
     directory = run_directory(study, category, pair, stage, smoke)
@@ -545,7 +548,9 @@ def execute_job(study, category, pair, stage, *, smoke, resume, device, selectio
     logging.getLogger().addHandler(handler)
     try:
         train = {"E2": train_e2, "E3": train_e3, "E4": train_e4}.get(stage, train_e2)
-        result = train(context, pools, directory, device=device, resume=resume)
+        options = {} if model_factory is None and on_checkpoint is None else {
+            "model_factory": model_factory, "on_checkpoint": on_checkpoint}
+        result = train(context, pools, directory, device=device, resume=resume, **options)
     finally:
         logging.getLogger().removeHandler(handler)
         handler.close()

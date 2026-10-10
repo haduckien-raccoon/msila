@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 from src.data.loader import G1NativeDataset, G1TileDataset, g1_tile_collate
 from src.losses.anomaly_loss import AnomalySegmentationLoss
 from src.models.msila import build_g2_model
+from src.models.dinov3_extractor import DINOv3FeatureExtractor
 from src.train.g1_e1 import evaluate_dev, file_sha256, module_sha256
 from src.train.g2_context import PairedG2Tiles, paired_tile_collate, paired_model_forward, predict_native_e4
 from src.train.optimizer import build_optimizer
@@ -28,8 +29,9 @@ from src.utils.checkpoint import save_training_checkpoint
 from src.utils.resume import load_checkpoint_payload, resume_training_checkpoint
 
 
-def train_e2(context, pools, output_dir, *, device, resume=False):
-    return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E2")
+def train_e2(context, pools, output_dir, *, device, resume=False, model_factory=None, on_checkpoint=None):
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E2",
+                               model_factory=model_factory, on_checkpoint=on_checkpoint)
 
 
 def train_e3(context, pools, output_dir, *, device, resume=False):
@@ -99,13 +101,48 @@ def trainable_modules(model, experiment):
     raise ValueError(f"Unsupported experiment {experiment}")
 
 
-def _train_segmentation(context, pools, output_dir, *, device, resume, experiment):
+class FrozenE2Factory:
+    """Reuse only frozen DINO; replay its initialization RNG for fresh E2 heads.
+
+    This preserves the decoder/Adapter initialization of the uncached factory.
+    No optimizer or trained head is retained between candidates/categories.
+    """
+
+    def __init__(self, cfg, *, device):
+        self.seed = cfg["training"]["seed"]
+        b = cfg["backbone"]
+        self.identity = {k: b[k] for k in ("name", "repo_dir", "weights", "norm")}
+        self.weights_sha256 = file_sha256(b["weights"])
+        devices = [torch.device(device).index or 0] if torch.device(device).type == "cuda" else []
+        with torch.random.fork_rng(devices=devices):
+            torch.manual_seed(self.seed)
+            self.extractor = DINOv3FeatureExtractor(
+                b["repo_dir"], b["weights"], model_name=b["name"], norm=b["norm"],
+                feature_mode="deepest", check_finite=True,
+            )
+            self.initialization_rng = torch.get_rng_state().clone()
+        self.extractor.to(device).eval()
+
+    def __call__(self, cfg):
+        b = cfg["backbone"]
+        if (cfg["training"]["seed"] != self.seed
+                or {k: b[k] for k in self.identity} != self.identity
+                or b.get("checkpoint_sha256", self.weights_sha256) != self.weights_sha256):
+            raise ValueError("Cached E2 backbone/seed/checkpoint provenance mismatch")
+        torch.set_rng_state(self.initialization_rng)
+        return build_g2_model(cfg, experiment="E2", extractor=self.extractor)
+
+
+def _train_segmentation(context, pools, output_dir, *, device, resume, experiment,
+                        model_factory=None, on_checkpoint=None):
     """Complete the declared update budget or save INCOMPLETE for --resume.
 
     Cursor checkpoints keep the final batch of an epoch uncommitted until DEV
     and best.pt are durable. Resuming there evaluates DEV without another step.
     """
     cfg, digest = context["config"], context["config_sha256"]
+    if experiment != "E2" and (model_factory is not None or on_checkpoint is not None):
+        raise ValueError("Colab callbacks are supported only for E2 Adapter screening")
     if experiment in {"E3", "E4"} and (cfg["stage"] != experiment or not cfg.get("selection_sha256")):
         raise RuntimeError(f"BLOCKED: {experiment} training requires its locked Adapter selection context")
     t, d = cfg["training"], cfg["data"]
@@ -121,7 +158,8 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         raise RuntimeError("BLOCKED: metrics exist without a resumable checkpoint")
 
     seed_everything(t["seed"], deterministic=True, warn_only=False)
-    model = build_g2_model(cfg, experiment=experiment).to(device)
+    model = (build_g2_model(cfg, experiment=experiment) if model_factory is None
+             else model_factory(cfg)).to(device)
     trainable = trainable_modules(model, experiment)
     adapter_module = model.adapters if experiment in {"E3", "E4"} else model.adapter
     optimizer, report = build_optimizer(
@@ -199,6 +237,8 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     def checkpoint(path, epoch, next_epoch, next_batch):
         save_training_checkpoint(path, model=trainable, optimizer=optimizer, epoch=epoch,
                                  global_step=step, config=cfg, metadata=metadata(next_epoch, next_batch))
+        if on_checkpoint is not None:
+            on_checkpoint(path)
 
     for epoch in range(start_epoch, t["epochs"]):
         native_train.set_epoch(epoch)
