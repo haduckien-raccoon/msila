@@ -132,7 +132,9 @@ run cannot be overwritten by a new training invocation; choose a new output root
 
 ## Colab: eight categories and final TEST_PUBLIC
 
-Open `notebooks/G1_E1_End_to_End_Colab.ipynb` in Colab. Cell 2 defaults to:
+Open `notebooks/G1_E1_End_to_End_Colab.ipynb` in Colab. Cell 5 installs
+`safetensors>=0.8` from the embedded requirements and verifies the installed
+version in the training venv before proceeding. Cell 2 defaults to:
 
 ```python
 TRAIN_CATEGORIES = ['can', 'fabric', 'fruit_jelly', 'rice', 'sheet_metal', 'vial', 'wallplugs', 'walnuts']
@@ -140,7 +142,11 @@ RUN_TEST_PUBLIC = True
 ```
 
 Use `TRAIN_CATEGORIES = ['rice']` for one category. This is a sequential set of
-eight independent E1 models on one GPU. Each category has its own smoke,
+eight independent E1 models on one GPU: one model per category. Each training
+stage launches a new Python process with a fresh E1 model and optimizer, or
+resumes only that category's checkpoint. The frozen pretrained DINOv3 file can
+initialize every model; trained decoder state stays specific to its category.
+Each category has its own smoke,
 Overfit-16, train checkpoint, QA, synthetic DEV and final public results. The
 epoch/step/minute budgets apply to each category. Cell 3 owns the output layout
 and `DRIVE_SYNC_EVERY_STEPS=20`; changing this to 10 changes Drive backup cadence,
