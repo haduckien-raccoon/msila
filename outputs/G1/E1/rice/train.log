@@ -1,0 +1,10 @@
+2026-10-10 16:33:15,654 G1 NOT RUN; missing assets:
+MVTec AD 2: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/data/mvtec_ad2
+official DINOv3 hubconf.py: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/third_party/dinov3/hubconf.py
+pretrained checkpoint: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+CUDA requested but this environment has no usable CUDA device
+2026-10-10 16:38:05,746 G1 NOT RUN; missing assets:
+MVTec AD 2: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/data/mvtec_ad2
+official DINOv3 hubconf.py: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/third_party/dinov3/hubconf.py
+pretrained checkpoint: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+CUDA requested but this environment has no usable CUDA device

@@ -1,0 +1,5 @@
+{
+  "status": "NOT RUN",
+  "reason": "G1 NOT RUN; missing assets:\nMVTec AD 2: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/data/mvtec_ad2\nofficial DINOv3 hubconf.py: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/third_party/dinov3/hubconf.py\npretrained checkpoint: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth\nCUDA requested but this environment has no usable CUDA device",
+  "real_pretrained_run_verified": false
+}

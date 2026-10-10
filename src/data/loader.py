@@ -306,3 +306,116 @@ def native_collate_fn(batch):
     # Native-resolution images may have different H,W.
     # Preserve as a Python list instead of torch.stack().
     return batch
+
+
+class G1NativeDataset(Dataset):
+    """Good-only native pairs; synthesize before any tile crop.
+
+    The protocol YAML is passed through unchanged. TRAIN seed varies by epoch;
+    DEV and Overfit-16 stay fixed. A small cache avoids regenerating adjacent
+    tiles without retaining the entire native dataset in RAM.
+    """
+
+    def __init__(self, sources, protocol, *, seed, role, variants=2, fixed=False):
+        from itertools import product
+        from collections import OrderedDict
+        from .synthetic_anomaly import NativeTinyDefectGenerator
+
+        if role not in {"train", "dev"} or variants < 1 or not sources:
+            raise ValueError("G1 requires nonempty TRAIN/DEV good sources and variants >= 1")
+        self.generator = NativeTinyDefectGenerator(protocol)
+        self.sources = tuple(sources)
+        expected = "train" if role == "train" else "validation"
+        if any(r.split != expected or r.defect_type != "good" for r in sources):
+            raise ValueError(f"G1 {role} accepts only {expected}/good images")
+        bins = protocol["train_core_bins"] if role == "train" else protocol["dev_mixed_bins"]
+        self.combinations = list(product(protocol["defect_types"], protocol["placements"], bins))
+        self.seed, self.role, self.fixed, self.epoch = int(seed), role, fixed, 0
+        self.plan = [(i, v) for i in range(len(sources)) for v in range(variants + 1)]
+        self.variants = variants
+        self.cache = OrderedDict()
+
+    def __len__(self):
+        return len(self.plan)
+
+    def set_epoch(self, epoch):
+        self.epoch = 0 if self.fixed else int(epoch)
+        self.cache.clear()
+
+    def __getitem__(self, index):
+        import hashlib
+        index = int(index)
+        key = (self.epoch, index)
+        if key not in self.cache:
+            source_index, variant = self.plan[index]
+            record = self.sources[source_index]
+            original = load_rgb_native(record.image_path)
+            combo_index = source_index * self.variants + max(variant - 1, 0)
+            if not self.fixed:
+                combo_index += self.epoch * len(self.sources) * self.variants
+            kind, placement, size_bin = self.combinations[combo_index % len(self.combinations)]
+            seed_text = f"{self.role}|{self.seed}|{self.epoch}|{index}".encode()
+            sample_seed = int.from_bytes(hashlib.sha256(seed_text).digest()[:8], "big")
+            sample = self.generator(original, seed=sample_seed, defect_type=kind,
+                                    size_bin=size_bin, placement=placement, normal=variant == 0)
+            sample_id = f"{self.role}_{source_index:05d}_{variant:02d}"
+            self.cache[key] = dict(original=original, image=sample.image, mask=sample.mask,
+                                   meta=dict(sample_id=sample_id, source=record.image_path,
+                                             source_split=record.split, original_hw=list(original.shape[-2:]),
+                                             synthetic=sample.metadata))
+            if len(self.cache) > 2:
+                self.cache.popitem(last=False)
+        self.cache.move_to_end(key)
+        return self.cache[key]
+
+
+class G1TileDataset(Dataset):
+    """512px local tiles with exact mask crops and coordinate metadata."""
+
+    def __init__(self, native, *, tile_size=512, overlap=128, overfit16=False):
+        from .tiling import generate_tile_records
+        self.native, self.tile_size = native, tile_size
+        self.records = []
+        if overfit16 and len(native.sources) < 8:
+            raise ValueError("Overfit-16 needs at least eight distinct TRAIN/good sources")
+        if overfit16:
+            native.fixed = True
+        source_tiles = {}
+        for i, record in enumerate(native.sources):
+            with Image.open(record.image_path) as image:
+                source_tiles[i] = generate_tile_records(image.height, image.width, tile_size, overlap,
+                                                        context_size=tile_size)
+        for index, (source_index, variant) in enumerate(native.plan):
+            tiles = source_tiles[source_index]
+            if overfit16:
+                if source_index >= 8 or variant > 1:
+                    continue
+                if variant:
+                    sample = native[index]
+                    from .tiling import crop_with_padding
+                    tile = max(tiles, key=lambda r: float(crop_with_padding(
+                        sample["mask"], r.local_xyxy, pad_mode="constant").sum()))
+                else:
+                    tile = tiles[source_index % len(tiles)]
+                self.records.append((index, tile))
+            else:
+                self.records.extend((index, tile) for tile in tiles)
+        native.cache.clear()
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, index):
+        from dataclasses import asdict
+        from .tiling import crop_with_padding
+        native_index, record = self.records[index]
+        sample = self.native[native_index]
+        image = crop_with_padding(sample["image"], record.local_xyxy)
+        mask = crop_with_padding(sample["mask"], record.local_xyxy, pad_mode="constant")
+        return dict(image=normalize_dinov3(image), mask=mask,
+                    meta=dict(sample["meta"], tile=asdict(record)))
+
+
+def g1_tile_collate(batch):
+    return dict(image=torch.stack([r["image"] for r in batch]),
+                mask=torch.stack([r["mask"] for r in batch]), meta=[r["meta"] for r in batch])

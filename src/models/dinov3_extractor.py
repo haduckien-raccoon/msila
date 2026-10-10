@@ -141,6 +141,9 @@ class DINOv3FeatureExtractor(nn.Module):
         If ``True``, check input/output tensors for NaN/Inf. Useful for smoke
         tests and debugging, but disabled by default because repeated GPU
         finite checks cause synchronization overhead in the training loop.
+    feature_mode:
+        ``deepest`` requests only the final block for G1 E1. The existing
+        ``multilayer`` default preserves the three-block cache/view contract.
     """
 
     def __init__(
@@ -151,6 +154,7 @@ class DINOv3FeatureExtractor(nn.Module):
         blocks: Sequence[int] | None = None,
         norm: bool = True,
         check_finite: bool = False,
+        feature_mode: Literal["multilayer", "deepest"] = "multilayer",
     ) -> None:
         super().__init__()
 
@@ -158,7 +162,15 @@ class DINOv3FeatureExtractor(nn.Module):
         self.weights = str(weights)
         self.model_name = str(model_name)
         spec = backbone_spec(self.model_name)
-        self.blocks = validate_blocks(spec.blocks if blocks is None else blocks, spec.depth)
+        self.feature_mode = feature_mode
+        if feature_mode == "deepest":
+            self.blocks = (spec.depth,)
+            if blocks is not None and tuple(blocks) != self.blocks:
+                raise ValueError(f"E1 requires only the deepest block {self.blocks}")
+        elif feature_mode == "multilayer":
+            self.blocks = validate_blocks(spec.blocks if blocks is None else blocks, spec.depth)
+        else:
+            raise ValueError(f"Unknown feature_mode={feature_mode!r}")
         self.norm = bool(norm)
         self.check_finite = bool(check_finite)
 
@@ -176,8 +188,14 @@ class DINOv3FeatureExtractor(nn.Module):
                 repo_or_dir=str(self.repo_dir), model=self.model_name, source="local",
                 weights=self.weights, pretrained=False,
             )
-            state = torch.load(self.weights, map_location="cpu", weights_only=True)
-            self.backbone.load_state_dict(state, strict=True)
+            try:
+                state = torch.load(self.weights, map_location="cpu", weights_only=True)
+                self.backbone.load_state_dict(state, strict=True)
+            except (RuntimeError, ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Checkpoint {self.weights} is incompatible with {self.model_name}; "
+                    f"expected the official backbone state_dict. {exc}"
+                ) from exc
         else:
             self.backbone = torch.hub.load(
                 repo_or_dir=str(self.repo_dir), model=self.model_name,
@@ -214,13 +232,14 @@ class DINOv3FeatureExtractor(nn.Module):
         if not self.model_name:
             raise ValueError("model_name must be non-empty.")
 
-        if len(self.blocks) != 3:
+        expected_count = 1 if self.feature_mode == "deepest" else 3
+        if len(self.blocks) != expected_count:
             raise ValueError(
-                "Exactly 3 blocks are required by the project contract; "
+                f"Exactly {expected_count} blocks are required for {self.feature_mode}; "
                 f"received {self.blocks}."
             )
 
-        if len(set(self.blocks)) != 3:
+        if len(set(self.blocks)) != expected_count:
             raise ValueError(f"Block numbers must be unique: {self.blocks}.")
 
         if any(block <= 0 for block in self.blocks):
@@ -380,10 +399,10 @@ class DINOv3FeatureExtractor(nn.Module):
             )
 
         features = tuple(features)
-        if len(features) != 3:
+        if len(features) != len(self.blocks):
             raise RuntimeError(
                 "DINOv3 extractor contract violated: expected exactly "
-                f"3 features, received {len(features)}."
+                f"{len(self.blocks)} features, received {len(features)}."
             )
 
         self._validate_outputs(x=x, features=features)
@@ -496,7 +515,7 @@ class DINOv3FeatureExtractor(nn.Module):
         self,
         *,
         x: Tensor,
-        features: tuple[Tensor, Tensor, Tensor],
+        features: tuple[Tensor, ...],
     ) -> None:
         expected_h = x.shape[-2] // self.patch_size
         expected_w = x.shape[-1] // self.patch_size

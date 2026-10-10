@@ -1,0 +1,50 @@
+version: g1_e1_v1
+category: rice
+output_root: outputs/G1/E1
+data:
+  root: data/mvtec_ad2
+  tile_size: 512
+  overlap: 128
+  num_workers: 0
+  max_train_sources: null
+  max_dev_sources: 4
+  # Each TRAIN source gets one normal and this many native synthetic variants.
+  train_variants_per_image: 2
+  # Cycling the protocol combinations covers all bins/types/placements.
+  dev_variants_per_image: 6
+backbone:
+  name: dinov3_vits16
+  repo_dir: third_party/dinov3
+  # Choose the checkpoint by name; never fall back to another backbone.
+  checkpoints:
+    dinov3_vits16: models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth
+    dinov3_vits16plus: models/dinov3_vits16plus_pretrain_lvd1689m-4057cbaa.pth
+    dinov3_vitb16: models/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth
+    dinov3_vith16plus: models/dinov3_vith16plus_pretrain_lvd1689m-7c1da9a5.pth
+decoder:
+  hidden_channels: 64
+synthetic_protocol: configs/full_scale_synthetic.yaml
+training:
+  mode: train
+  seed: 2026
+  dev_seed: 17017
+  epochs: 20
+  batch_size: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  max_grad_norm: null
+  # Budget caps; null means unlimited. Stops commit an epoch checkpoint.
+  max_steps: null
+  max_minutes: null
+loss:
+  bce_weight: 1.0
+  dice_weight: 1.0
+evaluation:
+  tile_batch_size: 4
+  example_limit: 8
+smoke:
+  epochs: 1
+  max_steps: 2
+  max_train_sources: 2
+  max_dev_sources: 1
+  dev_variants_per_image: 3

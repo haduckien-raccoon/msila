@@ -42,6 +42,33 @@ from .mean_fusion import MeanFusion
 from .residual_adapter import ResidualAdapter2d
 
 
+class E1(nn.Module):
+    """G1: a frozen deepest DINOv3 feature feeds only BasicDecoder.
+
+    No Adapter, feature fusion, projection, or context branch is constructed.
+    Input is normalized RGB; output is raw logits at the input tile size.
+    """
+
+    def __init__(self, extractor: nn.Module, hidden_channels: int = 64):
+        super().__init__()
+        if getattr(extractor, "blocks", None) != (extractor.depth,):
+            raise ValueError("E1 requires feature_mode='deepest'")
+        self.extractor = extractor
+        self.extractor.requires_grad_(False)
+        self.extractor.eval()
+        self.decoder = BasicDecoder(extractor.out_channels, hidden_channels)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.extractor.eval()
+        return self
+
+    def forward(self, image: Tensor) -> Tensor:
+        with torch.no_grad():
+            feature = self.extractor(image)[f"b{self.extractor.depth}"]
+        return self.decoder(feature, output_size=image.shape[-2:])
+
+
 class MSILA(nn.Module):
     """Minimal MS-ILA baseline using the current Day-04 residual Adapter.
 

@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-10",
+  "scope": "G1 E1 only; single developer",
+  "g1_acceptance": "NOT VERIFIED",
+  "environment": {
+    "torch": "2.6.0+cpu",
+    "cuda_available": false
+  },
+  "test_suites": [
+    {
+      "path": "reports/g1_pytest.xml",
+      "tests": 57,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "passed": 55
+    },
+    {
+      "path": "reports/g1_regression_pytest.xml",
+      "tests": 76,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "passed": 74
+    }
+  ],
+  "days": [
+    {
+      "day": "D1",
+      "work": "Native good-only data and deepest frozen DINO interface",
+      "files": [
+        "src/data/loader.py",
+        "src/models/dinov3_extractor.py",
+        "configs/g1_e1.yaml",
+        "tests/test_g1_e1.py"
+      ],
+      "unit_status": "PASS",
+      "real_pretrained_status": "NOT RUN",
+      "evidence": "All four requested backbone API fixtures have patch16 dense grids; strict mismatch, frozen eval and no TEST source use checked. No actual DINO weights available."
+    },
+    {
+      "day": "D2",
+      "work": "Native tiny generator reuse and adapter-free E1 decoder",
+      "files": [
+        "src/data/loader.py",
+        "src/models/msila.py",
+        "tests/test_g1_e1.py",
+        "reports/g1_synthetic_examples/"
+      ],
+      "unit_status": "PASS",
+      "evidence": "24 generator bin/type/placement combinations; exact changed support, binary masks, normal zero mask, unchanged background and deterministic seeds. Decoder has finite gradients and updated weights on CPU."
+    },
+    {
+      "day": "D3",
+      "work": "Training orchestration, synthetic DEV, checkpoints and resume",
+      "files": [
+        "src/train/g1_e1.py",
+        "configs/g1_e1.yaml",
+        "tests/test_g1_e1.py"
+      ],
+      "unit_status": "PASS",
+      "real_training_status": "NOT RUN",
+      "evidence": "CPU fixture with 16 fixed tiles decreases loss; existing train_step, AdamW, exact AU-PRO accumulator, checkpoint/resume and CLI log/artifact path checked. Partial-epoch resume equals uninterrupted weights; no fixture benchmark metric published."
+    },
+    {
+      "day": "D4",
+      "work": "Native inference, visual outputs and runbook",
+      "files": [
+        "src/train/g1_e1.py",
+        "src/data/tiling.py",
+        "docs/G1_SOLO_RUNBOOK.md",
+        "tests/test_g1_e1.py"
+      ],
+      "unit_status": "PASS",
+      "real_inference_status": "NOT RUN",
+      "evidence": "Asymmetric native fields of 17x29, 512x512, 529x677 reconstruct without edge/corner loss or seams; fixed orientation, padding and finite map checks. Actual CUDA smoke command exits NOT RUN with explicit missing assets."
+    }
+  ],
+  "missing_assets": [
+    "MVTec AD2 TRAIN/good and VALIDATION/good",
+    "Official local DINOv3 checkout",
+    "Official pretrained DINOv3 ViT-S/16 checkpoint",
+    "CUDA device/build"
+  ],
+  "no_real_anomaly_claim": true,
+  "no_research_metrics_created": true
+}

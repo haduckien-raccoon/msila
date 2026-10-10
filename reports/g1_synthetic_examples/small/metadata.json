@@ -1,0 +1,89 @@
+{
+  "version": "native_tiny_proxy_v2",
+  "seed": 57,
+  "defect_type": "texture",
+  "size_bin": "small",
+  "placement": "interior",
+  "native_hw": [
+    529,
+    677
+  ],
+  "is_anomaly": true,
+  "distribution_basis": "synthetic_proxy_no_real_defect_calibration",
+  "area": 39,
+  "area_ratio": 0.00010889809093269819,
+  "bbox_xyxy": [
+    456,
+    456,
+    463,
+    463
+  ],
+  "contrast": 0.06722558462869532,
+  "mean_abs_change": 0.053267888724803925,
+  "source": "procedural RGB good-image fixture",
+  "purpose": "generator QA only",
+  "protocol": {
+    "version": "native_tiny_proxy_v2",
+    "locked_before_evaluation": true,
+    "basis": "synthetic_proxy_no_real_defect_calibration",
+    "area_unit": "native_pixels",
+    "connectivity": 8,
+    "rationale": "Proxy bins declared before evaluating models. 4-32 pixels probe sub-patch defects; 33-128 pixels probe small regions within a 16x16 DINO patch; 129-2048 pixels provide a mixed-size control. These are foreground areas, not bounding-box areas and not a fitted distribution of real TEST defects.",
+    "size_bins": {
+      "sub_patch": [
+        4,
+        32
+      ],
+      "small": [
+        33,
+        128
+      ],
+      "mixed_control": [
+        129,
+        2048
+      ]
+    },
+    "dev_tiny_bins": [
+      "sub_patch",
+      "small"
+    ],
+    "dev_mixed_bins": [
+      "sub_patch",
+      "small",
+      "mixed_control"
+    ],
+    "train_core_bins": [
+      "sub_patch",
+      "small",
+      "mixed_control"
+    ],
+    "defect_types": [
+      "pinhole",
+      "thin_scratch",
+      "texture",
+      "contamination"
+    ],
+    "placements": [
+      "interior",
+      "image_boundary"
+    ],
+    "contrast_range": [
+      0.04,
+      0.12
+    ],
+    "min_mean_abs_change": 0.015,
+    "boundary_band_px": 2,
+    "prediction_threshold": 0.5,
+    "contour_tolerance_px": 2,
+    "scratch_width_px": [
+      1,
+      4
+    ]
+  },
+  "crop_xyxy": [
+    427,
+    427,
+    491,
+    491
+  ]
+}
