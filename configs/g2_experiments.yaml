@@ -1,4 +1,4 @@
-# G2 TV1 manifest: E1/E2/E3; E4/E5 remain reserved.
+# G2 TV1 manifest: E1/E2/E3/E4; E5 remains reserved.
 version: g2_contract_v2
 categories: [can, fabric, fruit_jelly, rice, sheet_metal, vial, wallplugs, walnuts]
 fusion_methods: [mean, concat, weighted_sum, gated, attention]
@@ -64,11 +64,24 @@ experiments:
     context: false
     fusion: mean
   E4:
-    implementation: null
-    status: reserved_for_tv2
+    implementation: src.models.msila.E4
+    feature_mode: multilayer
+    blocks: registry
+    adapter: shared_across_views_per_layer_same_locked_rd
+    projection: shared_across_views_per_layer_to_fusion.dim
+    context: true
+    context_alignment: before_projection_and_fusion
+    feature_sources: 6
+    fusion: mean
   E5:
     implementation: null
     status: reserved_for_tv2
+
+paired_views:
+  # Both crops from one native synthetic sample; Local index/order matches E3.
+  context_size: 768
+  pair_strategy: concat  # Same frozen DINO, one 2B batch; sequential also supported.
+  deterministic_sampling: true
 
 data:
   root: data/mvtec_ad2

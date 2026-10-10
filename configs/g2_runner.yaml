@@ -1,4 +1,4 @@
-# D6/D7-TV1: selected backbone's 9 x 8 screen, then 8 E2 and 8 E3 runs.
+# D6/D7/D8-TV1: selected backbone's 9 x 8 screen, then 8 runs per E2/E3/E4.
 version: g2_runner_v1
 model_config: configs/g2_experiments.yaml
 backbone: dinov3_vitb16
@@ -34,7 +34,7 @@ execution:
   deterministic_resize: true
 
 # Separate output namespace; these results NEVER contribute to selection locks
-# or the reported real PASS/72 and PASS/8 counts. E2/E3 require a full lock.
+# or the reported real PASS/72 and PASS/8 counts. E2/E3/E4 require a full lock.
 smoke:
   epochs: 1
   max_steps: 2

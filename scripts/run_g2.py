@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""G2 TV1: one backbone, 72 Adapter screens, then 8 locked E2/E3 runs.
+"""G2 TV1: one backbone, 72 Adapter screens, then 8 locked E2/E3/E4 runs.
 
 Examples (paths/checkpoints configured in YAML):
   python scripts/run_g2.py --stage adapter_screen --categories all --device cuda --resume
   python scripts/run_g2.py --stage E2 --categories all --device cuda --resume
   python scripts/run_g2.py --stage E3 --categories all --device cuda --resume
+  python scripts/run_g2.py --stage E4 --categories all --device cuda --resume
+  python scripts/run_g2.py --stage E4 --categories all --device cuda --inference
 
-Smoke uses a separate namespace and never supplies selection evidence. No E4/E5
-or fusion grid is scheduled here. Run each study with a single runner process.
+Smoke uses a separate namespace and never supplies selection evidence.
+No E5 or fusion grid is scheduled. Run each study with a single runner process.
 """
 from __future__ import annotations
 
@@ -33,7 +35,7 @@ from src.models.backbone_registry import BACKBONES, adapter_pairs, backbone_spec
 from src.models.feature_selector import FeatureSelector
 from src.models.msila import resolve_g2_config
 from src.train.g1_e1 import check_assets, discover_sources
-from src.train.g2_e2 import train_e2, train_e3
+from src.train.g2_e2 import train_e2, train_e3, train_e4, infer_e4
 from src.train.g2_comparison import comparison_identity, write_comparison_inputs
 from src.train.screen_representation import (enforce_lock, read_yaml, save_json,
                                               sha256_file, sha256_json)
@@ -51,13 +53,20 @@ SELECTION_RULE = dict(metric="macro_synthetic_dev_aupro_0_05", direction="max",
                       require_all_categories=True, require_full_budget=True,
                       checkpoint_tie_break="earliest_epoch")
 
-# Specific D6 implementations whose E2 path is preserved by this D7 extension.
-# Other dependency/source changes still block reuse. E3 separately hashes all
-# current implementations into its own run config and checkpoints.
+# Audited D6/D7 implementations whose E2/E3 paths this E4 extension preserves.
+# Other dependency/source changes still block reuse; E4 hashes its own sources.
 D6_SOURCE_BASELINE = {
     "scripts/run_g2.py": "1151340f61700614eae50cc52d90e59c5c4e3b45aedddf891899e0f6881fa2ad",
     "src/train/g2_e2.py": "b236d460303531eb684860e5494d3826f17c0ee374be4459f166c4f65225d16c",
     "src/models/msila.py": "a0441e6fd79b7db7537c12d362ec87b545b2130507185d03638e21b024a60fe4",
+    "src/train/g1_e1.py": "dd7b311e4766abac5499f55606520e72650d5e534f12b48087393fabe7e9dd80",
+}
+D7_SOURCE_BASELINE = {
+    "scripts/run_g2.py": "0acbf56680b4cf235772d3896746be14b19ff73fd20e7245f05ff2d58e39e3b0",
+    "src/models/msila.py": "96c9564a9e9337e26a8f85cbc18a8d5bff080dfd74e9690c7fb2c54d9825f9f8",
+    "src/train/g2_e2.py": "399f9b365603cc3558f01b75cb9819bd716a0295f4f4b15ec57e069ceacc752a",
+    "src/train/g1_e1.py": D6_SOURCE_BASELINE["src/train/g1_e1.py"],
+    "src/train/g2_comparison.py": "1ccfd165f5d5feb0173ff37fc93d6939b4f08e29e997dde5e940d6f640e3554f",
 }
 
 
@@ -73,7 +82,8 @@ def absolute(value):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/g2_runner.yaml")
-    parser.add_argument("--stage", required=True, choices=("adapter_screen", "E2", "E3"))
+    parser.add_argument("--stage", required=True, choices=("adapter_screen", "E2", "E3", "E4"))
+    parser.add_argument("--inference", action="store_true", help="E4: restore best.pt, export native DEV maps")
     parser.add_argument("--categories", nargs="+", default=["all"], help="all, names or comma-separated names")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--smoke", action="store_true")
@@ -81,7 +91,10 @@ def parse_args(argv=None):
     parser.add_argument("--backbone", choices=tuple(BACKBONES))
     for flag in ("data-root", "repo-dir", "weights", "output-root"):
         parser.add_argument(f"--{flag}")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.inference and args.stage != "E4":
+        parser.error("--inference is supported for --stage E4")
+    return args
 
 
 def selected_pairs(cfg, runner):
@@ -127,6 +140,17 @@ def load_config(args):
         raise ValueError("Full D6 requires CUDA and deterministic decoder resize")
     cfg["decoder"]["deterministic_resize"] = True
     positive_int(cfg["fusion"]["dim"], "fusion.dim")
+    # Old D6/D7 model configs remain usable with the existing Context geometry.
+    views = cfg.setdefault("paired_views", {"context_size": cfg["data"]["context_source_fov"][0],
+                                           "pair_strategy": "concat", "deterministic_sampling": True})
+    if (views.get("context_size") != cfg["data"]["context_source_fov"][0]
+            or cfg["data"]["context_source_fov"] != [views.get("context_size")] * 2
+            or type(views.get("context_size")) is not int or views["context_size"] < 512
+            or (views["context_size"] - 512) % 2
+            or views.get("pair_strategy") not in {"concat", "sequential"}
+            or views.get("deterministic_sampling") is not True
+            or cfg["data"]["context_input_size"] != [512, 512]):
+        raise ValueError("E4 requires centered Context FOV >=512, input 512, deterministic alignment")
     selected_pairs(cfg, runner)
     t, d, e = cfg["training"], cfg["data"], cfg["evaluation"]
     if (t["optimizer"]["name"] != "AdamW" or t["scheduler"] is not None or t["amp"] is not False
@@ -219,15 +243,25 @@ def prepare_study(cfg, runner, root, *, device):
               adapter_sharing="independent_per_layer", fusion="mean", context=False,
               feature_width=cfg["fusion"]["dim"],
               implementation_sha256={name: sha256_file(ROOT / name) for name in e3_files})
-    return dict(protocol=protocol, sha256=sha256_json(protocol), root=Path(root), e3=e3,
-                pairs=selected_pairs(cfg, runner), contexts={})
+    e4 = {**deepcopy(e3), "source_keys": list(FeatureSelector("multi_local_context").source_keys),
+          "adapter_sharing": "shared_across_views_per_layer", "projection_sharing": "shared_across_views_per_layer",
+          "context": True, "context_alignment": "before_projection_and_fusion",
+          "paired_views": deepcopy(cfg["paired_views"])}
+    e4_files = (*e3_files, "src/train/g2_context.py", "src/models/context_alignment.py",
+                "src/models/cached_training.py", "src/geometry/view_meta.py")
+    e4["implementation_sha256"] = {name: sha256_file(ROOT / name) for name in e4_files}
+    e3_smoke = reuse_e3_architecture(e3, Path(root), sha256_json(protocol), mode="smoke")
+    e3 = reuse_e3_architecture(e3, Path(root), sha256_json(protocol))
+    return dict(protocol=protocol, sha256=sha256_json(protocol), root=Path(root), e3=e3, e4=e4,
+                e3_smoke=e3_smoke, pairs=selected_pairs(cfg, runner), contexts={})
 
 
 def reuse_d6_protocol(current, root):
     """Read completed D6 artifacts against their immutable historical config.
 
-    Reuse is limited to the known D6 -> D7 TV1 source extension. Scientific
-    settings, DINO checkout, checkpoint, Data/Evaluator/loss code stay exact.
+    Reuse is limited to the audited D6/D7 -> D8 TV1 source extension. Scientific
+    settings, DINO checkout/checkpoint and Data/Evaluator/loss code stay exact;
+    g1_e1's training prediction hook preserves its default E1/E2/E3 path.
     The stored config/metric/checkpoint hashes are never rewritten.
     """
     path = root / "full" / "protocol_lock.json"
@@ -244,10 +278,35 @@ def reuse_d6_protocol(current, root):
     new_code = new_settings.pop("source_code_sha256")
     changed = {name for name in old_code if old_code[name] != new_code.get(name)}
     if (old_settings != new_settings or old_code.keys() != new_code.keys()
-            or any(old_code[name] != D6_SOURCE_BASELINE.get(name) for name in changed)):
+            or any(old_code[name] not in {D6_SOURCE_BASELINE.get(name), D7_SOURCE_BASELINE.get(name)}
+                   for name in changed)):
         raise G2Blocked("BLOCKED: scientific protocol or unaudited dependency changed from the saved study")
     logging.info("Reuse immutable D6 protocol %s for E2 baseline; E3 has its own implementation hashes", record["sha256"])
     return old
+
+
+def reuse_e3_architecture(current, root, study_sha256, *, mode="full"):
+    """Preserve signed D7 E3 configs for skip/resume after this E4-only extension."""
+    for category in CATEGORIES:
+        path = root / mode / "E3" / category / "last.pt"
+        if not path.is_file():
+            continue
+        payload, _ = load_checkpoint_payload(path, require_sha256=True)
+        cfg = payload["config"]
+        if (cfg.get("stage") != "E3" or cfg.get("mode") != mode
+                or cfg.get("study_sha256") != study_sha256
+                or payload["metadata"].get("config_sha256") != sha256_json(cfg)):
+            raise G2Blocked("BLOCKED: historical E3 checkpoint/config checksum mismatch")
+        old = cfg["architecture"]
+        old_settings, new_settings = deepcopy(old), deepcopy(current)
+        old_code = old_settings.pop("implementation_sha256")
+        new_code = new_settings.pop("implementation_sha256")
+        changed = {name for name in old_code if old_code[name] != new_code.get(name)}
+        if (old_settings != new_settings or old_code.keys() != new_code.keys()
+                or any(old_code[name] != D7_SOURCE_BASELINE.get(name) for name in changed)):
+            raise G2Blocked("BLOCKED: scientific E3 architecture or unaudited implementation changed")
+        return old
+    return current
 
 
 def make_context(study, category, pair, stage, *, smoke=False, selection_sha256=None):
@@ -278,12 +337,15 @@ def make_context(study, category, pair, stage, *, smoke=False, selection_sha256=
     cfg.update(stage=stage, mode="smoke" if smoke else "full", sources=manifest,
                study_sha256=study["sha256"], selection_sha256=selection_sha256, expected_steps=expected)
     cfg["adapter"].update(r=pair[0], d=pair[1])
-    if stage == "E3":
+    if stage in {"E3", "E4"}:
         if selection_sha256 is None:
-            raise G2Blocked("BLOCKED: E3 requires the Adapter selection lock hash")
-        cfg["architecture"] = deepcopy(study["e3"])
-        cfg["backbone"]["feature_blocks"] = list(study["e3"]["source_blocks"])
-        cfg["fusion"] = {"dim": study["e3"]["feature_width"], "method": "mean"}
+            raise G2Blocked(f"BLOCKED: {stage} requires the Adapter selection lock hash")
+        architecture = study["e3_smoke"] if smoke and stage == "E3" else study[stage.lower()]
+        cfg["architecture"] = deepcopy(architecture)
+        cfg["backbone"]["feature_blocks"] = list(architecture["source_blocks"])
+        cfg["fusion"] = {"dim": architecture["feature_width"], "method": "mean"}
+        if stage == "E4":
+            cfg["paired_views"] = deepcopy(architecture["paired_views"])
     return dict(config=cfg, config_sha256=sha256_json(cfg), expected_steps=expected), pools
 
 
@@ -307,13 +369,20 @@ def read_valid_result(directory, context):
                         frozen_backbone_unchanged=True, adapter_updated=True, decoder_updated=True)
         if any(result.get(k) != v for k, v in required.items()):
             return None
-        if cfg["stage"] == "E3":
+        if cfg["stage"] in {"E3", "E4"}:
             e3 = cfg["architecture"]
-            if (result.get("feature_sources") != 3 or result.get("source_blocks") != e3["source_blocks"]
+            with_context = cfg["stage"] == "E4"
+            blocks = e3["source_blocks"] * (2 if with_context else 1)
+            if (result.get("feature_sources") != len(e3["source_keys"]) or result.get("source_blocks") != e3["source_blocks"]
                     or result.get("feature_width") != e3["feature_width"] or result.get("fusion") != "mean"
-                    or result.get("context") is not False or result.get("projection_updated") is not True
-                    or result.get("source_block_map") != dict(zip(e3["source_keys"], e3["source_blocks"]))
-                    or result.get("adapters_updated") != dict.fromkeys(e3["source_keys"], True)):
+                    or result.get("context") is not with_context or result.get("projection_updated") is not True
+                    or result.get("source_block_map") != dict(zip(e3["source_keys"], blocks))
+                    or result.get("adapters_updated") != dict.fromkeys(e3["source_keys"][:3], True)):
+                return None
+            if with_context and (result.get("context_aligned") is not True
+                    or result.get("adapter_sharing") != e3["adapter_sharing"]
+                    or result.get("projection_sharing") != e3["projection_sharing"]
+                    or result.get("pair_strategy") != cfg["paired_views"]["pair_strategy"]):
                 return None
         dev = result["best_synthetic_dev"]
         score = dev["synthetic_dev_aupro_0_05"]
@@ -340,16 +409,16 @@ def read_valid_result(directory, context):
                 return None
             if name == "last" and state["dev_step"] != context["expected_steps"]:
                 return None
-            if cfg["stage"] == "E3" and (state.get("projection_updated") is not True
+            if cfg["stage"] in {"E3", "E4"} and (state.get("projection_updated") is not True
                     or state.get("adapters_updated") != result["adapters_updated"]):
                 return None
             weights = payload["model_state"]
-            adapter_prefix = "adapters." if cfg["stage"] == "E3" else "adapter."
+            adapter_prefix = "adapters." if cfg["stage"] in {"E3", "E4"} else "adapter."
             if (any(not torch.isfinite(value).all() for value in weights.values())
                     or sum(value.numel() for key, value in weights.items() if key.startswith(adapter_prefix))
                     != result["adapter_trainable_parameters"]):
                 return None
-            if cfg["stage"] == "E3":
+            if cfg["stage"] in {"E3", "E4"}:
                 groups = result["parameter_report"]["groups"]
                 if (set(groups) != {"adapters", "projection", "decoder"}
                         or groups != {group: sum(v.numel() for k, v in weights.items() if k.startswith(group + "."))
@@ -456,11 +525,17 @@ def validate_selection(study):
     return record
 
 
-def execute_job(study, category, pair, stage, *, smoke, resume, device, selection_sha256=None):
+def execute_job(study, category, pair, stage, *, smoke, resume, device, selection_sha256=None, inference=False):
     context, pools = make_context(study, category, pair, stage, smoke=smoke,
                                  selection_sha256=selection_sha256)
     directory = run_directory(study, category, pair, stage, smoke)
-    if read_valid_result(directory, context):
+    completed = read_valid_result(directory, context)
+    if inference:
+        if stage != "E4" or completed is None:
+            raise G2Blocked("BLOCKED: E4 inference requires a valid completed training result")
+        result = infer_e4(context, pools, directory, device=device, expected_metrics=completed["best_synthetic_dev"])
+        return result["status"]
+    if completed:
         return "SKIP"
     metrics_path = directory / "metrics.json"
     if metrics_path.exists() and json.loads(metrics_path.read_text()).get("status") == "PASS":
@@ -469,7 +544,7 @@ def execute_job(study, category, pair, stage, *, smoke, resume, device, selectio
     handler = logging.FileHandler(directory / "train.log")
     logging.getLogger().addHandler(handler)
     try:
-        train = train_e3 if stage == "E3" else train_e2
+        train = {"E2": train_e2, "E3": train_e3, "E4": train_e4}.get(stage, train_e2)
         result = train(context, pools, directory, device=device, resume=resume)
     finally:
         logging.getLogger().removeHandler(handler)
@@ -479,7 +554,7 @@ def execute_job(study, category, pair, stage, *, smoke, resume, device, selectio
     return result["status"]
 
 
-def export_comparison(study, lock, *, smoke=False):
+def export_comparison(study, lock, *, smoke=False, experiments=("E2", "E3")):
     selected = lock["payload"]["selected_pair"]
     pair = selected["r"], selected["d"]
     rows = []
@@ -487,7 +562,7 @@ def export_comparison(study, lock, *, smoke=False):
         row = dict(category=category, status="INCOMPLETE", real_pair=False, r=pair[0], d=pair[1])
         contexts, results = {}, {}
         try:
-            for stage in ("E2", "E3"):
+            for stage in experiments:
                 context, _ = make_context(study, category, pair, stage, smoke=smoke,
                                          selection_sha256=lock["sha256"])
                 path = run_directory(study, category, pair, stage, smoke)
@@ -503,36 +578,39 @@ def export_comparison(study, lock, *, smoke=False):
                         sources_sha256=sha256_json(context["config"]["sources"]),
                         parameter_report=result.get("parameter_report"),
                     )
-            identity = comparison_identity(contexts["E2"]["config"])
+            identity = comparison_identity(contexts[experiments[0]]["config"])
             row.update(pair_protocol_sha256=sha256_json(identity), seed=identity["training"]["seed"],
                        dev_seed=identity["training"]["dev_seed"], expected_steps=identity["expected_steps"])
-            if identity != comparison_identity(contexts["E3"]["config"]):
+            if identity != comparison_identity(contexts[experiments[1]]["config"]):
                 row["status"] = "PROTOCOL_MISMATCH"
             elif len(results) == 2:
                 row.update(status="READY", real_pair=all(real_evidence(result) for result in results.values()))
             else:
-                row["status"] = "MISSING_" + "_AND_".join(stage for stage in ("E2", "E3") if stage not in results)
+                row["status"] = "MISSING_" + "_AND_".join(stage for stage in experiments if stage not in results)
         except (OSError, ValueError, RuntimeError) as exc:
             row.update(status="INCOMPLETE", reason=str(exc))
         rows.append(row)
     return write_comparison_inputs(study["root"] / ("smoke" if smoke else "full"), categories=CATEGORIES,
-                                   rows=rows, study_sha256=study["sha256"], selection_sha256=lock["sha256"], smoke=smoke)
+                                   rows=rows, study_sha256=study["sha256"], selection_sha256=lock["sha256"],
+                                   smoke=smoke, experiments=experiments)
 
 
 def summarize(study, stage, outcomes, *, smoke, lock=None):
     screen, _ = collect_results(study, "adapter_screen")
-    main, e3 = [], []
+    main, e3, e4 = [], [], []
     if lock:
         selected = lock["payload"]["selected_pair"]
         main, _ = collect_results(study, "E2", pair=(selected["r"], selected["d"]), selection_sha256=lock["sha256"])
         e3, _ = collect_results(study, "E3", pair=(selected["r"], selected["d"]), selection_sha256=lock["sha256"])
+        e4, _ = collect_results(study, "E4", pair=(selected["r"], selected["d"]), selection_sha256=lock["sha256"])
     all_jobs = bool(outcomes) and all(row["status"] in {"PASS", "SKIP"} for row in outcomes)
-    full = len(screen) == 72 if stage == "adapter_screen" else len(e3 if stage == "E3" else main) == 8
+    full = len(screen) == 72 if stage == "adapter_screen" else len({"E2": main, "E3": e3, "E4": e4}[stage]) == 8
     status = ("SMOKE_PASS" if all_jobs else "INCOMPLETE") if smoke else ("PASS" if full else "INCOMPLETE")
     return dict(status=status, stage=stage, mode="smoke" if smoke else "full",
                 real_adapter_screen_pass=len(screen), expected_adapter_screen=72,
                 real_E2_pass=len(main), expected_E2=8, counts_verified=True,
                 real_E3_pass=len(e3), expected_E3=8,
+                real_E4_pass=len(e4), expected_E4=8,
                 study_sha256=study["sha256"], outcomes=outcomes,
                 selection_lock=None if lock is None else str(study["root"] / "full" / "adapter_selection_lock.json"))
 
@@ -544,14 +622,14 @@ def main(argv=None):
     try:
         cfg, runner, root = load_config(args)
         mode = "smoke" if args.smoke else "full"
-        summary_path = root / mode / f"{args.stage}_summary.json"
-        if args.stage in {"E2", "E3"} and not (root / "full" / "adapter_selection_lock.json").is_file():
+        summary_path = root / mode / f"{args.stage}{'_inference' if args.inference else ''}_summary.json"
+        if args.stage in {"E2", "E3", "E4"} and not (root / "full" / "adapter_selection_lock.json").is_file():
             raise G2Blocked("BLOCKED: adapter_selection_lock.json is missing; complete 72 screening runs first")
         if not args.smoke and (torch.device(args.device).type != "cuda" or not torch.cuda.is_available()):
             raise FileNotFoundError("G2 NOT RUN: full D6 requires a usable CUDA device; smoke may use CPU")
         study = prepare_study(cfg, runner, root, device=args.device)
         enforce_lock(root / mode, study["protocol"])
-        lock = validate_selection(study) if args.stage in {"E2", "E3"} else None
+        lock = validate_selection(study) if args.stage in {"E2", "E3", "E4"} else None
         pairs = study["pairs"] if lock is None else [(lock["payload"]["selected_pair"]["r"],
                                                      lock["payload"]["selected_pair"]["d"])]
         outcomes = []
@@ -561,7 +639,8 @@ def main(argv=None):
                 try:
                     row["status"] = execute_job(study, category, pair, args.stage, smoke=args.smoke,
                                                 resume=args.resume, device=args.device,
-                                                selection_sha256=None if lock is None else lock["sha256"])
+                                                selection_sha256=None if lock is None else lock["sha256"],
+                                                inference=args.inference)
                 except (OSError, ValueError, RuntimeError) as exc:
                     row.update(status="BLOCKED" if "BLOCKED" in str(exc) else "FAIL", reason=str(exc))
                     save_json(row, run_directory(study, category, pair, args.stage, args.smoke) / "failure.json")
@@ -570,8 +649,9 @@ def main(argv=None):
         if args.stage == "adapter_screen" and not args.smoke:
             lock = publish_selection(study)
         result = summarize(study, args.stage, outcomes, smoke=args.smoke, lock=lock)
-        if lock is not None and args.stage in {"E2", "E3"}:
-            result["comparison_inputs"] = export_comparison(study, lock, smoke=args.smoke)
+        if lock is not None and args.stage in {"E2", "E3", "E4"}:
+            experiments = ("E3", "E4") if args.stage == "E4" else ("E2", "E3")
+            result["comparison_inputs"] = export_comparison(study, lock, smoke=args.smoke, experiments=experiments)
         if any(row["status"] == "FAIL" for row in outcomes):
             result["status"] = "FAIL"
         elif any(row["status"] == "BLOCKED" for row in outcomes):
@@ -582,6 +662,8 @@ def main(argv=None):
                       real_adapter_screen_pass=0, expected_adapter_screen=72,
                       real_E2_pass=0, expected_E2=8, counts_verified=False)
         result.update(real_E3_pass=0, expected_E3=8)
+        result.update(real_E4_pass=0, expected_E4=8)
+    result["operation"] = "inference" if args.inference else "train"
     if summary_path is not None:
         save_json(result, summary_path)
     print(json.dumps(result, indent=2, ensure_ascii=False))

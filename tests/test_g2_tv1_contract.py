@@ -148,8 +148,11 @@ def test_manifest_locks_eight_categories_five_fusions_and_g1_training_protocol()
     assert cfg["experiments"]["E3"]["feature_mode"] == "multilayer"
     assert cfg["experiments"]["E3"]["context"] is False
     assert cfg["experiments"]["E3"]["fusion"] == "mean"
-    for name in ("E4", "E5"):
-        assert cfg["experiments"][name]["implementation"] is None
+    assert cfg["experiments"]["E4"]["implementation"] == "src.models.msila.E4"
+    assert cfg["experiments"]["E4"]["feature_sources"] == 6
+    assert cfg["experiments"]["E4"]["context"] is True
+    assert cfg["experiments"]["E4"]["fusion"] == "mean"
+    assert cfg["experiments"]["E5"]["implementation"] is None
     for key in ("seed", "dev_seed", "epochs", "batch_size", "max_grad_norm", "max_steps", "max_minutes"):
         assert cfg["training"][key] == g1["training"][key]
     assert cfg["training"]["optimizer"]["lr"] == g1["training"]["learning_rate"]
@@ -220,7 +223,6 @@ def test_invalid_backbone_or_adapter_resolution_rejected(case, error):
         resolve_g2_config(cfg)
 
 
-@pytest.mark.parametrize("experiment", ["E4", "E5"])
-def test_g2_builder_keeps_e4_e5_unimplemented(experiment):
-    with pytest.raises(NotImplementedError, match="only E1, E2 and E3"):
-        build_g2_model({}, experiment=experiment)
+def test_g2_builder_keeps_e5_unimplemented():
+    with pytest.raises(NotImplementedError, match="only E1, E2, E3 and E4"):
+        build_g2_model({}, experiment="E5")

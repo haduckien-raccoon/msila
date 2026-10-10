@@ -1,7 +1,7 @@
-# G2 contract v2 — D5/D6/D7-TV1 → TV2
+# G2 contract v2 — D5/D6/D7/D8-TV1 → TV2
 
-Manifest chung: `configs/g2_experiments.yaml`. E1/E2/E3 có trong
-`src.models.msila`; E4/E5 chưa được triển khai.
+Manifest chung: `configs/g2_experiments.yaml`. E1/E2/E3/E4 có trong
+`src.models.msila`; E5 chưa được triển khai.
 Năm fusion candidate: `mean`, `concat`, `weighted_sum`, `gated`, `attention`;
 đây là danh mục cho TV2, không phải năm method đã được triển khai/chạy.
 
@@ -10,8 +10,8 @@ Năm fusion candidate: `mean`, `concat`, `weighted_sum`, `gated`, `attention`;
 Giao diện E1–E5: `forward(image, *, return_trace=False)` nhận tensor hoặc batch,
 trả raw logits
 `[B,1,512,512]`; `return_trace=True` trả `(logits, trace: dict)` với
-`trace["decoder_feature"]` là tensor đi vào Decoder. E1/E2/E3 hỗ trợ ngay; TV2 giữ
-cùng chữ ký cho E4/E5. `model(image)` vẫn nhận tensor như runner G1; kích thước
+`trace["decoder_feature"]` là tensor đi vào Decoder. E1/E2/E3/E4 hỗ trợ ngay; TV2 giữ
+cùng chữ ký cho E5. E4 bắt buộc nhận batch có Context và geometry. `model(image)` vẫn nhận tensor như runner G1; kích thước
 khác 512 chỉ thuộc đường tương thích G1, batch G2 luôn khóa 512.
 
 | Batch key | Contract |
@@ -19,8 +19,8 @@ khác 512 chỉ thuộc đường tương thích G1, batch G2 luôn khóa 512.
 | `image` | Local RGB float `[B,3,512,512]`, đã normalize DINOv3 bằng mean `(0.485,0.456,0.406)`, std `(0.229,0.224,0.225)` |
 | `mask` | Train: float binary `[B,1,512,512]`, 1=anomaly; cùng device với image |
 | `meta` | Train: list B dict; giữ source/split/native size và tile coordinates từ loader G1 |
-| `context` | Tùy chọn cho TV2: cùng shape/device/dtype với image; FOV 768 được resize về 512, cùng tâm Local |
-| `view_meta` | Tùy chọn: list B dict geometry từ pipeline hiện có; TV2 truyền cho alignment khi cần |
+| `context` | Bắt buộc cho E4: cùng shape/device/dtype với image; FOV 768 được resize về 512, cùng tâm Local |
+| `view_meta` | E4: list B dict, mỗi item có `geometry` từ pipeline hiện có để align Context→Local |
 
 Inference có thể bỏ `mask/meta`. Dùng `validate_g2_batch(batch)` trước train;
 model tự kiểm tra các key có mặt. E1/E2/E3 chỉ trích feature từ `image`, không chạy
@@ -62,7 +62,7 @@ Nếu file ở chỗ khác, đổi mapping hoặc đặt `backbone.weights` làm
 
 `fusion.dim=64`, `decoder.hidden_channels=64`, output 512 và Context FOV 768 px
 là cấu hình độc lập với C; không tăng theo backbone. `build_g2_model` dựng
-E1/E2/E3; cùng một config dùng được khi so sánh ablation.
+E1/E2/E3/E4; cùng một config dùng được khi so sánh ablation.
 
 ```python
 import torch, yaml
@@ -84,9 +84,8 @@ Với ViT-S/S+/B (depth 12), giữ thứ tự `MULTIVIEW_FEATURE_KEYS`:
 Không dùng insertion order của mapping để stack; đọc theo tuple trên.
 Sáu tensor đã align/project vào hệ tọa độ Local, cùng shape/device/dtype và
 hữu hạn `[B,C,H,W]`; ở boundary này `C=fusion_dim=64`, `H=W=32` cho tile 512.
-`fusion_dim` độc lập với Adapter `d` và backbone C. Boundary sáu feature hiện có
-dùng các key b4/b8/b12; khi làm multiview cho L/H, TV2 cần mở rộng chọn block/key
-trong pipeline. E1/E2 không dùng boundary này và đã suy ra block cuối tự động.
+`fusion_dim` độc lập với Adapter `d` và backbone C. Boundary sáu feature dùng các key b4/b8/b12 làm slot shallow/middle/deep;
+E4 ánh xạ block L/H từ registry vào các slot này, ghi block thật trong trace. E1/E2 không dùng boundary này và đã suy ra block cuối tự động.
 
 Mọi fusion candidate đưa **một tensor** `[B,C,H,W]` cho Decoder, giữ C/H/W;
 `concat` phải có projection `6C→C` bên trong. `mean` trung bình đều;
@@ -156,3 +155,52 @@ from src.train.g2_e2 import trainable_modules
 trainable_modules(model, "E3").load_state_dict(payload["model_state"], strict=True)
 model.eval()  # Raw tile logits; sigmoid rồi Hann stitch theo native coordinates.
 ```
+
+## D8: E4 — Local/Context, align rồi Average Fusion
+
+E4 lấy ba layer mỗi view qua **cùng** frozen DINO (concat batch 2B hoặc sequential).
+Ba Adapter và ba projection của E3 được **chia sẻ theo layer giữa hai view**:
+r/d giữ cặp đã khóa; trainable params và Decoder initialization bằng E3 với cùng
+seed. Context đi qua Adapter → `ContextToLocalAligner` → projection, sau đó
+`MeanFusion` trung bình đúng sáu nguồn theo `MULTIVIEW_FEATURE_KEYS`. Fusion
+width và Decoder giữ như E3; logits `[B,1,512,512]`.
+
+`src.train.g2_context.PairedG2Tiles` chỉ bọc index của G1TileDataset: đọc một
+native synthetic sample, crop Local 512 và Context 768 rồi resize Context về
+512 bằng `extract_local_context` đã có. Local/mask/order/budget giống E3; không
+sinh anomaly riêng trên từng view. Padding reflect (replicate cho ảnh nhỏ) giữ
+hàm tiling hiện có. Geometry dùng pixel-edge coordinates trên canvas padding
+ảo; `view_meta` giữ cả box native và padding để audit. Thiếu Context/geometry,
+geometry singular hoặc không chứa Local sẽ bị từ chối.
+
+Trace E4: `dino` sáu feature block thật, `adapted` sáu slot, `aligned_context`
+ba feature đã đưa về Local, `projected` sáu nguồn cùng width, `source_blocks`,
+`num_sources=6`, `decoder_feature`. Alignment dùng deterministic bilinear
+sampling để giữ strict CUDA backward; không thêm tham số trainable.
+
+```bash
+# Dùng cùng config/backbone/output_root đã tạo selection lock và E3.
+.venv/bin/python scripts/run_g2.py --stage E4 --categories all --device cuda --resume
+.venv/bin/python scripts/run_g2.py --stage E4 --categories all --device cuda --inference
+# Smoke cũng cần lock thực; CPU fixture lock chỉ dùng trong unit tests.
+.venv/bin/python scripts/run_g2.py --stage E4 --categories all --device cuda --smoke --resume
+```
+
+Checkpoint/results: `<output_root>/<backbone>/full/E4/<category>/` chứa
+`best.pt`, `last.pt`, sidecar SHA256, config/hash, train log, metrics/parameter
+report. Resume và skip giữ kiểm tra provenance; protocol D6/D7 và checkpoint E3
+đúng các bản source đã audit được đọc nguyên trạng, không sửa hash lịch sử.
+Thay đổi scientific settings hoặc dependency chưa audit vẫn BLOCKED.
+
+`--inference` chỉ phục hồi best.pt của run hoàn thành hợp lệ, không train;
+xuất `inference/metrics.json` và `predictions/*_score.npy`, `*_mask.npy` theo
+DEV cố định với metadata/hash. Sigmoid **trước** Hann stitching trên native
+coordinates; map cuối giữ nguyên H×W, không resize. TV2 chấm TEST_PUBLIC bằng
+evaluator riêng: restore như E3 nhưng `experiment="E4"`; dùng
+`predict_native_e4(model, native_image, cfg, device)` cho full native map.
+
+Runner xuất `full/E4_minus_E3_inputs.json` và `.csv`: tám hàng có scalar
+synthetic DEV AU-PRO@0.05, r/d/seed/budget/protocol và paths/hashes của E3/E4.
+TV2 tính hiệu theo category; thiếu run ghi `MISSING_E3`/`MISSING_E4`. Chỉ PASS
+khi đủ tám cặp real full CUDA hợp lệ. Smoke/fixture ghi SMOKE_READY, không
+tính vào coverage thực. Thiếu Adapter lock: BLOCKED; thiếu CUDA/assets: NOT RUN.

@@ -31,6 +31,8 @@ from .attention_fusion import AttentionFusion
 from .adapter_factory import AdapterCandidate, AdapterFactoryConfig, ResidualAdapterFactory
 from .backbone_registry import adapter_pairs, backbone_spec
 from .basic_decoder import BasicDecoder
+from .cached_training import cached_meta_to_aligner_geometry
+from .context_alignment import ContextToLocalAligner
 from .contracts import (
     DINO_FEATURE_KEYS,
     MULTIVIEW_FEATURE_KEYS,
@@ -239,6 +241,72 @@ class E3(nn.Module):
         return logits
 
 
+class E4(E3):
+    """E3 parameters shared across Local/Context, align then average six sources.
+
+    Input is the synchronized G2 batch: image, context, view_meta (a list of
+    geometry mappings). Three Adapters/projectors are shared per layer across
+    views, so trainable params and seeded decoder initialization match E3.
+    Physical registry blocks map to canonical shallow/middle/deep slots.
+    """
+
+    def __init__(self, extractor, *, pair_strategy="concat", deterministic_sampling=True, **kwargs):
+        super().__init__(extractor, **kwargs)
+        if pair_strategy not in {"concat", "sequential"}:
+            raise ValueError("pair_strategy must be concat or sequential")
+        self.pair_strategy = pair_strategy
+        self.selector = FeatureSelector("multi_local_context")
+        self.source_block_map = dict(zip(self.selector.source_keys, self.source_blocks * 2))
+        self.aligner = ContextToLocalAligner(check_finite=True, check_bounds=True,
+                                            deterministic_sampling=deterministic_sampling)
+
+    def forward(self, image: Mapping[str, object], *, return_trace: bool = False):
+        if not isinstance(image, Mapping):
+            raise ContractError("E4 requires a synchronized batch with image/context/view_meta")
+        batch = image
+        local = g2_input_image(batch)
+        if "context" not in batch or "view_meta" not in batch:
+            raise ContractError("E4 requires context and view_meta for Context-to-Local alignment")
+        context = batch["context"]
+        for item in batch["view_meta"]:
+            if ("local_sample_id" in item and "context_sample_id" in item
+                    and item["local_sample_id"] != item["context_sample_id"]):
+                raise ContractError("E4 Local and Context must share the same native sample")
+        geometry = cached_meta_to_aligner_geometry(
+            [{"geometry": item.get("geometry", item)} for item in batch["view_meta"]],
+            device=local.device,
+        )
+        for key, tensor in (("local_input_hw", local), ("context_input_hw", context)):
+            actual = torch.tensor(tensor.shape[-2:], device=tensor.device)
+            if not bool((geometry[key] == actual).all()):
+                raise ContractError(f"E4 {key} does not match the view tensor")
+        if bool((torch.linalg.det(geometry["local_to_context"]).abs() <= 1e-8).any()):
+            raise ContractError("E4 Local-to-Context geometry is singular")
+        with torch.no_grad():
+            features = self.extractor.extract_local_context(local, context, strategy=self.pair_strategy)
+        expected = {f"{view}{block}" for view in ("L", "C") for block in self.source_blocks}
+        if set(features) != expected:
+            raise ContractError("E4 extractor must return exactly three Local and three Context features")
+        local_slots, context_slots, adapted = {}, {}, {}
+        for slot, block, adapter_key in zip((4, 8, 12), self.source_blocks, tuple(self.adapters)):
+            adapter = self.adapters[adapter_key]
+            local_slots[f"L{slot}"] = adapter(features[f"L{block}"])
+            context_slots[f"C{slot}"] = adapter(features[f"C{block}"])
+            adapted[f"local_b{slot}"] = local_slots[f"L{slot}"]
+            adapted[f"context_b{slot}"] = context_slots[f"C{slot}"]
+        aligned = self.aligner(context_slots, geometry, target_hw=local_slots["L4"].shape[-2:])
+        projected = self.projection.project_sources(local_slots, aligned, source_keys=self.selector.source_keys)
+        fused = self.fusion(self.selector(projected))
+        logits = self.decoder(fused, output_size=local.shape[-2:])
+        validate_anomaly_logits(logits, local)
+        if return_trace:
+            return logits, dict(dino=features, adapted=adapted, aligned_context=aligned, projected=projected,
+                                decoder_feature=fused, source_keys=self.selector.source_keys,
+                                source_blocks=self.source_block_map, num_sources=self.num_sources,
+                                geometry=geometry)
+        return logits
+
+
 def resolve_g2_config(
     config: Mapping[str, Any], *, root: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -290,9 +358,9 @@ def resolve_g2_config(
 def build_g2_model(
     config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
 ) -> E1 | E3:
-    """Build E1--E3 from one backbone selector; E4/E5 remain unimplemented."""
-    if experiment not in {"E1", "E2", "E3"}:
-        raise NotImplementedError("build_g2_model currently supports only E1, E2 and E3")
+    """Build E1--E4 from one backbone selector; E5 remains unimplemented."""
+    if experiment not in {"E1", "E2", "E3", "E4"}:
+        raise NotImplementedError("build_g2_model currently supports only E1, E2, E3 and E4")
     resolved = resolve_g2_config(config, root=root)
     backbone, adapter = resolved["backbone"], resolved["adapter"]
     if not Path(backbone["weights"]).is_file():
@@ -300,15 +368,19 @@ def build_g2_model(
     extractor = DINOv3FeatureExtractor(
         repo_dir=backbone["repo_dir"], weights=backbone["weights"],
         model_name=backbone["name"], norm=backbone.get("norm", True),
-        feature_mode="multilayer" if experiment == "E3" else "deepest", check_finite=True,
+        feature_mode="multilayer" if experiment in {"E3", "E4"} else "deepest", check_finite=True,
     )
     hidden_channels = resolved["decoder"]["hidden_channels"]
     deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
     if experiment == "E1":
         return E1(extractor, hidden_channels=hidden_channels,
                   deterministic_resize=deterministic_resize)
-    model_class = E3 if experiment == "E3" else E2
-    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment == "E3" else {}
+    model_class = {"E2": E2, "E3": E3, "E4": E4}[experiment]
+    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment in {"E3", "E4"} else {}
+    if experiment == "E4":
+        options = resolved.get("paired_views", {})
+        projection.update(pair_strategy=options.get("strategy", "concat"),
+                          deterministic_sampling=options.get("deterministic_sampling", True))
     return model_class(
         extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
         adapter_kernel_size=adapter.get("kernel_size", 3),

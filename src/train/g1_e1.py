@@ -200,7 +200,9 @@ def save_example(sample, score, directory):
     write_metrics_json(sample["meta"], directory / "metadata.json")
 
 
-def evaluate_dev(model, native, cfg, device, output_dir=None):
+def evaluate_dev(model, native, cfg, device, output_dir=None, *, predict_fn=None):
+    # Training inference hook: keep the existing DEV metrics/QA/protocol exact.
+    predict = predict_native if predict_fn is None else predict_fn
     protocol = cfg["synthetic_protocol"]
     mixed = DEVMetricAccumulator(protocol, per_region=False, disk_backed=True)
     tiny = DEVMetricAccumulator(protocol, per_region=False, disk_backed=True)
@@ -210,7 +212,7 @@ def evaluate_dev(model, native, cfg, device, output_dir=None):
     with tempfile.TemporaryDirectory(prefix="g1_dev_") as scratch:
         for index in range(len(native)):
             sample = native[index]
-            score = predict_native(model, sample["image"], cfg, device).numpy()
+            score = predict(model, sample["image"], cfg, device).numpy()
             mask = sample["mask"][0].numpy()
             meta = sample["meta"]
             record = dict(anomaly_map=score, gt_mask=mask, meta=dict(
