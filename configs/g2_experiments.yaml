@@ -1,4 +1,4 @@
-# D5-TV1 handoff manifest; no full training or E3--E5 runner is implemented here.
+# G2 TV1 manifest: E1/E2/E3; E4/E5 remain reserved.
 version: g2_contract_v2
 categories: [can, fabric, fruit_jelly, rice, sheet_metal, vial, wallplugs, walnuts]
 fusion_methods: [mean, concat, weighted_sum, gated, attention]
@@ -56,8 +56,13 @@ experiments:
     context: false
     fusion: null
   E3:
-    implementation: null
-    status: reserved_for_tv2
+    implementation: src.models.msila.E3
+    feature_mode: multilayer
+    blocks: registry
+    adapter: independent_per_layer_same_locked_rd
+    projection: fusion.dim
+    context: false
+    fusion: mean
   E4:
     implementation: null
     status: reserved_for_tv2

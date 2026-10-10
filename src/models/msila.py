@@ -42,6 +42,8 @@ from .contracts import (
     validate_multiview_features,
 )
 from .dinov3_extractor import DINOv3FeatureExtractor
+from .feature_projection import SixFeatureProjection
+from .feature_selector import FeatureSelector
 from .mean_fusion import MeanFusion
 from .residual_adapter import ResidualAdapter2d
 
@@ -152,6 +154,91 @@ class E2(E1):
         return self.adapter(feature)
 
 
+class E3(nn.Module):
+    """Three frozen Local layers -> independent Adapters -> projection -> mean.
+
+    Canonical b4/b8/b12 names are shallow/middle/deep slots for the reused
+    projector/selector. ``source_blocks`` records the actual backbone blocks.
+    No Context modules or tensors are used. Adapter d is independent of the
+    common projection width ``fusion_dim`` consumed by BasicDecoder.
+    """
+
+    def __init__(
+        self, extractor: nn.Module, *, adapter_bottleneck_dim: int,
+        adapter_projection_dim: int, fusion_dim: int = 64, hidden_channels: int = 64,
+        adapter_kernel_size: int = 3, gamma_init: float = 0.0,
+        adapter_bias: bool = True, deterministic_resize: bool = False,
+    ) -> None:
+        super().__init__()
+        expected = backbone_spec(extractor.model_name).blocks
+        if tuple(extractor.blocks) != expected or extractor.feature_mode != "multilayer":
+            raise ValueError(f"E3 requires three registry blocks {expected}")
+        if type(fusion_dim) is not int or fusion_dim < 1:
+            raise ValueError("fusion_dim must be a positive integer")
+        self.extractor = extractor
+        self.extractor.requires_grad_(False)
+        self.extractor.eval()
+        self.source_blocks = expected
+        self.selector = FeatureSelector("multi_local")
+        self.source_block_map = dict(zip(self.selector.source_keys, expected))
+        factory = ResidualAdapterFactory(AdapterFactoryConfig(
+            in_dim=extractor.out_channels, kernel_size=adapter_kernel_size,
+            gamma_init=gamma_init, bias=adapter_bias,
+        ))
+        self.adapters = nn.ModuleDict({
+            key: factory.build_rd(r=adapter_bottleneck_dim, d=adapter_projection_dim).model
+            for key in self.selector.source_keys
+        })
+        # Three projectors; shared-view mode constructs no unused Context params.
+        self.projection = SixFeatureProjection(extractor.out_channels, fusion_dim,
+                                               share_across_views=True, check_finite=True)
+        self.fusion = MeanFusion(validate=True)
+        self.decoder = BasicDecoder(fusion_dim, hidden_channels,
+                                    deterministic_resize=deterministic_resize)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.extractor.eval()
+        return self
+
+    @property
+    def num_sources(self) -> int:
+        return self.selector.num_sources
+
+    @property
+    def adapter_r(self) -> int:
+        return self.adapters[self.selector.source_keys[0]].r
+
+    @property
+    def adapter_d(self) -> int:
+        return self.adapters[self.selector.source_keys[0]].d
+
+    @property
+    def num_trainable_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def forward(self, image: Tensor | Mapping[str, object], *, return_trace: bool = False):
+        image = g2_input_image(image)
+        with torch.no_grad():
+            features = self.extractor(image)
+        physical_keys = {f"b{block}" for block in self.source_blocks}
+        if not isinstance(features, Mapping) or set(features) != physical_keys:
+            raise ContractError("E3 extractor must return exactly the three registry layers")
+        adapted = {key: self.adapters[key](features[f"b{block}"])
+                   for key, block in self.source_block_map.items()}
+        raw_slots = {f"L{slot}": adapted[key]
+                     for slot, key in zip((4, 8, 12), self.selector.source_keys)}
+        projected = self.projection.project_sources(raw_slots, source_keys=self.selector.source_keys)
+        fused = self.fusion(self.selector(projected))
+        logits = self.decoder(fused, output_size=image.shape[-2:])
+        validate_anomaly_logits(logits, image)
+        if return_trace:
+            return logits, dict(dino=features, adapted=adapted, projected=projected,
+                                decoder_feature=fused, source_keys=self.selector.source_keys,
+                                source_blocks=self.source_block_map, num_sources=self.num_sources)
+        return logits
+
+
 def resolve_g2_config(
     config: Mapping[str, Any], *, root: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -202,10 +289,10 @@ def resolve_g2_config(
 
 def build_g2_model(
     config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
-) -> E1:
-    """Build E1/E2 from one backbone selector; E3--E5 remain TV2's work."""
-    if experiment not in {"E1", "E2"}:
-        raise NotImplementedError("build_g2_model currently supports only E1 and E2")
+) -> E1 | E3:
+    """Build E1--E3 from one backbone selector; E4/E5 remain unimplemented."""
+    if experiment not in {"E1", "E2", "E3"}:
+        raise NotImplementedError("build_g2_model currently supports only E1, E2 and E3")
     resolved = resolve_g2_config(config, root=root)
     backbone, adapter = resolved["backbone"], resolved["adapter"]
     if not Path(backbone["weights"]).is_file():
@@ -213,19 +300,22 @@ def build_g2_model(
     extractor = DINOv3FeatureExtractor(
         repo_dir=backbone["repo_dir"], weights=backbone["weights"],
         model_name=backbone["name"], norm=backbone.get("norm", True),
-        feature_mode="deepest", check_finite=True,
+        feature_mode="multilayer" if experiment == "E3" else "deepest", check_finite=True,
     )
     hidden_channels = resolved["decoder"]["hidden_channels"]
     deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
     if experiment == "E1":
         return E1(extractor, hidden_channels=hidden_channels,
                   deterministic_resize=deterministic_resize)
-    return E2(
+    model_class = E3 if experiment == "E3" else E2
+    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment == "E3" else {}
+    return model_class(
         extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
         adapter_kernel_size=adapter.get("kernel_size", 3),
         gamma_init=adapter.get("gamma_init", 0.0), adapter_bias=adapter.get("bias", True),
         hidden_channels=hidden_channels,
         deterministic_resize=deterministic_resize,
+        **projection,
     )
 
 

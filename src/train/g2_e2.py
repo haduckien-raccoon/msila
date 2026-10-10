@@ -1,4 +1,4 @@
-"""E2 training with existing G1 data, loss, train step and synthetic DEV.
+"""E2/E3 training with existing G1 data, loss, train step and synthetic DEV.
 
 Checkpoints contain Adapter + Decoder + optimizer + RNG; frozen DINO weights
 are identified by checksum rather than duplicated in every checkpoint.
@@ -26,12 +26,31 @@ from src.utils.resume import load_checkpoint_payload, resume_training_checkpoint
 
 
 def train_e2(context, pools, output_dir, *, device, resume=False):
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E2")
+
+
+def train_e3(context, pools, output_dir, *, device, resume=False):
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E3")
+
+
+def trainable_modules(model, experiment):
+    """TV2 can restore this ModuleDict directly from best.pt['model_state']."""
+    if experiment == "E2":
+        return nn.ModuleDict({"adapter": model.adapter, "decoder": model.decoder})
+    if experiment == "E3":
+        return nn.ModuleDict({"adapters": model.adapters, "projection": model.projection, "decoder": model.decoder})
+    raise ValueError(f"Unsupported experiment {experiment}")
+
+
+def _train_segmentation(context, pools, output_dir, *, device, resume, experiment):
     """Complete the declared update budget or save INCOMPLETE for --resume.
 
     Cursor checkpoints keep the final batch of an epoch uncommitted until DEV
     and best.pt are durable. Resuming there evaluates DEV without another step.
     """
     cfg, digest = context["config"], context["config_sha256"]
+    if experiment == "E3" and (cfg["stage"] != "E3" or not cfg.get("selection_sha256")):
+        raise RuntimeError("BLOCKED: E3 training requires its locked Adapter selection context")
     t, d = cfg["training"], cfg["data"]
     output_dir, device = Path(output_dir), torch.device(device)
     last_path, best_path = output_dir / "last.pt", output_dir / "best.pt"
@@ -45,8 +64,9 @@ def train_e2(context, pools, output_dir, *, device, resume=False):
         raise RuntimeError("BLOCKED: metrics exist without a resumable checkpoint")
 
     seed_everything(t["seed"], deterministic=True, warn_only=False)
-    model = build_g2_model(cfg).to(device)
-    trainable = nn.ModuleDict({"adapter": model.adapter, "decoder": model.decoder})
+    model = build_g2_model(cfg, experiment=experiment).to(device)
+    trainable = trainable_modules(model, experiment)
+    adapter_module = model.adapters if experiment == "E3" else model.adapter
     optimizer, report = build_optimizer(
         dict(trainable.items()), frozen_modules={"backbone": model.extractor},
         learning_rate=t["learning_rate"], weight_decay=t["weight_decay"],
@@ -88,19 +108,32 @@ def train_e2(context, pools, output_dir, *, device, resume=False):
     output_dir.mkdir(parents=True, exist_ok=True)
     save_yaml(cfg, output_dir / "resolved_config.yaml")
     save_json({"sha256": digest}, output_dir / "config_hash.json")
-    logging.info("E2 category=%s r=%s d=%s optimizer=%s", cfg["category"],
+    logging.info("%s category=%s r=%s d=%s optimizer=%s", experiment, cfg["category"],
                  cfg["adapter"]["r"], cfg["adapter"]["d"], report.to_dict())
     frozen_before = module_sha256(model.extractor)
-    adapter_before, decoder_before = module_sha256(model.adapter), module_sha256(model.decoder)
+    adapter_before, decoder_before = module_sha256(adapter_module), module_sha256(model.decoder)
+    projection_before = module_sha256(model.projection) if experiment == "E3" else None
+    projection_updated = False
+    adapter_source_before = ({key: module_sha256(module) for key, module in model.adapters.items()}
+                             if experiment == "E3" else {})
+    adapters_updated = {key: False for key in adapter_source_before}
+    if last_path.exists() and experiment == "E3":
+        projection_updated = state["projection_updated"]
+        adapters_updated = state["adapters_updated"]
     started, stopped = time.monotonic(), False
     stop_reason = "budget_completed"
 
     def metadata(next_epoch, next_batch):
-        return dict(config_sha256=digest, next_epoch=next_epoch, next_batch=next_batch,
+        result = dict(config_sha256=digest, next_epoch=next_epoch, next_batch=next_batch,
                     history=history, best_metric=best, best_epoch=best_epoch, dev=latest_dev, dev_step=dev_step,
                     decoder_initial_sha256=decoder_initial_sha,
-                    adapter_updated=adapter_updated or module_sha256(model.adapter) != adapter_before,
+                    adapter_updated=adapter_updated or module_sha256(adapter_module) != adapter_before,
                     decoder_updated=decoder_updated or module_sha256(model.decoder) != decoder_before)
+        if experiment == "E3":
+            result.update(projection_updated=projection_updated or module_sha256(model.projection) != projection_before,
+                          adapters_updated={key: adapters_updated[key] or module_sha256(module) != adapter_source_before[key]
+                                            for key, module in model.adapters.items()})
+        return result
 
     def checkpoint(path, epoch, next_epoch, next_batch):
         save_training_checkpoint(path, model=trainable, optimizer=optimizer, epoch=epoch,
@@ -158,11 +191,17 @@ def train_e2(context, pools, output_dir, *, device, resume=False):
             break
 
     frozen_unchanged = module_sha256(model.extractor) == frozen_before
-    adapter_updated |= module_sha256(model.adapter) != adapter_before
+    adapter_updated |= module_sha256(adapter_module) != adapter_before
     decoder_updated |= module_sha256(model.decoder) != decoder_before
     complete = step == context["expected_steps"]
     if not frozen_unchanged or (complete and not (adapter_updated and decoder_updated)):
         raise RuntimeError("Backbone changed or trainable modules failed to update")
+    if experiment == "E3":
+        projection_updated |= module_sha256(model.projection) != projection_before
+        adapters_updated = {key: adapters_updated[key] or module_sha256(module) != adapter_source_before[key]
+                            for key, module in model.adapters.items()}
+        if complete and (not projection_updated or not all(adapters_updated.values())):
+            raise RuntimeError("E3 projection or a source Adapter failed to update")
     best_dev = None
     if best_path.is_file():
         payload, _ = load_checkpoint_payload(best_path, require_sha256=True)
@@ -178,7 +217,7 @@ def train_e2(context, pools, output_dir, *, device, resume=False):
         expected_steps=context["expected_steps"], global_step=step, best_epoch=best_epoch,
         best_synthetic_dev=best_dev, last_synthetic_dev=latest_dev,
         decoder_initial_sha256=decoder_initial_sha,
-        adapter_trainable_parameters=sum(p.numel() for p in model.adapter.parameters() if p.requires_grad),
+        adapter_trainable_parameters=sum(p.numel() for p in adapter_module.parameters() if p.requires_grad),
         frozen_backbone_unchanged=frozen_unchanged, adapter_updated=adapter_updated,
         decoder_updated=decoder_updated,
         verification_scope=("real_pretrained" if model.extractor.backbone.__class__.__module__.startswith("dinov3.")
@@ -187,5 +226,15 @@ def train_e2(context, pools, output_dir, *, device, resume=False):
         best_checkpoint_sha256=file_sha256(best_path) if best_path.exists() else None,
         last_checkpoint_sha256=file_sha256(last_path),
     )
+    groups = {name: sum(p.numel() for p in module.parameters() if p.requires_grad)
+              for name, module in trainable.items()}
+    result.update(parameter_report=dict(groups=groups, trainable_total=sum(groups.values()),
+                                        frozen_backbone=sum(p.numel() for p in model.extractor.parameters())),
+                  feature_sources=3 if experiment == "E3" else 1,
+                  source_blocks=list(model.source_blocks) if experiment == "E3" else [model.extractor.depth],
+                  feature_width=model.decoder.head[0].in_channels)
+    if experiment == "E3":
+        result.update(projection_updated=projection_updated, adapters_updated=adapters_updated,
+                      source_block_map=model.source_block_map, fusion="mean", context=False)
     save_json(result, output_dir / "metrics.json")
     return result

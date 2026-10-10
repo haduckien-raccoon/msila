@@ -1,7 +1,7 @@
-# G2 contract v2 — D5-TV1 → TV2
+# G2 contract v2 — D5/D6/D7-TV1 → TV2
 
-Manifest chung: `configs/g2_experiments.yaml`. E1/E2 đã có trong
-`src.models.msila`; E3–E5 dành cho TV2, chưa có implementation trong task này.
+Manifest chung: `configs/g2_experiments.yaml`. E1/E2/E3 có trong
+`src.models.msila`; E4/E5 chưa được triển khai.
 Năm fusion candidate: `mean`, `concat`, `weighted_sum`, `gated`, `attention`;
 đây là danh mục cho TV2, không phải năm method đã được triển khai/chạy.
 
@@ -10,8 +10,8 @@ Năm fusion candidate: `mean`, `concat`, `weighted_sum`, `gated`, `attention`;
 Giao diện E1–E5: `forward(image, *, return_trace=False)` nhận tensor hoặc batch,
 trả raw logits
 `[B,1,512,512]`; `return_trace=True` trả `(logits, trace: dict)` với
-`trace["decoder_feature"]` là tensor đi vào Decoder. E1/E2 hỗ trợ ngay; TV2 giữ
-cùng chữ ký cho E3–E5. `model(image)` vẫn nhận tensor như runner G1; kích thước
+`trace["decoder_feature"]` là tensor đi vào Decoder. E1/E2/E3 hỗ trợ ngay; TV2 giữ
+cùng chữ ký cho E4/E5. `model(image)` vẫn nhận tensor như runner G1; kích thước
 khác 512 chỉ thuộc đường tương thích G1, batch G2 luôn khóa 512.
 
 | Batch key | Contract |
@@ -23,7 +23,7 @@ khác 512 chỉ thuộc đường tương thích G1, batch G2 luôn khóa 512.
 | `view_meta` | Tùy chọn: list B dict geometry từ pipeline hiện có; TV2 truyền cho alignment khi cần |
 
 Inference có thể bỏ `mask/meta`. Dùng `validate_g2_batch(batch)` trước train;
-model tự kiểm tra các key có mặt. E1/E2 chỉ trích feature từ `image`, không chạy
+model tự kiểm tra các key có mặt. E1/E2/E3 chỉ trích feature từ `image`, không chạy
 Context. Không sửa Data/Evaluator; adaptation key nếu cần nằm ở boundary TV2.
 
 ## E2 và gradient
@@ -61,8 +61,8 @@ Nếu file ở chỗ khác, đổi mapping hoặc đặt `backbone.weights` làm
 | `dinov3_vith16plus` | 1280 | 32 | 216/856 |
 
 `fusion.dim=64`, `decoder.hidden_channels=64`, output 512 và Context FOV 768 px
-là cấu hình độc lập với C; không tăng theo backbone. `build_g2_model` chỉ dựng
-E1/E2; cùng một config dùng được cho cả hai khi so sánh ablation.
+là cấu hình độc lập với C; không tăng theo backbone. `build_g2_model` dựng
+E1/E2/E3; cùng một config dùng được khi so sánh ablation.
 
 ```python
 import torch, yaml
@@ -116,3 +116,43 @@ hoặc nhận `MVTEC_AD2_ROOT`, `DINOV3_REPO`, `DINOV3_WEIGHTS` (tùy chọn
 `G2_CATEGORY`, `DINOV3_MODEL`), chạy một batch TRAIN/good qua loader/synthetic/loss
 hiện có và một optimizer step. Thiếu asset: SKIP/**NOT RUN**; đường explicit sai:
 FAIL. Không chạy full training trong D5-TV1.
+
+## D7: E3 và dữ liệu cho TV2
+
+E3: một ảnh Local → frozen DINOv3 (ba layer) → ba ResidualAdapter2d độc lập
+cùng r/d → ba projection 1×1 C→`fusion.dim` → Average/MeanFusion → BasicDecoder.
+Không tạo Context. S/B lấy 4/8/12; H+ lấy 11/21/32; backbone khác lấy
+`backbone_spec(name).blocks`. `FeatureSelector("multi_local")` và
+`SixFeatureProjection.project_sources` dùng key b4/b8/b12 làm **slot**
+shallow/middle/deep; `trace["source_blocks"]` ghi block thật. Trace cũng có
+`dino`, `adapted`, `projected`, `num_sources=3`, `decoder_feature`.
+
+E3 giữ loss, seed/order, TRAIN/DEV sources, synthetic protocol và update budget
+của E2; từng source dùng cặp r/d từ `adapter_selection_lock.json`. Width projection
+mặc định 64, độc lập với C/d; Decoder E3 nhận width này, E2 nhận C. Do đó params
+hai kiến trúc khác nhau và được ghi rõ trong `metrics.json.parameter_report`.
+Tại gamma=0, mỗi Adapter identity; gradient Conv bằng 0 ở bước đầu là hợp lệ.
+
+Runner `--stage E3 --categories all --device cuda --resume` yêu cầu lock đủ
+72 run hợp lệ như E2. Output: `<output_root>/<backbone>/full/E3/<category>/`.
+`best.pt`/`last.pt` chứa `adapters`, `projection`, `decoder`, optimizer, RNG,
+cursor và config/hash; DINO frozen được định danh bằng checksum. Resume giữa
+epoch; run hoàn thành hợp lệ được skip. Smoke ở thư mục riêng, không tính PASS/8.
+Runner đọc lại protocol/checkpoint D6 bất biến cho đúng bản source D6 đã biết;
+thay đổi Data/Evaluator/loss/checkpoint hoặc scientific settings vẫn bị chặn.
+E3 lưu thêm hash implementation hiện tại trong config để kiểm tra resume.
+
+Sau stage E2/E3, runner xuất `E3_minus_E2_inputs.json` và `.csv` trong thư mục
+`full/` (hoặc `smoke/`): luôn có 8 hàng, metric synthetic DEV AU-PRO@0.05 của
+từng model, r/d, seed, budget, shared protocol hash, checkpoint/config/metric
+paths và hashes. `status=PASS` chỉ khi đủ 8 cặp **real full** hợp lệ; thiếu E2/E3
+ghi rõ ở từng hàng. TV2 tính E3−E2 và macro từ các input này; đây là DEV tổng hợp,
+không phải kết quả TEST_PUBLIC. Để chấm TEST bằng evaluator của TV2:
+
+```python
+cfg = payload["config"]  # Đọc best.pt bằng load_checkpoint_payload(...).
+model = build_g2_model(cfg, experiment="E3")
+from src.train.g2_e2 import trainable_modules
+trainable_modules(model, "E3").load_state_dict(payload["model_state"], strict=True)
+model.eval()  # Raw tile logits; sigmoid rồi Hann stitch theo native coordinates.
+```
