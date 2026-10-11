@@ -4,7 +4,7 @@ base_config: configs/g2_runner.yaml
 output_root: outputs/G2/D10
 run_id: e5_screen_e20_b32_v1
 screening_budget:
-  epochs: 20
+  epochs: 10
   batch_size: 32
   max_steps: null
   max_minutes: null
