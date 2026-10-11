@@ -1,0 +1,328 @@
+{
+  "task": "D7-TV2",
+  "scope": "Local/Context geometry only; no E4 training or AU-PRO acceptance",
+  "implementation_sha256": {
+    "src/data/tiling.py": "5e680150bb5bf8c984b1baa312bb634c71cbc15fe45ca12da6c9ac288f328504",
+    "src/data/multiview_transform.py": "0f2048f237120fa3575c17659dd76f87c9831fff46e6d1243970fed2d9c7194d",
+    "src/geometry/view_meta.py": "792139ccf036e20b403325f3aa360229025e4d1ec007a0b06e079e24d802a020",
+    "src/models/context_alignment.py": "171acbcd655d8cf55c900f8297247f280bf296c7fc34e276a5b6bb5b75887155",
+    "tests/test_g2_tv2_context_geometry.py": "dc269c19258d40f9da1b3f3ee89476eb2052c88085490cc5d5cc4ab0696e9f87",
+    "docs/G2_CONTRACT.md": "72e52b5d95a8306b0ffd20b0482be12f14e742dffe82f11d20d2932bd8e70b34"
+  },
+  "seed": 42,
+  "device": "cpu",
+  "git_commit": "9aa13d6659fb0cbb153b169f4b9a5c7b937dcc71",
+  "limits": {
+    "point_error_px": 1e-09,
+    "affine_alignment_error_px": 1e-08,
+    "mask_error": 0.0,
+    "local_image_error": 0.0,
+    "context_bilinear_error": 2e-06
+  },
+  "geometry_fixture_precision": "float64 coordinate field; RGB/resize float32",
+  "contract": {
+    "local_size": 512,
+    "context_size": 768,
+    "input_size": 512,
+    "align_corners": false,
+    "mask_padding": "constant_zero",
+    "geometry_source_frame": "padded_native"
+  },
+  "fixture_qa": {
+    "status": "PASS",
+    "passed": 6,
+    "total": 6,
+    "cases": {
+      "interior": {
+        "status": "PASS",
+        "native_hw": [
+          1024,
+          1200
+        ],
+        "local_native_xyxy": [
+          384,
+          384,
+          896,
+          896
+        ],
+        "context_native_xyxy": [
+          256,
+          256,
+          1024,
+          1024
+        ],
+        "padding_ltrb": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "point_error_px": 5.684341886080802e-14,
+        "affine_alignment_error_px": 2.2737367544323206e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 3.3527612686157227e-08,
+        "checked_context_centers": 262144,
+        "local_positive_pixels": 4,
+        "native_positive_pixels": 4,
+        "feature_hw": [
+          32,
+          32
+        ],
+        "examples": [
+          "outputs/G2/D7/fixtures/interior/local.png",
+          "outputs/G2/D7/fixtures/interior/context.png",
+          "outputs/G2/D7/fixtures/interior/mask.png",
+          "outputs/G2/D7/fixtures/interior/comparison.png"
+        ]
+      },
+      "top_left": {
+        "status": "PASS",
+        "native_hw": [
+          777,
+          931
+        ],
+        "local_native_xyxy": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "context_native_xyxy": [
+          -128,
+          -128,
+          640,
+          640
+        ],
+        "padding_ltrb": [
+          128,
+          128,
+          0,
+          0
+        ],
+        "point_error_px": 0.0,
+        "affine_alignment_error_px": 1.1368683772161603e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 1.5832483768463135e-08,
+        "checked_context_centers": 181476,
+        "local_positive_pixels": 4,
+        "native_positive_pixels": 4,
+        "feature_hw": [
+          32,
+          32
+        ],
+        "examples": [
+          "outputs/G2/D7/fixtures/top_left/local.png",
+          "outputs/G2/D7/fixtures/top_left/context.png",
+          "outputs/G2/D7/fixtures/top_left/mask.png",
+          "outputs/G2/D7/fixtures/top_left/comparison.png"
+        ]
+      },
+      "bottom_right": {
+        "status": "PASS",
+        "native_hw": [
+          777,
+          931
+        ],
+        "local_native_xyxy": [
+          419,
+          265,
+          931,
+          777
+        ],
+        "context_native_xyxy": [
+          291,
+          137,
+          1059,
+          905
+        ],
+        "padding_ltrb": [
+          0,
+          0,
+          128,
+          128
+        ],
+        "point_error_px": 1.1368683772161603e-13,
+        "affine_alignment_error_px": 2.2737367544323206e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 1.5832483768463135e-08,
+        "checked_context_centers": 181476,
+        "local_positive_pixels": 4,
+        "native_positive_pixels": 4,
+        "feature_hw": [
+          32,
+          32
+        ]
+      },
+      "portrait_boundary": {
+        "status": "PASS",
+        "native_hw": [
+          931,
+          777
+        ],
+        "local_native_xyxy": [
+          265,
+          419,
+          777,
+          931
+        ],
+        "context_native_xyxy": [
+          137,
+          291,
+          905,
+          1059
+        ],
+        "padding_ltrb": [
+          0,
+          0,
+          128,
+          128
+        ],
+        "point_error_px": 1.1368683772161603e-13,
+        "affine_alignment_error_px": 2.2737367544323206e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 1.5832483768463135e-08,
+        "checked_context_centers": 181476,
+        "local_positive_pixels": 4,
+        "native_positive_pixels": 4,
+        "feature_hw": [
+          32,
+          32
+        ]
+      },
+      "small_image": {
+        "status": "PASS",
+        "native_hw": [
+          73,
+          101
+        ],
+        "local_native_xyxy": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "context_native_xyxy": [
+          -128,
+          -128,
+          640,
+          640
+        ],
+        "padding_ltrb": [
+          128,
+          128,
+          539,
+          567
+        ],
+        "point_error_px": 2.842170943040401e-14,
+        "affine_alignment_error_px": 1.1368683772161603e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 2.60770320892334e-08,
+        "checked_context_centers": 3168,
+        "local_positive_pixels": 4,
+        "native_positive_pixels": 4,
+        "feature_hw": [
+          32,
+          32
+        ],
+        "examples": [
+          "outputs/G2/D7/fixtures/small_image/local.png",
+          "outputs/G2/D7/fixtures/small_image/context.png",
+          "outputs/G2/D7/fixtures/small_image/mask.png",
+          "outputs/G2/D7/fixtures/small_image/comparison.png"
+        ]
+      },
+      "one_pixel": {
+        "status": "PASS",
+        "native_hw": [
+          1,
+          1
+        ],
+        "local_native_xyxy": [
+          0,
+          0,
+          512,
+          512
+        ],
+        "context_native_xyxy": [
+          -128,
+          -128,
+          640,
+          640
+        ],
+        "padding_ltrb": [
+          128,
+          128,
+          639,
+          639
+        ],
+        "point_error_px": 0.0,
+        "affine_alignment_error_px": 1.1368683772161603e-13,
+        "local_mask_error": 0.0,
+        "local_image_error": 0.0,
+        "context_bilinear_error": 0.0,
+        "checked_context_centers": 0,
+        "local_positive_pixels": 1,
+        "native_positive_pixels": 1,
+        "feature_hw": [
+          32,
+          32
+        ]
+      }
+    }
+  },
+  "dataset_qa": {
+    "status": "NOT RUN",
+    "data_root": null,
+    "passed_categories": 0,
+    "expected_categories": 8,
+    "complete": false,
+    "images_per_category": 1,
+    "categories": {
+      "can": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "fabric": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "fruit_jelly": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "rice": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "sheet_metal": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "vial": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "wallplugs": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      },
+      "walnuts": {
+        "status": "NOT RUN",
+        "reason": "No dataset configured; fixture QA is separate",
+        "samples": []
+      }
+    }
+  }
+}
