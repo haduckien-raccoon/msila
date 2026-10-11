@@ -1,0 +1,52 @@
+{
+  "task": "D7-TV1",
+  "code_status": "PASS",
+  "manifest_status": "PREPARED",
+  "passed": 134,
+  "failed": 0,
+  "skipped": [
+    {
+      "test": "tests.test_g2_tv1_e3.test_real_debug_e3_one_batch_checkpoint_if_explicitly_enabled",
+      "reason": "NOT RUN: real E3 GPU batch is opt-in on Colab, never required locally"
+    },
+    {
+      "test": "tests.test_g2_tv1_model.test_real_e2_one_train_batch_when_assets_available",
+      "reason": "NOT RUN: real E2 batch requires MVTEC_AD2_ROOT, DINOV3_REPO, DINOV3_WEIGHTS"
+    },
+    {
+      "test": "tests.test_dinov3_extractor.test_optional_real_dinov3_smoke",
+      "reason": "Set DINOV3_REPO and DINOV3_WEIGHTS for real-backbone smoke test."
+    }
+  ],
+  "e3_passed": 27,
+  "e3_gpu_smoke": "NOT RUN",
+  "peak_vram_if_measured": null,
+  "real_main_E3_runs": 0,
+  "experiment_status": "NOT RUN",
+  "selection_status": "pending_joint_selection_D10",
+  "selection_lock": null,
+  "E3_minus_E2": "NOT RUN: deferred to D11 with real main checkpoints",
+  "git_commit": "6e72dee5bfc49cce966fa2abe17df9ee60e4ef8e",
+  "git_dirty": true,
+  "manifest": "outputs/G2/D7/dinov3_vitb16/debug_pair_r128_d512/E3_prepared_manifest.json",
+  "config_sha256": "c3c9c922e47f7e983e4d5bfad6ed761e9241f4d1cc65b21d5e3a8e9c33bda911",
+  "source_code_sha256": {
+    "scripts/run_g2.py": "ab42746acaa435bd75c91bf3409aa767d13493ed3b187f3162d1cde159f6489d",
+    "src/train/g2_e2.py": "9779a6063e4978d361b0d644be35ba9c9612c37861b3e08484bf001fb9b00f54",
+    "src/models/msila.py": "4d907c152a86855885558892dd0f8f4bd462fac4a124e8b88510d371ba0b5bd4",
+    "src/models/backbone_registry.py": "2af7b99ddcd9d607fe87de0500ca3a4e7950860f8eba3fe83dd88569f7461ca6",
+    "src/models/dinov3_extractor.py": "7aa86bc3d7f21f00918cccf54b183a5b286e7a57eca3c59803a7d152fd300bcf",
+    "src/models/adapter_factory.py": "d28e46f7073bfb7abb173a67f4aa30fcfe44a617c6d6cda7714e4bcbb1703b0e",
+    "src/models/residual_adapter.py": "6374d93f0cfe30e862e24ae72d0f8391ff5a8c576defad825856dc07b8e078b7",
+    "src/models/feature_selector.py": "2fb812b5f7ec655d860112d39f745bbcd7e828980a7ecf2380068df9ae52c91e",
+    "src/models/feature_projection.py": "b83c04e76b38c65520afaeffff204e0b767e15e9936f299937c687b8309ef05e",
+    "src/models/mean_fusion.py": "235f52e63f91c0d690c06ca05c25d255caabd67b4b4dc7ec559b46aa656b90bd",
+    "src/models/basic_decoder.py": "105526ad0f76af105d1bcdf5b4674d2c47f2ecc31af710dab85514f6649f7dc6",
+    "tests/test_g2_tv1_e3.py": "c258dc447842b9c414e26285df5584be03accbc7f8df685b888d95ed4ca73467"
+  },
+  "checks": {
+    "py_compile": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "test_command": "CUDA_VISIBLE_DEVICES='' PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q tests/test_g2_tv1_e3.py tests/test_g2_tv1_runner.py tests/test_g2_tv1_model.py tests/test_g2_tv1_contract.py tests/test_feature_projection.py tests/test_dinov3_extractor.py"
+}

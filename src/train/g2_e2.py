@@ -143,7 +143,20 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     cfg, digest = context["config"], context["config_sha256"]
     if experiment != "E2" and (model_factory is not None or on_checkpoint is not None):
         raise ValueError("Colab callbacks are supported only for E2 Adapter screening")
-    if experiment in {"E3", "E4"} and (cfg["stage"] != experiment or not cfg.get("selection_sha256")):
+    if experiment == "E3":
+        pair = cfg.get("debug_pair", {})
+        r, d = cfg["adapter"]["r"], cfg["adapter"]["d"]
+        if not (cfg.get("stage") == "E3" and cfg.get("mode") == "smoke"
+                and cfg.get("selection_status") == "pending_joint_selection_D10"
+                and cfg.get("adapter_pair_role") == "debug_pair"
+                and pair == dict(name=f"debug_pair_r{r}_d{d}", r=r, d=d, role="technical_only")
+                and cfg.get("selection_sha256") is None
+                and cfg["training"]["epochs"] == 1
+                and type(cfg["training"].get("max_steps")) is int
+                and 1 <= cfg["training"]["max_steps"] <= 2
+                and 1 <= context["expected_steps"] <= 2):
+            raise RuntimeError("BLOCKED: E3 accepts only bounded debug_pair smoke; main awaits joint selection D10")
+    if experiment == "E4" and (cfg["stage"] != experiment or not cfg.get("selection_sha256")):
         raise RuntimeError(f"BLOCKED: {experiment} training requires its locked Adapter selection context")
     t, d = cfg["training"], cfg["data"]
     output_dir, device = Path(output_dir), torch.device(device)
@@ -337,6 +350,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     if experiment in {"E3", "E4"}:
         result.update(projection_updated=projection_updated, adapters_updated=adapters_updated,
                       source_block_map=model.source_block_map, fusion="mean", context=experiment == "E4")
+        if experiment == "E3":
+            result.update(selection_status=cfg["selection_status"], adapter_pair_role=cfg["adapter_pair_role"],
+                          debug_pair=cfg["debug_pair"], scientific_evidence=False)
         if experiment == "E4":
             result.update(context_aligned=True, adapter_sharing="shared_across_views_per_layer",
                           projection_sharing="shared_across_views_per_layer",

@@ -59,7 +59,8 @@ experiments:
     implementation: src.models.msila.E3
     feature_mode: multilayer
     blocks: registry
-    adapter: independent_per_layer_same_locked_rd
+    # CPU/smoke use a named debug_pair; main r/d await joint selection D10.
+    adapter: independent_per_layer_same_rd
     projection: fusion.dim
     context: false
     fusion: mean

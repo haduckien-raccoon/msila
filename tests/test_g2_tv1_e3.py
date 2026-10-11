@@ -1,13 +1,11 @@
-"""D7 E3 architecture, resume and TV2 export gates; no real GPU evidence."""
+"""D7-v3 E3 CPU code acceptance using named debug pairs, never selection evidence."""
 from copy import deepcopy
-import csv
 import json
-from pathlib import Path
 import os
 
+import numpy as np
 import pytest
 import torch
-import yaml
 
 from src.models.adapter_factory import AdapterFactoryConfig, ResidualAdapterFactory
 from src.models.backbone_registry import BACKBONES, backbone_spec
@@ -16,14 +14,14 @@ from src.models.feature_projection import SixFeatureProjection
 from src.models.feature_selector import FeatureSelector
 from src.models.mean_fusion import MeanFusion
 from src.models.msila import E3, build_g2_model
+from src.models.contracts import ContractError
 from src.losses.anomaly_loss import AnomalySegmentationLoss
 from src.train import g2_e2
 from src.data.loader import G1NativeDataset, G1TileDataset, g1_tile_collate
 from src.utils.checkpoint import save_training_checkpoint
 from src.utils.resume import load_checkpoint_payload
 from tests.test_g2_tv1_model import BackboneFixture
-from tests.test_g2_tv1_runner import (setup, cpu_determinism, runner, virtual_ledger,
-                                       assert_nested_equal)
+from tests.test_g2_tv1_runner import setup, cpu_determinism, runner, assert_nested_equal
 
 
 class LayerBackboneFixture(BackboneFixture):
@@ -41,8 +39,13 @@ def test_three_local_layers_gradient_params_logits_and_no_context(setup, tmp_pat
     torch.save(LayerBackboneFixture(name).state_dict(), weights)
     cfg = deepcopy(setup["cfg"])
     cfg["backbone"].update(name=name, weights=str(weights))
-    cfg["adapter"].update(r=8, d=12)
-    cfg["fusion"]["dim"] = 8
+    # ViT-B uses the contract's named default/debug pair, NOT selected r*,d*.
+    pair = (128, 512) if name == "dinov3_vitb16" else (8, 12)
+    cfg.update(adapter_pair_role="debug_pair", debug_pair=runner.debug_pair(pair),
+               selection_status="pending_joint_selection_D10")
+    cfg["adapter"].update(r=pair[0], d=pair[1])
+    fusion_dim = 64 if name == "dinov3_vitb16" else 8
+    cfg["fusion"]["dim"] = fusion_dim
     cfg["decoder"]["deterministic_resize"] = True
     torch.manual_seed(2026)
     model = build_g2_model(cfg, experiment="E3")
@@ -54,9 +57,9 @@ def test_three_local_layers_gradient_params_logits_and_no_context(setup, tmp_pat
     assert len({id(adapter) for adapter in model.adapters.values()}) == 3
     assert model.projection.context_projectors is None
     fixed = AdapterFactoryConfig(in_dim=backbone_spec(name).channels)
-    adapter_count = ResidualAdapterFactory(fixed).build_rd(r=8, d=12).trainable_params
-    projection_count = 3 * (backbone_spec(name).channels * 8 + 8)
-    decoder_count = 8 * 4 * 9 + 4 + 4 + 1
+    adapter_count = ResidualAdapterFactory(fixed).build_rd(r=pair[0], d=pair[1]).trainable_params
+    projection_count = 3 * (backbone_spec(name).channels * fusion_dim + fusion_dim)
+    decoder_count = fusion_dim * 4 * 9 + 4 + 4 + 1
     assert model.num_trainable_parameters == 3 * adapter_count + projection_count + decoder_count
     assert not list(model.fusion.parameters()) and not list(model.selector.parameters())
     expected_groups = g2_e2.trainable_modules(model, "E3")
@@ -69,7 +72,11 @@ def test_three_local_layers_gradient_params_logits_and_no_context(setup, tmp_pat
     model.train()
     logits, trace = model(batch, return_trace=True)
     assert logits.shape == (2, 1, 512, 512) and torch.isfinite(logits).all()
-    assert trace["decoder_feature"].shape == (2, 8, 32, 32)
+    assert trace["decoder_feature"].shape == (2, fusion_dim, 32, 32)
+    assert trace["num_sources"] == len(trace["projected"]) == 3
+    assert set(trace["projected"]) == set(model.selector.source_keys)
+    expected_average = torch.stack([trace["projected"][key] for key in model.selector.source_keys]).mean(0)
+    assert torch.equal(trace["decoder_feature"], expected_average)
     assert list(trace["dino"]) == [f"b{block}" for block in backbone_spec(name).blocks]
     assert trace["source_blocks"] == dict(zip(model.selector.source_keys, backbone_spec(name).blocks))
     assert model.extractor.backbone.requested == [tuple(b - 1 for b in backbone_spec(name).blocks)]
@@ -81,7 +88,9 @@ def test_three_local_layers_gradient_params_logits_and_no_context(setup, tmp_pat
         without_context = model({k: v for k, v in batch.items() if k != "context"})
     assert torch.equal(logits, without_context)
     criterion = AnomalySegmentationLoss()
-    criterion(logits, batch["mask"])["loss"].backward()
+    loss = criterion(logits, batch["mask"])["loss"]
+    assert torch.isfinite(loss)
+    loss.backward()
     assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in expected_groups.parameters())
     for adapter in model.adapters.values():
         assert adapter.gamma.grad.abs().item() > 0
@@ -90,7 +99,10 @@ def test_three_local_layers_gradient_params_logits_and_no_context(setup, tmp_pat
     optimizer.zero_grad(set_to_none=True)
     criterion(model(batch), batch["mask"])["loss"].backward()
     for adapter in model.adapters.values():
-        assert any(torch.count_nonzero(p.grad) > 0 for key, p in adapter.named_parameters() if key != "gamma")
+        assert all(torch.isfinite(p.grad).all() and torch.count_nonzero(p.grad) > 0
+                   for key, p in adapter.named_parameters() if key != "gamma")
+    assert all(torch.isfinite(p.grad).all() and torch.count_nonzero(p.grad) > 0
+               for module in (model.projection, model.decoder) for p in module.parameters())
     assert all(p.grad is None and not p.requires_grad for p in model.extractor.parameters())
     assert not model.extractor.training and not model.extractor.backbone.training
     assert all(torch.equal(value, frozen[key]) for key, value in model.extractor.state_dict().items())
@@ -104,25 +116,132 @@ def test_e3_rejects_deep_only_extractor(setup):
         E3(extractor, adapter_bottleneck_dim=8, adapter_projection_dim=12)
 
 
-def test_e3_context_matches_e2_scientific_protocol_and_requires_lock(setup):
+@pytest.mark.parametrize("invalid", ["missing", "wrong_channels", "wrong_batch", "wrong_grid",
+                                      "nan", "inf", "not_tensor", "wrong_rank"])
+def test_e3_rejects_invalid_extracted_feature_contract(setup, monkeypatch, invalid):
+    cfg = deepcopy(setup["cfg"])
+    cfg["backbone"]["name"] = "dinov3_vitb16"
+    cfg["adapter"].update(r=8, d=12)
+    model = build_g2_model(cfg, experiment="E3")
+    original = model.extractor.backbone.get_intermediate_layers
+
+    def corrupt(image, **kwargs):
+        features = list(original(image, **kwargs))
+        if invalid == "missing":
+            return features[:2]
+        if invalid == "wrong_channels":
+            features[1] = features[1][:, :-1]
+        elif invalid == "wrong_batch":
+            features[1] = features[1].repeat(2, 1, 1, 1)
+        elif invalid == "wrong_grid":
+            features[1] = features[1][:, :, :-1]
+        elif invalid in {"nan", "inf"}:
+            features[1] = features[1].clone()
+            features[1][0, 0, 0, 0] = float(invalid)
+        elif invalid == "not_tensor":
+            features[1] = None
+        else:
+            features[1] = features[1][0]
+        return features
+
+    monkeypatch.setattr(model.extractor.backbone, "get_intermediate_layers", corrupt)
+    with pytest.raises(RuntimeError, match="exactly 3|expected|NaN or Inf"):
+        model(torch.randn(1, 3, 512, 512))
+
+
+def test_e3_registry_and_source_order_contract(setup, monkeypatch):
+    cfg = deepcopy(setup["cfg"])
+    cfg["backbone"]["name"] = "dinov3_vitb16"
+    cfg["adapter"].update(r=8, d=12)
+    model = build_g2_model(cfg, experiment="E3")
+    assert model.source_blocks == (4, 8, 12) and model.extractor.out_channels == 768
+    image = torch.randn(1, 3, 512, 512)
+    original = model.extractor.forward
+    expected = model(image)
+    monkeypatch.setattr(model.extractor, "forward", lambda x: dict(reversed(list(original(x).items()))))
+    assert torch.equal(model(image), expected)
+    monkeypatch.setattr(model.extractor, "forward", lambda x: {**original(x), "b1": original(x)["b4"]})
+    with pytest.raises(ContractError, match="exactly the three registry layers"):
+        model(image)
+    model.extractor.blocks = (3, 7, 11)
+    with pytest.raises(ValueError, match="three registry blocks"):
+        E3(model.extractor, adapter_bottleneck_dim=8, adapter_projection_dim=12)
+
+
+def test_e3_debug_context_reuses_protocol_without_selection_lock(setup):
     study = setup["study"]()
     pair = (64, 256)
-    with pytest.raises(runner.G2Blocked, match="selection lock"):
+    with pytest.raises(runner.G2Blocked, match="joint selection D10"):
         runner.make_context(study, "rice", pair, "E3")
-    e2, _ = runner.make_context(study, "rice", pair, "E2", selection_sha256="fixture-lock")
-    e3, _ = runner.make_context(study, "rice", pair, "E3", selection_sha256="fixture-lock")
-    assert runner.comparison_identity(e2["config"]) == runner.comparison_identity(e3["config"])
-    assert e2["expected_steps"] == e3["expected_steps"] == 4
+    with pytest.raises(runner.G2Blocked, match="joint selection D10"):
+        runner.make_context(study, "rice", pair, "E3", selection_sha256="legacy-lock")
+    e2, _ = runner.make_context(study, "rice", pair, "E2", smoke=True)
+    e3, _ = runner.make_context(study, "rice", pair, "E3", smoke=True)
+    for field in ("training", "data", "loss", "sources", "synthetic_protocol", "adapter"):
+        assert e2["config"][field] == e3["config"][field]
+    assert e2["expected_steps"] == e3["expected_steps"] == 2
+    assert e3["config"]["selection_sha256"] is None
+    assert e3["config"]["debug_pair"] == runner.debug_pair(pair)
+    assert e3["config"]["adapter_pair_role"] == "debug_pair"
     assert e3["config"]["architecture"]["adapter_sharing"] == "independent_per_layer"
     assert e3["config"]["architecture"]["feature_width"] == 64
 
 
+@pytest.mark.parametrize("mutation", ["full", "missing_debug_pair", "legacy_lock", "too_many_steps", "too_many_epochs"])
+def test_train_e3_rejects_unselected_main_and_unbounded_smoke_before_model(setup, monkeypatch, mutation):
+    study = setup["study"]()
+    context, pools = runner.make_context(study, "rice", (32, 128), "E3", smoke=True)
+    cfg = context["config"]
+    if mutation == "full":
+        cfg["mode"] = "full"
+    elif mutation == "missing_debug_pair":
+        cfg.pop("debug_pair")
+    elif mutation == "legacy_lock":
+        cfg["selection_sha256"] = "legacy-adapter-lock"
+    elif mutation == "too_many_steps":
+        cfg["training"]["max_steps"] = 3
+    else:
+        cfg["training"]["epochs"] = 2
+    monkeypatch.setattr(g2_e2, "build_g2_model", lambda *a, **k: pytest.fail("Must reject before model load"))
+    with pytest.raises(RuntimeError, match="main awaits joint selection D10"):
+        g2_e2.train_e3(context, pools, study["root"] / "rejected", device="cpu")
+    assert not (study["root"] / "rejected").exists()
+
+
+def test_e3_prepared_manifest_resolved_config_no_assets_no_selection(setup, monkeypatch):
+    monkeypatch.setattr(runner, "prepare_study", lambda *a, **k: pytest.fail("PREPARED must not load assets"))
+    monkeypatch.setattr(torch.hub, "load", lambda *a, **k: pytest.fail("PREPARED must not load DINOv3"))
+    argv = ["--config", str(setup["path"]), "--stage", "E3", "--prepare", "--device", "cpu",
+            "--backbone", "dinov3_vitb16", "--debug-pair", "128", "512",
+            "--output-root", str(setup["root"])]
+    assert runner.main(argv) == 0
+    path = setup["root"] / "dinov3_vitb16" / "debug_pair_r128_d512" / "E3_prepared_manifest.json"
+    manifest = json.loads(path.read_text())
+    assert manifest["status"] == "PREPARED" and manifest["gpu_smoke"] == manifest["main_training"] == "NOT RUN"
+    assert manifest["config_sha256"] == runner.sha256_json(manifest["config"])
+    assert manifest["config"]["adapter"]["r"] == 128 and manifest["config"]["adapter"]["d"] == 512
+    assert manifest["config"]["adapter_pair_role"] == "debug_pair" and manifest["selection_lock"] is None
+    assert manifest["architecture"]["source_blocks"] == {"local_b4": 4, "local_b8": 8, "local_b12": 12}
+    assert manifest["architecture"]["num_sources"] == 3 and manifest["architecture"]["projected_shape"] == [None, 64, 32, 32]
+    assert len(manifest["git_commit"]) == 40 and manifest["source_code_sha256"]
+    assert manifest["E3_minus_E2"].startswith("NOT RUN")
+    assert runner.main(argv) == 0  # Idempotent, no checkpoint or metric is manufactured.
+    assert not list(setup["root"].rglob("*.pt")) and not list(setup["root"].rglob("metrics.json"))
+    assert not list(setup["root"].rglob("*selection_lock.json"))
+    before = path.read_bytes()
+    manifest["config"]["training"]["seed"] += 1
+    path.write_text(json.dumps(manifest))
+    preserved = path.read_bytes()
+    assert runner.main(argv) == 2
+    assert path.read_bytes() == preserved and before != preserved
+
+
 def test_e3_checkpoint_resume_exact_and_all_trainable_groups_present(setup, monkeypatch):
     study = setup["study"]()
-    context, pools = runner.make_context(study, "rice", (32, 128), "E3", selection_sha256="fixture-lock")
-    full = study["root"] / "full" / "E3_control" / "rice"
+    context, pools = runner.make_context(study, "rice", (32, 128), "E3", smoke=True)
+    full = study["root"] / "smoke" / "E3_control" / "rice"
     g2_e2.train_e3(context, pools, full, device="cpu")
-    path = runner.run_directory(study, "rice", (32, 128), "E3")
+    path = runner.run_directory(study, "rice", (32, 128), "E3", smoke=True)
     original = g2_e2.Overfit16Trainer.train_step
 
     def interrupt(self, batch, *, step, epoch):
@@ -135,7 +254,9 @@ def test_e3_checkpoint_resume_exact_and_all_trainable_groups_present(setup, monk
         g2_e2.train_e3(context, pools, path, device="cpu")
     monkeypatch.setattr(g2_e2.Overfit16Trainer, "train_step", original)
     result = g2_e2.train_e3(context, pools, path, device="cpu", resume=True)
-    assert result["status"] == "PASS" and result["global_step"] == 4
+    assert result["status"] == "PASS" and result["global_step"] == 2
+    assert result["debug_pair"]["name"] == "debug_pair_r32_d128"
+    assert result["adapter_pair_role"] == "debug_pair" and not result["scientific_evidence"]
     assert result["projection_updated"] and all(result["adapters_updated"].values())
     assert runner.read_valid_result(path, context)
     assert not runner.real_evidence(result)
@@ -144,54 +265,82 @@ def test_e3_checkpoint_resume_exact_and_all_trainable_groups_present(setup, monk
     assert {key.split(".")[0] for key in actual["model_state"]} == {"adapters", "projection", "decoder"}
     assert_nested_equal(expected["model_state"], actual["model_state"])
     assert_nested_equal(expected["optimizer_state"], actual["optimizer_state"])
-    # TV2 restores a real saved fixture checkpoint through the documented API.
+    assert_nested_equal({k: v for k, v in expected["rng_state"].items() if k != "numpy"},
+                        {k: v for k, v in actual["rng_state"].items() if k != "numpy"})
+    expected_numpy, actual_numpy = expected["rng_state"]["numpy"], actual["rng_state"]["numpy"]
+    assert expected_numpy[0] == actual_numpy[0] and expected_numpy[2:] == actual_numpy[2:]
+    np.testing.assert_array_equal(expected_numpy[1], actual_numpy[1])
+    assert expected["config"] == actual["config"] == context["config"]
+    assert expected["metadata"]["next_epoch"] == actual["metadata"]["next_epoch"]
+    assert expected["metadata"]["next_batch"] == actual["metadata"]["next_batch"]
+    assert expected["training_state"] == actual["training_state"]
+    # Restore a saved fixture checkpoint through the existing model API.
     reloaded = build_g2_model(context["config"], experiment="E3")
     best, _ = load_checkpoint_payload(path / "best.pt")
     g2_e2.trainable_modules(reloaded, "E3").load_state_dict(best["model_state"], strict=True)
-    assert reloaded(torch.randn(1, 3, 512, 512)).shape == (1, 1, 512, 512)
+    logits = reloaded(torch.randn(1, 3, 512, 512))
+    assert logits.shape == (1, 1, 512, 512) and torch.isfinite(logits).all()
+    changed = deepcopy(context)
+    changed["config"]["adapter"]["d"] += 8
+    changed["config"]["debug_pair"] = runner.debug_pair((32, 136))
+    changed["config_sha256"] = runner.sha256_json(changed["config"])
+    before = runner.sha256_file(path / "last.pt")
+    with pytest.raises(ValueError, match="provenance mismatch"):
+        g2_e2.train_e3(changed, pools, path, device="cpu", resume=True)
+    assert runner.sha256_file(path / "last.pt") == before
 
 
-def test_e3_missing_lock_blocks_full_and_smoke_before_training(setup, monkeypatch):
-    monkeypatch.setattr(runner, "train_e3", lambda *a, **k: pytest.fail("Missing lock must block training"))
-    for extra in ([], ["--smoke"]):
-        assert runner.main(["--config", str(setup["path"]), "--stage", "E3", "--device", "cpu", *extra]) == 2
-        mode = "smoke" if extra else "full"
-        result = json.loads((setup["root"] / "dinov3_vits16" / mode / "E3_summary.json").read_text())
-        assert result["status"] == "BLOCKED" and result["real_E3_pass"] == 0
+def test_e3_main_pending_d10_blocks_before_assets_or_training(setup, monkeypatch):
+    monkeypatch.setattr(runner, "train_e3", lambda *a, **k: pytest.fail("Main must not train before D10"))
+    monkeypatch.setattr(runner, "check_assets", lambda *a, **k: pytest.fail("Main must block before loading assets"))
+    args = ["--config", str(setup["path"]), "--stage", "E3", "--device", "cpu",
+            "--output-root", str(setup["root"])]
+    assert runner.main(args) == 2
+    result = json.loads((setup["root"] / "dinov3_vits16" / "full" / "E3_summary.json").read_text())
+    assert result["status"] == "BLOCKED" and result["real_E3_pass"] == 0
+    assert result["selection_status"] == "pending_joint_selection_D10"
     assert not list(setup["root"].rglob("*.pt"))
 
 
-def test_e3_all_eight_smoke_skip_and_complete_tv2_export(setup, monkeypatch):
-    study = setup["study"]()
-    virtual_ledger(study, monkeypatch)  # Selection-only unit fixture, not real GPU evidence.
-    runner.publish_selection(study)
-    common = ["--config", str(setup["path"]), "--categories", "all", "--device", "cpu", "--smoke"]
-    assert runner.main([*common, "--stage", "E2"]) == 0
-    assert runner.main([*common, "--stage", "E3"]) == 0
-    path = study["root"] / "smoke"
+def test_e3_pending_main_preserves_legacy_artifacts(setup, monkeypatch):
+    root = setup["root"] / "dinov3_vits16" / "full"
+    old_checkpoint = root / "E3" / "rice" / "last.pt"
+    old_checkpoint.parent.mkdir(parents=True)
+    old_checkpoint.write_bytes(b"historical checkpoint fixture: must remain byte-identical")
+    old_lock = root / "adapter_selection_lock.json"
+    old_lock.write_text('{"legacy": true}')
+    before = {path: path.read_bytes() for path in (old_checkpoint, old_lock)}
+    monkeypatch.setattr(runner, "prepare_study", lambda *a, **k: pytest.fail("Do not inspect legacy models for main"))
+    assert runner.main(["--config", str(setup["path"]), "--stage", "E3", "--resume", "--device", "cpu",
+                        "--output-root", str(setup["root"])]) == 2
+    assert all(path.read_bytes() == data for path, data in before.items())
+
+
+def test_e3_cli_debug_smoke_resume_without_lock_or_comparison(setup, monkeypatch):
+    common = ["--config", str(setup["path"]), "--stage", "E3", "--categories", "rice",
+              "--device", "cpu", "--smoke", "--debug-pair", "32", "128",
+              "--output-root", str(setup["root"])]
+    assert runner.main(common) == 0
+    path = setup["root"] / "dinov3_vits16" / "debug_d7_v3" / "debug_pair_r32_d128" / "smoke"
     summary = json.loads((path / "E3_summary.json").read_text())
     assert summary["status"] == "SMOKE_PASS" and summary["real_E3_pass"] == 0
-    assert len(summary["outcomes"]) == 8 and {r["status"] for r in summary["outcomes"]} == {"PASS"}
-    data = json.loads((path / "E3_minus_E2_inputs.json").read_text())
-    assert data["categories"] == list(runner.CATEGORIES)
-    assert data["status"] == "SMOKE_READY" and data["ready_pairs"] == 8 and data["real_ready_pairs"] == 0
-    assert data["split"] == "dev_synthetic" and data["synthetic"] is True
-    assert {r["status"] for r in data["records"]} == {"READY"}
-    with (path / "E3_minus_E2_inputs.csv").open() as handle:
-        assert len(list(csv.DictReader(handle))) == 8
-    for row in data["records"]:
-        for experiment in ("e2", "e3"):
-            assert Path(row[experiment]["checkpoint"]).is_file()
-            assert len(row[experiment]["checkpoint_sha256"]) == 64
-            assert row[experiment]["sources_sha256"] == row["e2"]["sources_sha256"]
+    assert len(summary["outcomes"]) == 1 and summary["outcomes"][0]["status"] == "PASS"
+    assert summary["selection_lock"] is None
+    assert summary["E3_minus_E2"].startswith("NOT RUN")
+    assert not list(setup["root"].rglob("*selection_lock.json"))
+    assert not list(setup["root"].rglob("E3_minus_E2_inputs.*"))
     # Completed runs are skipped without invoking model training again.
     monkeypatch.setattr(runner, "train_e3", lambda *a, **k: pytest.fail("Completed E3 run trained again"))
-    assert runner.main([*common, "--stage", "E3", "--resume"]) == 0
+    assert runner.main([*common, "--resume"]) == 0
     assert {r["status"] for r in json.loads((path / "E3_summary.json").read_text())["outcomes"]} == {"SKIP"}
-    # Losing one paired category must prevent a complete comparison.
-    (path / "E2" / "walnuts" / "metrics.json").unlink()
-    lock = json.loads((study["root"] / "full" / "adapter_selection_lock.json").read_text())
-    assert runner.export_comparison(study, lock, smoke=True)["status"] == "INCOMPLETE"
+    metrics_path = path / "E3" / "rice" / "metrics.json"
+    metrics = json.loads(metrics_path.read_text())
+    metrics["adapter_pair_role"] = "selected"
+    metrics_path.write_text(json.dumps(metrics))
+    saved = runner.sha256_file(path / "E3" / "rice" / "last.pt")
+    assert runner.main([*common, "--resume"]) == 2
+    assert runner.sha256_file(path / "E3" / "rice" / "last.pt") == saved
+    assert json.loads((path / "E3_summary.json").read_text())["status"] == "BLOCKED"
 
 
 def test_immutable_d6_protocol_reused_only_for_known_source_extension(setup):
@@ -214,11 +363,11 @@ def test_immutable_d6_protocol_reused_only_for_known_source_extension(setup):
         runner.reuse_d6_protocol(changed, root)
 
 
-def test_real_locked_e3_one_batch_checkpoint_if_available(tmp_path):
+def test_real_debug_e3_one_batch_checkpoint_if_explicitly_enabled(tmp_path):
     """One real batch integration only; never a full-category PASS."""
-    if not torch.cuda.is_available():
-        pytest.skip("NOT RUN: real E3 batch/checkpoint requires CUDA and a valid full Adapter lock")
-    argv = ["--stage", "E3", "--device", "cuda"]
+    if os.getenv("MSILA_RUN_E3_GPU_SMOKE") != "1" or not torch.cuda.is_available():
+        pytest.skip("NOT RUN: real E3 GPU batch is opt-in on Colab, never required locally")
+    argv = ["--stage", "E3", "--device", "cuda", "--smoke", "--debug-pair", "128", "512"]
     for flag, variable in (("--data-root", "MVTEC_AD2_ROOT"), ("--repo-dir", "DINOV3_REPO"),
                            ("--weights", "DINOV3_WEIGHTS"), ("--backbone", "DINOV3_MODEL"),
                            ("--output-root", "G2_OUTPUT_ROOT")):
@@ -226,14 +375,11 @@ def test_real_locked_e3_one_batch_checkpoint_if_available(tmp_path):
             argv.extend([flag, os.environ[variable]])
     args = runner.parse_args(argv)
     cfg, config, root = runner.load_config(args)
-    if not (root / "full" / "adapter_selection_lock.json").is_file():
-        pytest.skip("NOT RUN: real E3 integration has no Adapter selection lock")
-    # Explicit assets/lock that exist but are invalid must FAIL, not silently skip.
+    # Explicit opt-in with invalid assets must FAIL; no Adapter lock is needed.
     study = runner.prepare_study(cfg, config, root, device="cuda")
-    lock = runner.validate_selection(study)
-    pair = tuple(lock["payload"]["selected_pair"][key] for key in ("r", "d"))
+    pair = (128, 512)
     category = os.getenv("G2_CATEGORY", "rice")
-    context, pools = runner.make_context(study, category, pair, "E3", selection_sha256=lock["sha256"])
+    context, pools = runner.make_context(study, category, pair, "E3", smoke=True)
     cfg = context["config"]
     native = G1NativeDataset(pools["train"], cfg["synthetic_protocol"], seed=cfg["training"]["seed"],
                              role="train", variants=cfg["data"]["train_variants_per_image"], fixed=False)

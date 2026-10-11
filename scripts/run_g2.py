@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""G2 TV1: D6 technical preflight; E2 debug smoke; main selection pending D10.
+"""G2 TV1: D6 preflight and D7 E3 preparation/debug; main awaits D10.
 
 Examples (paths/checkpoints configured in YAML):
   python scripts/run_g2.py --stage adapter_preflight --device cpu
   python scripts/run_g2.py --stage E2 --smoke --debug-pair 128 512 --device cuda
+  python scripts/run_g2.py --stage E3 --prepare --debug-pair 128 512 --device cpu
+  python scripts/run_g2.py --stage E3 --smoke --categories rice --debug-pair 128 512 --device cuda
 
 Smoke uses a separate namespace and never supplies selection evidence.
 The old adapter_screen CLI is a CPU-preflight alias, never 72 training jobs.
@@ -17,6 +19,7 @@ import json
 import logging
 import math
 from pathlib import Path
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,7 +87,9 @@ def parse_args(argv=None):
     parser.add_argument("--config", default="configs/g2_runner.yaml")
     parser.add_argument("--stage", required=True, choices=("adapter_preflight", "adapter_screen", "E2", "E3", "E4"))
     parser.add_argument("--debug-pair", nargs=2, type=int, metavar=("R", "D"),
-                        help="E2 smoke: explicit provisional widths; no selection evidence")
+                        help="E2/E3 debug: explicit provisional widths; no selection evidence")
+    parser.add_argument("--prepare", action="store_true",
+                        help="E3: write PREPARED manifest without loading data/weights or training")
     parser.add_argument("--inference", action="store_true", help="E4: restore best.pt, export native DEV maps")
     parser.add_argument("--categories", nargs="+", default=["all"], help="all, names or comma-separated names")
     parser.add_argument("--resume", action="store_true")
@@ -96,8 +101,10 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.inference and args.stage != "E4":
         parser.error("--inference is supported for --stage E4")
-    if args.debug_pair and (args.stage != "E2" or not args.smoke):
-        parser.error("--debug-pair requires --stage E2 --smoke")
+    if args.prepare and (args.stage != "E3" or args.smoke or args.inference or args.resume):
+        parser.error("--prepare requires --stage E3 and cannot train, infer or resume")
+    if args.debug_pair and not (args.stage in {"E2", "E3"} and (args.smoke or args.prepare)):
+        parser.error("--debug-pair requires --stage E2/E3 --smoke, or --stage E3 --prepare")
     return args
 
 
@@ -202,8 +209,59 @@ def load_config(args):
     if not requested or len(set(requested)) != len(requested) or set(requested) - set(CATEGORIES):
         raise ValueError(f"--categories must be all or distinct names from {CATEGORIES}")
     args.categories = [name for name in CATEGORIES if name in requested]
-    root = absolute(args.output_root or runner["output_root"]) / cfg["backbone"]["name"]
+    default_output = runner.get("stage_output_roots", {}).get(args.stage, runner["output_root"])
+    root = absolute(args.output_root or default_output) / cfg["backbone"]["name"]
     return cfg, runner, root
+
+
+def debug_pair(pair):
+    r, d = pair
+    positive_int(r, "debug_pair.r")
+    positive_int(d, "debug_pair.d")
+    return dict(name=f"debug_pair_r{r}_d{d}", r=r, d=d, role="technical_only")
+
+
+def prepare_e3(cfg, root):
+    """Prepare resolved E3 provenance without claiming training or GPU evidence."""
+    resolved = deepcopy(cfg)
+    pair = debug_pair((cfg["adapter"]["r"], cfg["adapter"]["d"]))
+    spec = backbone_spec(cfg["backbone"]["name"])
+    keys = list(FeatureSelector("multi_local").source_keys)
+    resolved.update(stage="E3", mode="prepare", selection_status=PENDING_SELECTION["status"],
+                    adapter_pair_role="debug_pair", debug_pair=pair, selection_sha256=None)
+    resolved["backbone"]["feature_blocks"] = list(spec.blocks)
+    resolved["fusion"].update(method="mean")
+    sources = ("scripts/run_g2.py", "src/train/g2_e2.py", "src/models/msila.py",
+               "src/models/backbone_registry.py", "src/models/dinov3_extractor.py",
+               "src/models/adapter_factory.py", "src/models/residual_adapter.py",
+               "src/models/feature_selector.py", "src/models/feature_projection.py",
+               "src/models/mean_fusion.py", "src/models/basic_decoder.py",
+               "tests/test_g2_tv1_e3.py")
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                            text=True, capture_output=True).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                           check=True, text=True, capture_output=True).stdout
+    manifest = dict(version="g2_d7_e3_prepared_v3", status="PREPARED", experiment="E3",
+                    config=resolved, config_sha256=sha256_json(resolved), seed=cfg["training"]["seed"],
+                    git_commit=commit, git_dirty=bool(dirty), debug_pair=pair,
+                    selection_status=PENDING_SELECTION["status"], selection_lock=None,
+                    architecture=dict(feature_mode="multilayer", num_sources=3, context=False,
+                                      source_blocks=dict(zip(keys, spec.blocks)), block_index_base=1,
+                                      adapter_sharing="independent_per_layer", adapter_channels=spec.channels,
+                                      projected_shape=[None, cfg["fusion"]["dim"], 32, 32],
+                                      fusion="mean", output_shape=[None, 1, 512, 512], frozen_backbone=True),
+                    source_code_sha256={name: sha256_file(ROOT / name) for name in sources},
+                    gpu_smoke="NOT RUN", peak_vram_if_measured=None, main_training="NOT RUN",
+                    E3_minus_E2="NOT RUN: deferred to D11 with real main checkpoints",
+                    main_blocker="pending joint selection D10 and D11 protocol integration")
+    path = root / pair["name"] / "E3_prepared_manifest.json"
+    # Never overwrite a PREPARED artifact when its source/config provenance changes.
+    if path.exists() and json.loads(path.read_text()) != manifest:
+        raise G2Blocked(f"BLOCKED: prepared provenance changed; use a new --output-root (preserved {path})")
+    save_json(manifest, path)
+    return dict(status="PREPARED", stage="E3", operation="prepare", manifest=str(path),
+                debug_pair=pair, selection_status=PENDING_SELECTION["status"], gpu_smoke="NOT RUN",
+                main_training="NOT RUN", E3_minus_E2=manifest["E3_minus_E2"])
 
 
 def prepare_study(cfg, runner, root, *, device):
@@ -317,9 +375,15 @@ def reuse_e3_architecture(current, root, study_sha256, *, mode="full"):
 
 
 def make_context(study, category, pair, stage, *, smoke=False, selection_sha256=None):
+    if stage == "E3" and not smoke:
+        raise G2Blocked("BLOCKED: E3 main awaits joint selection D10 and D11 protocol integration")
+    if stage == "E3" and selection_sha256 is not None:
+        raise G2Blocked("BLOCKED: E3 debug cannot use a legacy Adapter selection lock")
     cfg = deepcopy(study["protocol"])
     if smoke:
         cfg["training"].update(epochs=cfg["smoke"]["epochs"], max_steps=cfg["smoke"]["max_steps"])
+        if stage == "E3" and (cfg["training"]["epochs"] != 1 or cfg["training"]["max_steps"] > 2):
+            raise G2Blocked("BLOCKED: E3 debug smoke is limited to one epoch and at most two updates")
         for key in ("max_train_sources", "max_dev_sources", "dev_variants_per_image"):
             cfg["data"][key] = cfg["smoke"][key]
     cfg["category"] = category
@@ -348,7 +412,10 @@ def make_context(study, category, pair, stage, *, smoke=False, selection_sha256=
         cfg["selection_status"] = "pending_joint_selection_D10"
         cfg["adapter_pair_role"] = "debug_pair"
     if stage in {"E3", "E4"}:
-        if selection_sha256 is None:
+        if stage == "E3":
+            cfg.update(selection_status=PENDING_SELECTION["status"], adapter_pair_role="debug_pair",
+                       debug_pair=debug_pair(pair))
+        elif selection_sha256 is None:
             raise G2Blocked(f"BLOCKED: {stage} requires the Adapter selection lock hash")
         architecture = study["e3_smoke"] if smoke and stage == "E3" else study[stage.lower()]
         cfg["architecture"] = deepcopy(architecture)
@@ -379,6 +446,12 @@ def read_valid_result(directory, context):
                         frozen_backbone_unchanged=True, adapter_updated=True, decoder_updated=True)
         if any(result.get(k) != v for k, v in required.items()):
             return None
+        if cfg["stage"] == "E3" and cfg.get("adapter_pair_role") == "debug_pair":
+            if (result.get("debug_pair") != cfg["debug_pair"]
+                    or result.get("adapter_pair_role") != "debug_pair"
+                    or result.get("selection_status") != PENDING_SELECTION["status"]
+                    or result.get("scientific_evidence") is not False):
+                return None
         if cfg["stage"] in {"E3", "E4"}:
             e3 = cfg["architecture"]
             with_context = cfg["stage"] == "E4"
@@ -601,12 +674,13 @@ def export_comparison(study, lock, *, smoke=False, experiments=("E2", "E3")):
 
 
 def summarize(study, stage, outcomes, *, smoke, lock=None):
-    if stage == "E2" and lock is None:
+    if stage in {"E2", "E3"} and lock is None:
         all_jobs = bool(outcomes) and all(row["status"] in {"PASS", "SKIP"} for row in outcomes)
         return dict(status="SMOKE_PASS" if smoke and all_jobs else "INCOMPLETE", stage=stage,
-                    mode="smoke" if smoke else "full", outcomes=outcomes, real_E2_pass=0,
+                    mode="smoke" if smoke else "full", outcomes=outcomes, real_E2_pass=0, real_E3_pass=0,
                     selection_status="pending_joint_selection_D10", adapter_pair_role="debug_pair",
-                    selection_lock=None, study_sha256=study["sha256"], counts_verified=True)
+                    selection_lock=None, study_sha256=study["sha256"], counts_verified=True,
+                    E3_minus_E2="NOT RUN: deferred to D11 with real main checkpoints")
     screen, _ = collect_results(study, "adapter_screen")
     main, e3, e4 = [], [], []
     if lock:
@@ -632,6 +706,10 @@ def main(argv=None):
     summary_path = None
     try:
         cfg, runner, root = load_config(args)
+        if args.prepare:
+            result = prepare_e3(cfg, root)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
         if args.stage in {"adapter_preflight", "adapter_screen"}:
             from scripts.g2_adapter_preflight import run_cpu
             result = run_cpu(cfg, root.parent)
@@ -642,11 +720,13 @@ def main(argv=None):
         # Isolate v3 debug runs from immutable historical training artifacts.
         if args.stage == "E2" and args.smoke:
             root = root / "debug_d6_v3"
+        elif args.stage == "E3" and args.smoke:
+            root = root / "debug_d7_v3" / debug_pair((cfg["adapter"]["r"], cfg["adapter"]["d"]))["name"]
         summary_path = root / mode / f"{args.stage}{'_inference' if args.inference else ''}_summary.json"
-        if not (args.stage == "E2" and args.smoke):
+        if not (args.stage in {"E2", "E3"} and args.smoke):
             raise G2Blocked("BLOCKED: pending joint selection D10; official main awaits joint_selection_lock.json "
                             "and D11 protocol integration. A legacy D6 Adapter lock is audit-only. "
-                            "E2 debug remains available with --smoke [--debug-pair R D].")
+                            "E2/E3 debug remains available with --smoke [--debug-pair R D].")
         if not args.smoke and (torch.device(args.device).type != "cuda" or not torch.cuda.is_available()):
             raise FileNotFoundError("G2 NOT RUN: full D6 requires a usable CUDA device; smoke may use CPU")
         study = prepare_study(cfg, runner, root, device=args.device)

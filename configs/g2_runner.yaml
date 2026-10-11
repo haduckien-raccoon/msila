@@ -3,6 +3,8 @@ version: g2_runner_v2
 model_config: configs/g2_experiments.yaml
 backbone: dinov3_vitb16
 output_root: outputs/G2/D6
+stage_output_roots:
+  E3: outputs/G2/D7
 adapter_grids:
   dinov3_vits16:
     r_values: [32, 64, 128]
@@ -27,7 +29,7 @@ execution:
   full_device: cuda
   deterministic_resize: true
 
-# E2 debug smoke only: resolved r/d are defaults, never selected hyperparameters.
+# E2/E3 debug smoke: resolved r/d are defaults, never selected hyperparameters.
 # Official main training awaits the D10 joint protocol; old outputs stay intact.
 smoke:
   epochs: 1
