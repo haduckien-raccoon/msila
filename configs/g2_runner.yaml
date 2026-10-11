@@ -6,6 +6,8 @@ output_root: outputs/G2/D6
 stage_output_roots:
   E3: outputs/G2/D7
   E4: outputs/G2/D8
+  fusion_preflight: outputs/G2/D9
+  E5: outputs/G2/D9
 adapter_grids:
   dinov3_vits16:
     r_values: [32, 64, 128]

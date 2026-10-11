@@ -1,0 +1,113 @@
+{
+  "status": "NOT RUN",
+  "execution": "Colab only; no local GPU",
+  "backbone": "dinov3_vitb16",
+  "dtype": "float32",
+  "local_input": [
+    "B",
+    3,
+    512,
+    512
+  ],
+  "context_source_fov": [
+    768,
+    768
+  ],
+  "context_input": [
+    "B",
+    3,
+    512,
+    512
+  ],
+  "dino_features": [
+    6,
+    "B",
+    768,
+    32,
+    32
+  ],
+  "projected_features": [
+    6,
+    "B",
+    64,
+    32,
+    32
+  ],
+  "attention_logits": [
+    "B",
+    6,
+    32,
+    32
+  ],
+  "decoder_logits": [
+    "B",
+    1,
+    512,
+    512
+  ],
+  "batch_probes": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "pairs": [
+    [
+      64,
+      256
+    ],
+    [
+      64,
+      512
+    ],
+    [
+      64,
+      768
+    ],
+    [
+      128,
+      256
+    ],
+    [
+      128,
+      512
+    ],
+    [
+      128,
+      768
+    ],
+    [
+      256,
+      256
+    ],
+    [
+      256,
+      512
+    ],
+    [
+      256,
+      768
+    ]
+  ],
+  "methods": [
+    "mean",
+    "weighted_sum",
+    "concat",
+    "gated",
+    "attention"
+  ],
+  "record": [
+    "GPU model",
+    "r",
+    "d",
+    "Fusion",
+    "batch",
+    "PASS/FAIL/OOM/NOT RUN",
+    "peak allocated/reserved bytes",
+    "error"
+  ],
+  "oom_policy": "Record each failed combination/batch; do not silently remove any candidate",
+  "budget_policy": "Technical feasibility only; D10 must declare a shared training budget before selection",
+  "pair_strategy": "concat packs 2B; sequential uses two B forwards with the same frozen backbone"
+}

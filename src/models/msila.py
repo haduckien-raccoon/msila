@@ -46,6 +46,7 @@ from .contracts import (
 from .dinov3_extractor import DINOv3FeatureExtractor
 from .feature_projection import SixFeatureProjection
 from .feature_selector import FeatureSelector
+from .fusion_factory import build_fusion, canonical_fusion_method
 from .mean_fusion import MeanFusion
 from .residual_adapter import ResidualAdapter2d
 
@@ -260,6 +261,9 @@ class E4(E3):
         self.aligner = ContextToLocalAligner(check_finite=True, check_bounds=True,
                                             deterministic_sampling=deterministic_sampling)
 
+    def _fuse_projected(self, projected, *, return_trace):
+        return self.fusion(self.selector(projected)), {}
+
     def forward(self, image: Mapping[str, object], *, return_trace: bool = False):
         if not isinstance(image, Mapping):
             raise ContractError("E4 requires a synchronized batch with image/context/view_meta")
@@ -296,15 +300,33 @@ class E4(E3):
             adapted[f"context_b{slot}"] = context_slots[f"C{slot}"]
         aligned = self.aligner(context_slots, geometry, target_hw=local_slots["L4"].shape[-2:])
         projected = self.projection.project_sources(local_slots, aligned, source_keys=self.selector.source_keys)
-        fused = self.fusion(self.selector(projected))
+        fused, fusion_trace = self._fuse_projected(projected, return_trace=return_trace)
         logits = self.decoder(fused, output_size=local.shape[-2:])
         validate_anomaly_logits(logits, local)
         if return_trace:
             return logits, dict(dino=features, adapted=adapted, aligned_context=aligned, projected=projected,
                                 decoder_feature=fused, source_keys=self.selector.source_keys,
                                 source_blocks=self.source_block_map, num_sources=self.num_sources,
-                                geometry=geometry)
+                                geometry=geometry, **fusion_trace)
         return logits
+
+
+class E5(E4):
+    """The exact E4 paired/aligned pipeline with one factory-selected Fusion."""
+
+    def __init__(self, extractor, *, fusion_method="mean", **kwargs):
+        super().__init__(extractor, **kwargs)
+        # Construct after the base heads so Fusion choice cannot change their
+        # seeded initial state. Average is only a baseline, never a selection.
+        self.fusion = build_fusion(fusion_method, self.projection.fusion_dim)
+        self.fusion_method = self.fusion.method
+
+    def _fuse_projected(self, projected, *, return_trace):
+        if return_trace:
+            result = self.fusion(projected, return_trace=True)
+            fused = result.pop("feature")
+            return fused, dict(fusion=self.fusion_method, fusion_trace=result)
+        return self.fusion(projected), {}
 
 
 def resolve_g2_config(
@@ -318,6 +340,11 @@ def resolve_g2_config(
     either ratio independently. The input config is never mutated.
     """
     resolved = deepcopy(dict(config))
+    fusion = resolved.get("fusion", {})
+    if "method" in fusion:
+        fusion["method"] = canonical_fusion_method(fusion["method"])
+    if tuple(fusion.get("feature_order", MULTIVIEW_FEATURE_KEYS)) != MULTIVIEW_FEATURE_KEYS:
+        raise ValueError("fusion.feature_order must use the six canonical source slots")
     backbone = resolved["backbone"]
     spec = backbone_spec(backbone["name"])
     if backbone.get("frozen", True) is not True:
@@ -359,9 +386,9 @@ def build_g2_model(
     config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
     extractor: DINOv3FeatureExtractor | None = None,
 ) -> E1 | E3:
-    """Build E1--E4 from one backbone selector; E5 remains unimplemented."""
-    if experiment not in {"E1", "E2", "E3", "E4"}:
-        raise NotImplementedError("build_g2_model currently supports only E1, E2, E3 and E4")
+    """Build E1--E5; E5 reuses E4 and changes only its six-source Fusion."""
+    if experiment not in {"E1", "E2", "E3", "E4", "E5"}:
+        raise NotImplementedError("build_g2_model currently supports only E1, E2, E3, E4 and E5")
     resolved = resolve_g2_config(config, root=root)
     backbone, adapter = resolved["backbone"], resolved["adapter"]
     if not Path(backbone["weights"]).is_file():
@@ -370,7 +397,7 @@ def build_g2_model(
         extractor = DINOv3FeatureExtractor(
             repo_dir=backbone["repo_dir"], weights=backbone["weights"],
             model_name=backbone["name"], norm=backbone.get("norm", True),
-            feature_mode="multilayer" if experiment in {"E3", "E4"} else "deepest", check_finite=True,
+            feature_mode="multilayer" if experiment in {"E3", "E4", "E5"} else "deepest", check_finite=True,
         )
     elif (experiment != "E2" or extractor.model_name != backbone["name"]
           or extractor.feature_mode != "deepest" or extractor.training
@@ -384,12 +411,14 @@ def build_g2_model(
     if experiment == "E1":
         return E1(extractor, hidden_channels=hidden_channels,
                   deterministic_resize=deterministic_resize)
-    model_class = {"E2": E2, "E3": E3, "E4": E4}[experiment]
-    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment in {"E3", "E4"} else {}
-    if experiment == "E4":
+    model_class = {"E2": E2, "E3": E3, "E4": E4, "E5": E5}[experiment]
+    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment in {"E3", "E4", "E5"} else {}
+    if experiment in {"E4", "E5"}:
         options = resolved.get("paired_views", {})
         projection.update(pair_strategy=options.get("pair_strategy", options.get("strategy", "concat")),
                           deterministic_sampling=options.get("deterministic_sampling", True))
+    if experiment == "E5":
+        projection["fusion_method"] = resolved["fusion"].get("method", "mean")
     return model_class(
         extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
         adapter_kernel_size=adapter.get("kernel_size", 3),

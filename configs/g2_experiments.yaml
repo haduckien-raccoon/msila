@@ -1,4 +1,4 @@
-# G2 TV1 manifest: E1/E2/E3/E4; E5 remains reserved.
+# G2 TV1 manifest: E1--E5; main selection awaits joint D10 screening.
 version: g2_contract_v2
 categories: [can, fabric, fruit_jelly, rice, sheet_metal, vial, wallplugs, walnuts]
 fusion_methods: [mean, concat, weighted_sum, gated, attention]
@@ -31,6 +31,7 @@ adapter:
   # These ratios are declared defaults, not an empirically selected optimum.
 
 fusion:
+  method: mean  # E5 debug/default baseline, never a selected Fusion.
   dim: 64  # Independent of Adapter d; every method restores this channel width.
   feature_order: [local_b4, local_b8, local_b12, context_b4, context_b8, context_b12]
   output_layout: BCHW
@@ -76,8 +77,17 @@ experiments:
     feature_sources: 6
     fusion: mean
   E5:
-    implementation: null
-    status: reserved_for_tv2
+    implementation: src.models.msila.E5
+    status: technical_preflight_pending_joint_selection_D10
+    feature_mode: multilayer
+    blocks: registry
+    adapter: shared_across_views_per_layer_same_rd
+    projection: shared_across_views_per_layer_to_fusion.dim
+    context: true
+    context_alignment: before_projection_and_fusion
+    feature_sources: 6
+    fusion: factory
+    fusion_methods: [mean, weighted_sum, concat, gated, attention]
 
 paired_views:
   # Both crops from one native synthetic sample; Local index/order matches E3.

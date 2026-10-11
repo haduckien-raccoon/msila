@@ -7,6 +7,7 @@ Examples (paths/checkpoints configured in YAML):
   python scripts/run_g2.py --stage E3 --prepare --debug-pair 128 512 --device cpu
   python scripts/run_g2.py --stage E3 --smoke --categories rice --debug-pair 128 512 --device cuda
   python scripts/run_g2.py --stage E4 --prepare --debug-pair 128 512 --device cpu
+  python scripts/run_g2.py --stage fusion_preflight --device cpu
 
 Smoke uses a separate namespace and never supplies selection evidence.
 The old adapter_screen CLI is a CPU-preflight alias, never 72 training jobs.
@@ -86,7 +87,8 @@ def absolute(value):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/g2_runner.yaml")
-    parser.add_argument("--stage", required=True, choices=("adapter_preflight", "adapter_screen", "E2", "E3", "E4"))
+    parser.add_argument("--stage", required=True,
+                        choices=("adapter_preflight", "adapter_screen", "fusion_preflight", "E2", "E3", "E4", "E5"))
     parser.add_argument("--debug-pair", nargs=2, type=int, metavar=("R", "D"),
                         help="E2/E3/E4 debug: explicit provisional widths; no selection evidence")
     parser.add_argument("--prepare", action="store_true",
@@ -727,6 +729,11 @@ def main(argv=None):
     summary_path = None
     try:
         cfg, runner, root = load_config(args)
+        if args.stage == "fusion_preflight":
+            from scripts.g2_fusion_preflight import run_cpu
+            result = run_cpu(cfg, root.parent)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0 if result["cpu_pass"] == 45 else 1
         if args.prepare:
             result = (prepare_e4 if args.stage == "E4" else prepare_e3)(cfg, root)
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -786,6 +793,7 @@ def main(argv=None):
         result["selection_status"] = "pending_joint_selection_D10"
         result.update(real_E3_pass=0, expected_E3=8)
         result.update(real_E4_pass=0, expected_E4=8)
+        result.update(real_E5_pass=0, expected_E5=8)
     result["operation"] = "inference" if args.inference else "train"
     if summary_path is not None:
         save_json(result, summary_path)
