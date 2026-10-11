@@ -1,0 +1,11 @@
+experiment,category,status,valid_categories,expected_categories,aupro_005,tiny,mixed,dice,p99
+E0,macro_8,INCOMPLETE,0,8,,,,,
+E1,macro_8,INCOMPLETE,0,8,,,,,
+E2,macro_8,INCOMPLETE,0,8,,,,,
+E3,macro_8,INCOMPLETE,0,8,,,,,
+E4,macro_8,INCOMPLETE,0,8,,,,,
+E5/mean,macro_8,INCOMPLETE,0,8,,,,,
+E5/weighted_sum,macro_8,INCOMPLETE,0,8,,,,,
+E5/concat,macro_8,INCOMPLETE,0,8,,,,,
+E5/gated,macro_8,INCOMPLETE,0,8,,,,,
+E5/attention,macro_8,INCOMPLETE,0,8,,,,,

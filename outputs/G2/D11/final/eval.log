@@ -1,0 +1,69 @@
+{
+  "schema": "g2_final_v1",
+  "status": "BLOCKED",
+  "experimental_status": "NOT RUN",
+  "real_pass": 0,
+  "expected_cells": 80,
+  "fusion_real_pass": 0,
+  "fusion_expected_cells": 40,
+  "status_counts": {
+    "BLOCKED": 80
+  },
+  "per_experiment": {
+    "E0": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E1": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E2": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E3": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E4": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E5/mean": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E5/weighted_sum": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E5/concat": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E5/gated": {
+      "pass": 0,
+      "expected": 8
+    },
+    "E5/attention": {
+      "pass": 0,
+      "expected": 8
+    }
+  },
+  "completed_physical_artifacts": 0,
+  "selected_D10": null,
+  "selection_performed": false,
+  "main_validation": "conditional verification of the unchanged D10 selection; no reselection",
+  "selected_main_macro": null,
+  "split": "synthetic DEV",
+  "heldout_test_status": "NOT RUN",
+  "error": "BLOCKED: missing joint_selection_lock.json: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/selection/joint_selection_lock.json",
+  "benchmark_pass": 0,
+  "benchmark_expected_cells": 80,
+  "limits": [
+    "Synthetic DEV also used for checkpoint and D10 selection; not held-out generalization evidence.",
+    "Short screening budget and one seed may rank candidates differently from full training.",
+    "Macro means require eight valid categories; missing results remain null."
+  ]
+}

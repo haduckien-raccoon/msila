@@ -239,7 +239,26 @@ def checkpoint_modules(model, experiment):
     return trainable_modules(model, experiment)
 
 
-def restore_model(payload, cfg, experiment, device):
+class EvaluationBackboneCache:
+    """Keep one frozen extractor, never a trained head, across compatible jobs."""
+    def __init__(self):
+        self.key, self.extractor = None, None
+
+    def build(self, cfg, experiment, device):
+        b = cfg["backbone"]
+        key = (b["name"], str(Path(b["repo_dir"]).resolve()), str(Path(b["weights"]).resolve()),
+               b.get("checkpoint_sha256"), sha256_json(b.get("source_sha256", {})), b.get("norm", True),
+               "multilayer" if experiment in {"E3", "E4", "E5"} else "deepest", str(device))
+        if key != self.key:
+            # Release the previous mode before allocating the next backbone.
+            self.extractor, self.key = None, None
+        model = build_g2_model(cfg, experiment=experiment, root=ROOT, extractor=self.extractor)
+        self.extractor = model.extractor.to(device).eval()
+        self.key = key
+        return model
+
+
+def restore_model(payload, cfg, experiment, device, *, cache=None):
     if experiment == "E1":
         # G1 config has no Adapter section; factory requires one even for E1.
         factory_cfg = deepcopy(cfg)
@@ -247,10 +266,12 @@ def restore_model(payload, cfg, experiment, device):
     else:
         factory_cfg = cfg
     try:
-        model = build_g2_model(factory_cfg, experiment=experiment, root=ROOT)
+        model = (cache.build(factory_cfg, experiment, device) if cache is not None
+                 else build_g2_model(factory_cfg, experiment=experiment, root=ROOT))
     except NotImplementedError as exc:
         raise Blocked("Runtime lacks merged E5 model; run on g2/integration with TV1 D9 code") from exc
-    head = checkpoint_modules(model, experiment)
+    head = (trainable_modules(model, experiment) if payload.get("config", {}).get("mode") == "main"
+            else checkpoint_modules(model, experiment))
     head.load_state_dict(payload["model_state"], strict=True)
     if not model.extractor.backbone.__class__.__module__.startswith("dinov3."):
         raise Blocked("API fixture or unofficial backbone cannot produce experimental results")
@@ -263,6 +284,7 @@ def restore_model(payload, cfg, experiment, device):
 def implementation_identity():
     paths = {ROOT / p for p in ("scripts/eval_g2.py", "scripts/summarize_g2_joint.py",
                                "src/train/g1_e1.py", "src/train/g2_context.py", "src/train/screen_representation.py",
+                               "src/train/g2_main.py", "src/train/g2_e2.py",
                                "src/utils/checkpoint.py", "src/utils/resume.py")}
     for directory in ("src/data", "src/eval", "src/metrics", "src/models", "src/geometry"):
         paths.update((ROOT / directory).rglob("*.py"))
@@ -410,7 +432,9 @@ def evaluate_category(args, experiment, category):
     torch.backends.cudnn.deterministic = True
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
-    model = restore_model(payload, cfg, experiment, args.device)
+    cache = getattr(args, "backbone_cache", None)
+    model = (restore_model(payload, cfg, experiment, args.device, cache=cache) if cache is not None
+             else restore_model(payload, cfg, experiment, args.device))
     native = G1NativeDataset(pools["dev"], cfg["synthetic_protocol"], seed=cfg["training"]["dev_seed"],
                              role="dev", variants=cfg["data"]["dev_variants_per_image"], fixed=True)
     if args.smoke:
@@ -418,7 +442,7 @@ def evaluate_category(args, experiment, category):
         native = torch.utils.data.Subset(native, range(min(3, len(native))))
     directory.mkdir(parents=True, exist_ok=True)
     cfg["evaluation"]["example_limit"] = 3
-    predict = predict_native_e4 if experiment == "E5" else predict_native
+    predict = predict_native_e4 if experiment in {"E4", "E5"} else predict_native
     capture = CaptureNative(native, directory, predict_fn=predict)
     started = time.monotonic()
     result = evaluate_dev(model, native, cfg, args.device, directory, predict_fn=capture)
@@ -665,11 +689,13 @@ def run_joint(args):
     if args.r is not None and [args.r, args.d] not in spec["pairs"]:
         raise Blocked("Requested r/d outside declared search")
     if not args.init_joint:
+        backbone_cache = EvaluationBackboneCache()
         for i, row in enumerate(rows):
             if (row["category"] not in args.categories or args.r is not None and (row["r"], row["d"]) != (args.r, args.d)
                     or args.fusions is not None and row["fusion"] not in args.fusions):
                 continue
             job = deepcopy(args)
+            job.backbone_cache = backbone_cache
             job.joint_record, job.joint_spec = row, spec
             output = directory / "E5" / f"r{row['r']}_d{row['d']}" / row["fusion"] / row["category"]
             job.evaluation_directory = str(output)
@@ -724,6 +750,13 @@ def parse_args(argv=None):
     parser.add_argument("--smoke", action="store_true", help="Three original DEV samples per category; separate outputs, no acceptance")
     parser.add_argument("--preflight", action="store_true", help="Validate actual checkpoint/data/protocol without inference")
     parser.add_argument("--report-only", action="store_true", help="Audit existing results without running inference")
+    parser.add_argument("--final", action="store_true", help="D11: audit main exports and report all 80 logical cells")
+    parser.add_argument("--joint-lock", help="D11 existing immutable D10 lock; never created here")
+    parser.add_argument("--tv1-manifest", help="Original D10 TV1 180-cell evidence manifest")
+    parser.add_argument("--tv2-manifest", help="Original D10 TV2 180-cell evidence manifest")
+    parser.add_argument("--main-tv1-manifest", help="D11 TV1 main_training_36.csv")
+    parser.add_argument("--main-tv2-manifest", help="D11 TV2 main_training_36.csv")
+    parser.add_argument("--e0-root", default="outputs/G2/E0")
     parser.add_argument("--init-joint", action="store_true", help="Write a 360-cell D9 skeleton; no inference/training")
     parser.add_argument("--joint-manifest", help="Versioned E5 45x8 CSV; sibling joint_search_spec.json required")
     parser.add_argument("--joint-model-config", default="configs/g2_experiments.yaml")
@@ -750,8 +783,25 @@ def parse_args(argv=None):
         parser.error("--init-joint only writes skeleton reports; incompatible execution flags")
     if (args.r is None) != (args.d is None) or any(v is not None and v <= 0 for v in (args.r, args.d)):
         parser.error("--r and --d must be positive integers supplied together")
-    if not joint and any((args.r is not None, args.fusions is not None, args.benchmark)):
+    if not joint and not args.final and any((args.r is not None, args.fusions is not None, args.benchmark)):
         parser.error("Joint candidate/benchmark flags require --joint-manifest")
+    final_inputs = (args.joint_lock, args.tv1_manifest, args.tv2_manifest,
+                    args.main_tv1_manifest, args.main_tv2_manifest)
+    if not args.final and any(final_inputs):
+        parser.error("D11 manifest/lock flags require --final")
+    if args.final:
+        if joint or args.smoke or args.preflight or args.r is not None or args.fusions is not None:
+            parser.error("--final audits locked main exports; no screening/smoke/candidate selection")
+        if args.report_only and args.benchmark:
+            parser.error("--report-only cannot execute a GPU benchmark")
+        if args.output_root == "outputs/G2/evaluation":
+            args.output_root = "outputs/G2/D11/final"
+        for path in final_inputs[1:] + (args.e0_root,):
+            if path:
+                input_root = Path(path).resolve() if path == args.e0_root else Path(path).resolve().parent
+                out = Path(args.output_root).resolve()
+                if out == input_root or input_root in out.parents or out in input_root.parents:
+                    parser.error("Final output must be separate from input main/E0 evidence")
     if args.benchmark_warmup < 0 or args.benchmark_repeats < 1:
         parser.error("Benchmark warmup >= 0 and repeats >= 1")
     if joint:
@@ -770,6 +820,9 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.final:
+        from src.eval.g2_final import run_final
+        return run_final(args)
     if args.init_joint or args.joint_manifest:
         try:
             return run_joint(args)
@@ -784,6 +837,7 @@ def main(argv=None):
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.INFO)
     results = {}
+    args.backbone_cache = EvaluationBackboneCache()
     try:
         for exp in args.experiments:
             for category in CATEGORIES:
@@ -817,7 +871,7 @@ def main(argv=None):
                     logging.info("%s/%s %s", exp, category, row["status"])
         mode = "smoke" if args.smoke else ("preflight" if args.preflight else "full")
         summary = write_comparison(directory, results, mode=mode, experiments=args.experiments, categories=args.categories)
-        write_metrics_json(dict(arguments=vars(args), git_commit=git_commit(), implementation=implementation_identity(),
+        write_metrics_json(dict(arguments={k: v for k, v in vars(args).items() if k != "backbone_cache"}, git_commit=git_commit(), implementation=implementation_identity(),
                                 environment=dict(torch=str(torch.__version__), cuda=torch.version.cuda,
                                                  cuda_available=torch.cuda.is_available(),
                                                  gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None)),

@@ -230,13 +230,37 @@ def predict_native_e0(model, image, cfg, device):
     return score.clamp(0, 1)
 
 
+def save_native_example(sample, score, directory):
+    """Display actual E0 evidence with its bounded-distance score label."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    image = sample['image'].permute(1, 2, 0).numpy()
+    mask = sample['mask'][0].numpy()
+    plt.imsave(directory / 'synthetic.png', image)
+    plt.imsave(directory / 'mask.png', mask, cmap='gray', vmin=0, vmax=1)
+    plt.imsave(directory / 'predicted_map.png', score, cmap='inferno', vmin=0, vmax=1)
+    fig, axes = plt.subplots(1, 3, figsize=(10, 3))
+    for ax, values, label in zip(axes, (image, mask, score), ('Synthetic DEV input', 'Ground truth mask', 'E0 bounded distance')):
+        ax.imshow(values, **(dict(cmap='inferno', vmin=0, vmax=1) if values.ndim == 2 else {}))
+        ax.set_title(label); ax.axis('off')
+    fig.tight_layout(); fig.savefig(directory / 'comparison.png', dpi=120); plt.close(fig)
+
+
 def evaluate_dev(model, sources, cfg, category, device, output_dir):
     protocol = cfg["synthetic_protocol"]
     native = G1NativeDataset(sources, protocol, seed=cfg["evaluation"]["dev_seed"],
                              role="dev", variants=cfg["data"]["dev_variants_per_image"], fixed=True)
     mixed = DEVMetricAccumulator(protocol, per_region=False, disk_backed=True)
     tiny = DEVMetricAccumulator(protocol, per_region=False, disk_backed=True)
-    qa_rows, samples = [], []
+    qa_rows, samples, native_exports = [], [], []
+    source_rows = {}
+    if cfg['evaluation']['save_maps']:
+        from scripts.eval_g2 import source_identity
+        source_rows = {str(r.image_path): source_identity({'train': [], 'dev': [dict(
+            path=str(r.image_path), sha256=file_sha256(r.image_path))]})['dev'][0] for r in sources}
     try:
         for index in range(len(native)):
             sample = native[index]
@@ -260,6 +284,14 @@ def evaluate_dev(model, sources, cfg, category, device, output_dir):
                 np.save(folder / "anomaly_map.npy", score, allow_pickle=False)
                 np.save(folder / "gt_mask.npy", mask.astype(np.uint8), allow_pickle=False)
                 write_metrics_json(meta, folder / "metadata.json")
+                if index < 3:
+                    save_native_example(sample, score, Path(output_dir) / 'examples' / meta['sample_id'])
+                native_exports.append(dict(meta, source=source_rows[str(meta['source'])],
+                    score_path=str((folder / "anomaly_map.npy").relative_to(output_dir)),
+                    mask_path=str((folder / "gt_mask.npy").relative_to(output_dir)),
+                    score_sha256=file_sha256(folder / "anomaly_map.npy"),
+                    mask_sha256=file_sha256(folder / "gt_mask.npy"),
+                    image_sha256=hashlib.sha256(memoryview(sample["image"].contiguous().numpy()).cast("B")).hexdigest()))
         # Existing full-scale evaluator -> existing exact aupro_from_parts.
         # Consume only group metrics: its generic sigmoid label does not apply to E0.
         mixed_result, tiny_result = mixed.result()["groups"]["all"], tiny.result()["groups"]["all"]
@@ -272,6 +304,8 @@ def evaluate_dev(model, sources, cfg, category, device, output_dir):
         raise ValueError("Synthetic DEV contains no valid AU-PRO result")
     write_metrics_json(dict(status="PASS", per_sample=qa_rows), Path(output_dir) / "qa_report.json")
     write_metrics_json(dict(split="dev_synthetic", samples=samples), Path(output_dir) / "dev_manifest.json")
+    if cfg["evaluation"]["save_maps"]:
+        write_metrics_json(native_exports, Path(output_dir) / "native_maps.json")
     return dict(dataset="mvtec_ad2_good_synthetic", split="dev_synthetic", native_resolution=True,
                 interpretation="Synthetic DEV only; no real anomaly performance claim",
                 score_orientation="higher_is_more_anomalous", score_transform=SCORE_TRANSFORM,
@@ -378,8 +412,14 @@ def run_category(cfg, category, device, identity, *, resume=False, extractor_fac
         for filename, checksum in previous.get("evaluation_artifacts", {}).items():
             if not (output / filename).is_file() or file_sha256(output / filename) != checksum:
                 raise E0Blocked(f"Evaluation artifact mismatch: {filename}")
-        if set(previous.get("evaluation_artifacts", {})) != {"qa_report.json", "dev_manifest.json"}:
+        expected_artifacts = {"qa_report.json", "dev_manifest.json"}
+        if cfg["evaluation"]["save_maps"]:
+            expected_artifacts.add("native_maps.json")
+        if set(previous.get("evaluation_artifacts", {})) != expected_artifacts:
             raise E0Blocked("Completed metrics have no verifiable DEV/QA provenance")
+        if cfg["evaluation"]["save_maps"]:
+            from src.eval.g2_final import audit_native_maps
+            audit_native_maps(output, json.loads((output / "native_maps.json").read_text()))
         return dict(previous, resumed=True, skipped=True)
     if bank_path.exists() and not resume:
         raise E0Blocked("Memory bank already exists; use --resume to verify and continue DEV")
@@ -414,7 +454,9 @@ def run_category(cfg, category, device, identity, *, resume=False, extractor_fac
                   train_sources=len(pools["train"]), dev_sources=len(pools["dev"]), source_manifest=manifest,
                   frozen_backbone_unchanged=unchanged, trainable_parameters=0, device=str(device),
                   elapsed_seconds=time.monotonic()-start, resumed=resume, skipped=False,
-                  evaluation_artifacts={name: file_sha256(output / name) for name in ("qa_report.json", "dev_manifest.json")})
+                  evaluation_artifacts={name: file_sha256(output / name) for name in
+                                        ("qa_report.json", "dev_manifest.json", "native_maps.json")
+                                        if (output / name).is_file()})
     write_metrics_json(cfg, output / "resolved_config.json")
     write_metrics_json(result, metrics_path)
     return result

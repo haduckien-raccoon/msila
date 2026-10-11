@@ -1,0 +1,15 @@
+{
+  "status": "BLOCKED",
+  "experimental_status": "NOT RUN",
+  "real_pass": 0,
+  "expected_cells": 36,
+  "completed_physical_runs": 0,
+  "g1_reused_physical_runs": 0,
+  "newly_trained_physical_runs": 0,
+  "planned_physical_runs": 32,
+  "status_counts": {
+    "BLOCKED": 36
+  },
+  "gpu_status": "NOT RUN",
+  "winner_claim": false
+}

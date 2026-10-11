@@ -1,0 +1,42 @@
+{
+  "task": "D11-TV2",
+  "status": "PASS",
+  "verification_scope": "CPU fixtures, exact metric ground truth and evidence/report schemas",
+  "tests": 290,
+  "passed": 289,
+  "failed": 0,
+  "errors": 0,
+  "skipped": 1,
+  "torch": "2.6.0+cpu",
+  "cuda_available": false,
+  "gpu_status": "NOT RUN",
+  "tv2_main_real_pass": 0,
+  "tv2_main_expected": 36,
+  "final_real_pass": 0,
+  "final_expected": 80,
+  "fusion_real_pass": 0,
+  "fusion_expected": 40,
+  "actual_checkpoints": 0,
+  "selection_performed": false,
+  "experimental_status": "BLOCKED",
+  "branch": "g2/member2",
+  "git_sha": "2605739571b55caab4418dc8ac3bb648243e728a",
+  "tv1_source_sha": "2605739571b55caab4418dc8ac3bb648243e728a",
+  "git_dirty": true,
+  "protected_tv1_files_unchanged": true,
+  "source_code_sha256": {
+    "scripts/eval_g2.py": "2b4f7fe1aeecab816a45aa032125437baf0fe0b6b40acbcbbec29d3771c30dc3",
+    "src/eval/e0.py": "18977be9840c94504ac903de969a321366276632239d8cde9f3dbc5f103e4911",
+    "src/eval/g2_final.py": "deea236f1e2a039e31481253714ebd1473d7690c139a577ef2d6242687850570",
+    "tests/test_g2_tv2_d11.py": "82115213329dc5cb6dff889cbc080d773c52e3cd1f0042be6aa0608fb52fe865",
+    "docs/G2_FINAL_REPORT.md": "94a78f246252517257a18b28f721deb5274d14c8020988dbbe41cfaa3a6f388e",
+    "docs/G2_SOLO_RUNBOOK.md": "6bd9a0a2bb89c4c425cec2413dbddf01aeb82699898be64d5370ac83650ab8a4"
+  },
+  "commands": [
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python -m pytest -q tests/test_g2_tv2_d11.py tests/test_g2_tv2_evaluator.py tests/test_g2_tv2_evaluation_notebook.py tests/test_g2_tv2_e0_runner.py tests/test_g2_tv2_e0_memory.py tests/test_g2_tv2_e0_notebook.py tests/test_g2_tv2_joint_search.py tests/test_g2_tv2_d10_selection.py tests/test_g2_tv2_context_geometry.py tests/test_g2_tv1_d11.py --disable-warnings --maxfail=3 --junitxml=/tmp/g2_tv2_d11_final.xml",
+    ".venv/bin/python scripts/run_g2.py --stage main --config configs/g2_main.yaml --owner tv2 --prepare --device cpu --output-root outputs/G2/D11",
+    "MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python scripts/eval_g2.py --final --experiments E1 E2 E3 E4 E5 --categories all --joint-lock outputs/G2/D10/selection/joint_selection_lock.json --output-root outputs/G2/D11/final --device cpu --report-only",
+    "git diff --exit-code 2605739571b55caab4418dc8ac3bb648243e728a -- src/models src/train configs scripts/run_g2.py notebooks/G2_03_Training.ipynb docs/G2_CONTRACT.md",
+    "git diff --check"
+  ]
+}
