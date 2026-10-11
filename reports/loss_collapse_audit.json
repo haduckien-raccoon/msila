@@ -1,0 +1,112 @@
+{
+  "schema": "msila.loss_collapse_audit.v1",
+  "date": "2026-10-12",
+  "branch": "fix/los",
+  "source_folder": "https://drive.google.com/drive/folders/1-gREy47QE9XVuRmaUeBnyubY2ozcgkX2",
+  "inspected_run": "e5_r128_d512_attention_walnuts_5epochs",
+  "category": "walnuts",
+  "git_sha": "bfb2ee5924c3ff7a1128d4580f850c2d856bfa34",
+  "epochs": 5,
+  "batch_size": 32,
+  "precision": "bf16",
+  "gpu": "NVIDIA L4",
+  "coverage": "Only walnuts completed in the provided folder; can result from the prompt is not independently verified.",
+  "steps": 7090,
+  "positive_tiles": 8101,
+  "approx_total_tiles": 226880,
+  "positive_tile_fraction_approx": 0.03570610014104372,
+  "zero_gradient_steps": 29,
+  "training_by_epoch": [
+    {
+      "epoch": 1,
+      "steps": 1418,
+      "positive_tiles": 1621,
+      "positive_tile_fraction_approx": 0.035723730606488015,
+      "normal_only_batches": 484,
+      "zero_gradient_batches": 0,
+      "positive_batches_with_zero_recall": 226,
+      "mean_positive_recall": 0.5596558959210205,
+      "mean_positive_dice": 0.31930795872610296,
+      "mean_dice_loss": 0.6522025520847492,
+      "mean_bce": 0.0021492943765309366
+    },
+    {
+      "epoch": 2,
+      "steps": 1418,
+      "positive_tiles": 1635,
+      "positive_tile_fraction_approx": 0.03603226375176305,
+      "normal_only_batches": 499,
+      "zero_gradient_batches": 1,
+      "positive_batches_with_zero_recall": 104,
+      "mean_positive_recall": 0.6532135567298469,
+      "mean_positive_dice": 0.3792232155038268,
+      "mean_dice_loss": 0.5736678947853705,
+      "mean_bce": 0.0011137881202963626
+    },
+    {
+      "epoch": 3,
+      "steps": 1418,
+      "positive_tiles": 1586,
+      "positive_tile_fraction_approx": 0.034952397743300424,
+      "normal_only_batches": 489,
+      "zero_gradient_batches": 3,
+      "positive_batches_with_zero_recall": 102,
+      "mean_positive_recall": 0.6689250061446415,
+      "mean_positive_dice": 0.39382654319670013,
+      "mean_dice_loss": 0.5605586177566209,
+      "mean_bce": 0.0014517897754616348
+    },
+    {
+      "epoch": 4,
+      "steps": 1418,
+      "positive_tiles": 1627,
+      "positive_tile_fraction_approx": 0.03585595909732017,
+      "normal_only_batches": 482,
+      "zero_gradient_batches": 12,
+      "positive_batches_with_zero_recall": 87,
+      "mean_positive_recall": 0.6755004388372774,
+      "mean_positive_dice": 0.4465152428896856,
+      "mean_dice_loss": 0.5428787228237424,
+      "mean_bce": 0.001031642529408271
+    },
+    {
+      "epoch": 5,
+      "steps": 1418,
+      "positive_tiles": 1632,
+      "positive_tile_fraction_approx": 0.03596614950634697,
+      "normal_only_batches": 496,
+      "zero_gradient_batches": 13,
+      "positive_batches_with_zero_recall": 102,
+      "mean_positive_recall": 0.6665012346686676,
+      "mean_positive_dice": 0.42908961053364125,
+      "mean_dice_loss": 0.546861300022703,
+      "mean_bce": 0.0010915084687814832
+    }
+  ],
+  "synthetic_dev_aupro_0_05": 0.9958997725499903,
+  "synthetic_dev_dice_at_0_5": 0.720140075874432,
+  "selected_epoch_1based": 2,
+  "last_synthetic_dev_aupro_0_05": 0.8792689458314201,
+  "test_public": {
+    "images": 150,
+    "aupro_0_05": 0.3016189120791793,
+    "contour_boundary_f1": 0.00031040476781723375,
+    "images_max_probability_below_0_5": 44,
+    "images_max_probability_below_0_001": 4,
+    "images_all_zero": 0
+  },
+  "findings": [
+    "Mean BCE dilutes foreground pixels; reproduced on four-pixel 512x512 masks.",
+    "Full native grids dilute positive TRAIN tiles to approximately 3.57%; batch count is not positive tile count.",
+    "The model learned synthetic defects; results do not establish that the adapter learned nothing.",
+    "High synthetic DEV and low real TEST performance show a generalization gap; the exact causal contribution of loss needs a new real run.",
+    "Fixed trainer already casts loss to FP32; direct-criterion FP16 reduction bug is preventive hardening, not the cause of this BF16 run.",
+    "Structural PASS checks pipeline completion, not a quality threshold.",
+    "AU-PRO uses continuous native scores; low probability brightness alone does not prove no ranking signal."
+  ],
+  "validation": {
+    "passed": 213,
+    "skipped": 26,
+    "scope": "CPU fixtures and regression tests; no new real GPU training"
+  }
+}

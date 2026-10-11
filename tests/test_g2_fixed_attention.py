@@ -50,6 +50,8 @@ def test_fixed_protocol_geometry_no_selection_lock_and_hashes(setup):
     assert cfg['fusion']['dim'] == 64 and cfg['fusion']['method'] == 'attention'
     assert cfg['paired_views']['context_size'] == 768
     assert cfg['data']['tile_size'] == 512 and cfg['training']['seed'] == 42
+    assert cfg['loss']['bce_mode'] == 'balanced'
+    assert cfg['data']['train_positive_tile_fraction'] == .5
     assert not list(study['root'].rglob('*selection_lock.json'))
     altered = deepcopy(context); altered['config']['adapter']['r'] = 64
     with pytest.raises(ValueError, match='mismatch'):
@@ -109,6 +111,12 @@ def test_shared_full_training_checkpoint_resume_and_integrity(setup, monkeypatch
     assert result['frozen_backbone_unchanged'] and result['feature_sources'] == 6
     assert result['adapter_updated'] and result['projection_updated'] and result['fusion_updated']
     assert all(result['adapters_updated'].values()) and result['context_aligned']
+    diagnostics = json.loads((full / 'learning_diagnostics.json').read_text())
+    assert diagnostics['loss']['bce_mode'] == 'balanced'
+    assert len(diagnostics['epochs']) == 2
+    last = diagnostics['epochs'][-1]
+    assert last['positive_tiles'] > 0 and last['positive_pixels'] > 0
+    assert all(v > 0 for v in last['adapter_branch_grad_norm_last_batch'].values())
     assert result['source_blocks'] == [4, 8, 12] and result['feature_width'] == 64
     assert g2_fixed.completed_training(full, context)
     original = g2_e2.Overfit16Trainer.train_step
@@ -243,6 +251,8 @@ def test_cli_notebook_contract_and_cpu_cannot_claim_gpu():
             compile(''.join(cell['source']), f'cell-{index}', 'exec')
             assert cell['execution_count'] is None and cell['outputs'] == []
     text = ''.join(''.join(c['source']) for c in notebook['cells'])
-    assert 'include_test_public=True' in text and 'g2/integration-D11' in text
+    assert 'include_test_public=True' in text and "GITHUB_REF = 'fix/los'" in text
+    assert "BCE_MODE = 'balanced'" in text and 'TRAIN_POSITIVE_TILE_FRACTION = 0.5' in text
+    assert 'loss_v3' in text and 'learning_diagnostics.json' in text
     assert "SEED, DEV_SEED = 42, 17017" in text and 'scripts/run_g2_fixed.py' in text
     assert 'joint_selection_lock.json' not in text and 'loss.backward' not in text

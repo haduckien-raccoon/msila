@@ -65,8 +65,14 @@ class StepLog:
     grad_norm: float
     learning_rate: float
     positive_samples: int
+    positive_pixels: int = 0
+    predicted_positive_pixels: int = 0
+    foreground_probability: float | None = None
+    background_probability: float | None = None
+    probability_min: float = 0.0
+    probability_max: float = 0.0
 
-    def to_dict(self) -> dict[str, int | float]:
+    def to_dict(self) -> dict[str, int | float | None]:
         return asdict(self)
 
 
@@ -608,6 +614,10 @@ class Overfit16Trainer:
             threshold=self.threshold,
         )
         metrics = _metrics_from_counts(counts)
+        probs = logits.detach().float().sigmoid()
+        foreground = target.detach().bool()
+        positive_pixels = int(foreground.sum().item())
+        negative_pixels = foreground.numel() - positive_pixels
 
         return StepLog(
             step=int(step),
@@ -623,6 +633,12 @@ class Overfit16Trainer:
             grad_norm=float(grad_norm_before_clip),
             learning_rate=_current_lr(self.optimizer),
             positive_samples=int(positive_samples),
+            positive_pixels=positive_pixels,
+            predicted_positive_pixels=counts["tp"] + counts["fp"],
+            foreground_probability=(float(probs[foreground].mean().item()) if positive_pixels else None),
+            background_probability=(float(probs[~foreground].mean().item()) if negative_pixels else None),
+            probability_min=float(probs.min().item()),
+            probability_max=float(probs.max().item()),
         )
 
     @torch.no_grad()

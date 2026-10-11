@@ -372,9 +372,20 @@ class G1NativeDataset(Dataset):
 class G1TileDataset(Dataset):
     """512px local tiles with exact mask crops and coordinate metadata."""
 
-    def __init__(self, native, *, tile_size=512, overlap=128, overfit16=False):
+    def __init__(self, native, *, tile_size=512, overlap=128, overfit16=False,
+                 positive_tile_fraction=0.0):
+        from collections import OrderedDict
+        import math
         from .tiling import generate_tile_records
         self.native, self.tile_size = native, tile_size
+        if (isinstance(positive_tile_fraction, bool) or
+                not isinstance(positive_tile_fraction, (int, float)) or
+                not math.isfinite(positive_tile_fraction) or not 0 <= positive_tile_fraction <= 1):
+            raise ValueError("positive_tile_fraction must be finite and in [0,1]")
+        if positive_tile_fraction and (native.role != "train" or native.fixed or overfit16):
+            raise ValueError("Positive tile sampling is only permitted on changing TRAIN samples")
+        self.positive_tile_fraction = float(positive_tile_fraction)
+        self._sampling_cache = OrderedDict()
         self.records = []
         if overfit16 and len(native.sources) < 8:
             raise ValueError("Overfit-16 needs at least eight distinct TRAIN/good sources")
@@ -401,15 +412,63 @@ class G1TileDataset(Dataset):
             else:
                 self.records.extend((index, tile) for tile in tiles)
         native.cache.clear()
+        self._native_tiles, self._tile_offsets = {}, []
+        for native_index, record in self.records:
+            group = self._native_tiles.setdefault(native_index, [])
+            self._tile_offsets.append(len(group))
+            group.append(record)
 
     def __len__(self):
         return len(self.records)
 
-    def __getitem__(self, index):
-        from dataclasses import asdict
+    def native_sample_and_record(self, index):
+        """Resolve TRAIN sampling once, before either Local or Context is cut.
+
+        Keep the declared number of tiles/updates. On synthetic variants, repeat
+        positive tiles to meet the requested fraction and retain negative tiles
+        in the remaining slots. Normal images keep full native tile coverage.
+        Selection depends only on source, epoch and seed, including in workers
+        and cursor resume. DEV and native inference retain their original grid.
+        """
+        import hashlib
+        import math
         from .tiling import crop_with_padding
         native_index, record = self.records[index]
         sample = self.native[native_index]
+        synthetic = sample["meta"]["synthetic"]
+        if not self.positive_tile_fraction or not synthetic["is_anomaly"]:
+            return sample, record
+        key = (self.native.epoch, native_index)
+        if key not in self._sampling_cache:
+            positive, negative = [], []
+            bx0, by0, bx1, by1 = synthetic["bbox_xyxy"]
+            for candidate in self._native_tiles[native_index]:
+                x0, y0, x1, y1 = candidate.local_xyxy
+                overlaps = x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1
+                has_defect = overlaps and bool(crop_with_padding(
+                    sample["mask"], candidate.local_xyxy, pad_mode="constant").any())
+                (positive if has_defect else negative).append(candidate)
+            if not positive:
+                raise ValueError("Synthetic TRAIN mask has no positive local tile")
+            seed_text = f"positive_tiles_v1|{self.native.seed}|{self.native.epoch}|{native_index}".encode()
+            seed = int.from_bytes(hashlib.sha256(seed_text).digest()[:8], "big")
+            rng = np.random.default_rng(seed)
+            positive = [positive[i] for i in rng.permutation(len(positive))]
+            negative = [negative[i] for i in rng.permutation(len(negative))]
+            count = len(self._native_tiles[native_index])
+            n_positive = math.ceil(count * self.positive_tile_fraction) if negative else count
+            selected = [positive[i % len(positive)] for i in range(n_positive)]
+            selected += [negative[i % len(negative)] for i in range(count - n_positive)]
+            self._sampling_cache[key] = [selected[i] for i in rng.permutation(count)]
+            if len(self._sampling_cache) > 2:
+                self._sampling_cache.popitem(last=False)
+        self._sampling_cache.move_to_end(key)
+        return sample, self._sampling_cache[key][self._tile_offsets[index]]
+
+    def __getitem__(self, index):
+        from dataclasses import asdict
+        from .tiling import crop_with_padding
+        sample, record = self.native_sample_and_record(index)
         image = crop_with_padding(sample["image"], record.local_xyxy)
         mask = crop_with_padding(sample["mask"], record.local_xyxy, pad_mode="constant")
         return dict(image=normalize_dinov3(image), mask=mask,

@@ -273,7 +273,8 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                                                 seed=t['seed'], role='train',
                                                 variants=d['train_variants_per_image'], fixed=False,
                                                 illumination=cfg['illumination'])
-    tiles = G1TileDataset(native_train, tile_size=d["tile_size"], overlap=d["overlap"])
+    tiles = G1TileDataset(native_train, tile_size=d["tile_size"], overlap=d["overlap"],
+                          positive_tile_fraction=d.get("train_positive_tile_fraction", 0.0))
     local_tiles = tiles
     if experiment in {"E4", "E5"}:
         tiles = PairedG2Tiles(tiles, context_size=cfg["paired_views"]["context_size"])
@@ -421,14 +422,19 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
             history.append(entry)
             step += 1
             next_batch = batch_index + 1
-            logging.info("epoch=%d step=%d/%d loss=%.6f BCE=%.6f Dice=%.6f",
-                         epoch + 1, step, context["expected_steps"], entry["loss"], entry["bce"], entry["dice_loss"])
+            logging.info("epoch=%d step=%d/%d loss=%.6f BCE=%.6f Dice=%.6f positive_tiles=%d positive_pixels=%d p_fg=%s p_bg=%s recall=%.4f",
+                         epoch + 1, step, context["expected_steps"], entry["loss"], entry["bce"], entry["dice_loss"],
+                         entry['positive_samples'], entry['positive_pixels'], entry['foreground_probability'],
+                         entry['background_probability'], entry['recall'])
             if step % t["checkpoint_interval_steps"] == 0 or step == context["expected_steps"]:
                 checkpoint(last_path, epoch, epoch, next_batch)
         if stopped:
             break
         # No extra update on resume at an epoch's final batch / declared max_steps.
         latest_dev = evaluate_dev(model, native_dev, cfg, device, **dev_kwargs)
+        if fixed:
+            from src.train.g2_fixed import save_learning_diagnostics
+            save_learning_diagnostics(history, model, output_dir, epoch, cfg['loss'])
         metric = latest_dev["synthetic_dev_aupro_0_05"]
         if not isinstance(metric, (int, float)) or not 0 <= metric <= 1:
             raise ValueError("Synthetic DEV AU-PRO is missing/nonfinite/outside [0,1]")

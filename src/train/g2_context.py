@@ -61,8 +61,7 @@ class PairedG2Tiles(Dataset):
         return len(self.tiles)
 
     def __getitem__(self, index):
-        native_index, record = self.tiles.records[index]
-        sample = self.tiles.native[native_index]  # one native synthetic, both views
+        sample, record = self.tiles.native_sample_and_record(index)
         record = paired_record(record, self.context_size)
         local, context, view_meta = prepare_pair(sample["image"], record,
                                                   sample_id=sample["meta"]["sample_id"])

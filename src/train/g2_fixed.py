@@ -6,6 +6,7 @@ configuration and illumination are frozen before DEV/TEST results are observed.
 from copy import deepcopy
 import csv
 import json
+import logging
 import math
 from pathlib import Path
 import subprocess
@@ -18,6 +19,7 @@ from src.data.synthetic_anomaly import validate_native_protocol
 from src.data.tiling import generate_tile_records
 from src.eval.g1_test_public import evaluate_public, test_records
 from src.models.msila import resolve_g2_config
+from src.losses.anomaly_loss import AnomalySegmentationLoss
 from src.train.g1_e1 import check_assets, discover_sources
 from src.train.g2_context import predict_native_e4
 from src.train.g2_fixed_data import validate_illumination
@@ -56,6 +58,45 @@ def precision_dtype(value):
     return {'fp32': None, 'fp16': torch.float16, 'bf16': torch.bfloat16}[value]
 
 
+def save_learning_diagnostics(history, model, directory, epoch, loss_config):
+    """Expose learning separately from structural training/checkpoint PASS.
+
+    Training probabilities are observed before each update, and gradients are
+    from the last batch. These diagnostics are not held-out performance claims.
+    """
+    path = Path(directory) / 'learning_diagnostics.json'
+    report = json.loads(path.read_text()) if path.is_file() else dict(
+        loss=loss_config, scope='TRAIN diagnostics; PASS only certifies pipeline completion', epochs=[])
+    rows = [r for r in history if r['epoch'] == epoch]
+    positive = [r for r in rows if r.get('positive_pixels', 0) > 0]
+    foreground = (sum(r['foreground_probability'] * r['positive_pixels'] for r in positive)
+                  / sum(r['positive_pixels'] for r in positive)) if positive else None
+    background = [r['background_probability'] for r in rows if r.get('background_probability') is not None]
+    warnings = []
+    if not positive:
+        warnings.append('NO_POSITIVE_TRAIN_TILES')
+    elif not any(r['recall'] > 0 for r in positive):
+        warnings.append('ZERO_TRAIN_RECALL_AT_0_5')
+    gradients = {}
+    gates = {}
+    for name, adapter in model.adapters.items():
+        gates[name] = float(adapter.gamma.detach().cpu())
+        # gamma can update while the residual branch itself has zero gradient.
+        gradients[name] = math.sqrt(sum(float(p.grad.detach().float().square().sum().cpu())
+            for n, p in adapter.named_parameters() if n != 'gamma' and p.grad is not None))
+    entry = dict(epoch=epoch + 1, steps=len(rows), positive_batches=len(positive),
+                 positive_tiles=sum(r['positive_samples'] for r in rows),
+                 positive_pixels=sum(r.get('positive_pixels', 0) for r in rows),
+                 foreground_probability=foreground,
+                 background_probability=sum(background)/len(background) if background else None,
+                 adapter_gates=gates, adapter_branch_grad_norm_last_batch=gradients, warnings=warnings)
+    report['epochs'] = [r for r in report['epochs'] if r['epoch'] != epoch + 1] + [entry]
+    save_json(report, path)
+    logging.info('learning epoch=%s positive_batches=%s/%s p_fg=%s p_bg=%s gates=%s warnings=%s',
+                 epoch + 1, len(positive), len(rows), foreground,
+                 entry['background_probability'], gates, warnings)
+
+
 def predict_fixed_native(model, image, cfg, device):
     dtype = precision_dtype(cfg['training']['precision'])
     with torch.autocast(torch.device(device).type, dtype=dtype, enabled=dtype is not None):
@@ -76,7 +117,8 @@ def prepare_study(args):
     cfg['adapter'].update(r=128, d=512)
     cfg['fusion'].update(method='attention', dim=64)
     cfg['data'].update(root=str(absolute(args.data_root)), max_train_sources=None,
-                       max_dev_sources=settings['max_dev_sources'], num_workers=settings['num_workers'])
+                       max_dev_sources=settings['max_dev_sources'], num_workers=settings['num_workers'],
+                       train_positive_tile_fraction=settings.get('train_positive_tile_fraction', 0.0))
     cfg['decoder']['deterministic_resize'] = settings['deterministic']
     cfg['paired_views'].update(context_size=768, pair_strategy='concat',
                                deterministic_sampling=settings['deterministic'])
@@ -84,7 +126,14 @@ def prepare_study(args):
     cfg = resolve_g2_config(cfg, root=ROOT)
     check_assets(cfg, args.device)
     cfg['synthetic_protocol'] = validate_native_protocol(read_yaml(absolute(cfg['synthetic_protocol'])))
-    cfg['loss'] = {k: cfg['loss'][k] for k in ('bce_weight', 'dice_weight', 'dice_eps')}
+    cfg['loss'] = {k: v for k, v in cfg['loss'].items()
+                   if k in {'bce_weight', 'dice_weight', 'dice_eps', 'bce_mode'}}
+    cfg['loss'].update(settings.get('loss', {}))
+    AnomalySegmentationLoss(**cfg['loss'])  # Validate the actual resolved objective before hashing.
+    fraction = cfg['data']['train_positive_tile_fraction']
+    if (isinstance(fraction, bool) or not isinstance(fraction, (int, float))
+            or not math.isfinite(fraction) or not 0 <= fraction <= 1):
+        raise ValueError('train_positive_tile_fraction must be finite and in [0,1]')
     precision = settings['precision']
     if precision == 'auto':
         precision = ('bf16' if torch.cuda.is_bf16_supported() else 'fp16') if torch.device(args.device).type == 'cuda' else 'fp32'

@@ -1,21 +1,29 @@
 # User-chosen E5 reference. This is NOT a D10 joint-selection result.
 version: g2_fixed_e5_v1
 model_config: configs/g2_experiments.yaml
-run_id: e5_r128_d512_attention_illum_v1
+run_id: e5_r128_d512_attention_loss_v3
 r: 128
 d: 512
 fusion: attention
 seed: 42
 dev_seed: 17017
-epochs: 20
-batch_size: 4
-tile_batch_size: 4
+# Match the inspected five-epoch L4 run for a controlled loss comparison.
+epochs: 5
+batch_size: 32
+tile_batch_size: 16
 num_workers: 2
 precision: auto  # CUDA: bf16 if supported, otherwise fp16; preflight resolves it.
 deterministic: false  # Standard GPU bilinear kernels, still align_corners=False.
 checkpoint_interval_steps: 100
 max_minutes: null  # Optional per-invocation/category pause, resume the same budget.
 max_dev_sources: 4  # Same bounded synthetic DEV as the existing G2 runner.
+# Per positive tile: 0.5 * mean(foreground BCE) + 0.5 * mean(background BCE).
+# Empty tiles retain full background BCE. The existing positive-mask Dice stays.
+loss:
+  bce_mode: balanced
+# Synthetic TRAIN variants contain at least this fraction of positive tiles.
+# Number of tiles/updates is unchanged; normal sources keep full tile coverage.
+train_positive_tile_fraction: 0.5
 illumination:
   enabled: true
   probability: 0.5
