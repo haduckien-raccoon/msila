@@ -41,11 +41,14 @@ def test_notebook_schema_five_cells_and_no_experiment_claim():
     assert "'g2/member2'" in code[0] and "get_device_name(0)" in code[0]
     assert "prepare_archives(" in code[1] and "'--preflight'" in code[1]
     assert "'--report-only'" in code[4] and "summary['paired_pass'] == 8" in code[4]
+    assert "selection-lock" not in full and "D6_STUDY" not in full
+    assert "if PREFLIGHT_CODE == 1:" in code[1] and "if SMOKE_CODE == 1:" in code[2]
+    assert "if not WEIGHT_SOURCE.is_file():" in code[1]
 
 
 def test_notebook_calls_supported_real_cli_flags(tmp_path):
     code = cells()
-    namespace = dict(E1_ROOT=tmp_path/"E1", FULL=tmp_path/"D6/full", DATA=tmp_path/"data",
+    namespace = dict(E1_ROOT=tmp_path/"E1", E2_ROOT=tmp_path/"E2", EXPERIMENTS=["E1","E2"], DATA=tmp_path/"data",
                      DINO=tmp_path/"dino", WEIGHTS=tmp_path/"weights.pth", OUTPUT=tmp_path/"out")
     common = assignment(code[1],"COMMON_ARGS",namespace)
     namespace["run_eval"] = lambda args,stage: (args,stage)
@@ -62,6 +65,8 @@ def test_notebook_calls_supported_real_cli_flags(tmp_path):
     assert g2.parse_args(smoke).output_root != g2.parse_args(full).output_root
     assert g2.parse_args(full).device == "cuda"
     assert "--seed" not in common  # DEV seed must come from saved training config.
+    namespace["EXPERIMENTS"] = ["E1"]
+    assert g2.parse_args(assignment(code[1],"COMMON_ARGS",namespace)).experiments == ["E1"]
 
 
 def test_logs_and_drive_sync_survive_failed_process(tmp_path):

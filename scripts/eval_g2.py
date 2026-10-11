@@ -10,7 +10,6 @@ import argparse
 from copy import deepcopy
 import csv
 import hashlib
-import importlib
 import json
 import logging
 import math
@@ -59,75 +58,13 @@ def unit_metric(value):
     return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
 
 
-def signed_json(path):
-    record = json.loads(Path(path).read_text())
-    if record.get("sha256") != sha256_json(record.get("payload")):
-        raise Blocked(f"Checksum mismatch: {path}")
-    return record
-
-
-def validate_adapter_selection(path):
-    """Replay TV1's validator against the immutable, relocatable 72-run ledger.
-
-    Read saved configs instead of prepare_study()/make_context(): those hash
-    absolute training paths and current code, which change on Drive/Colab.
-    Scientific fields and source hashes remain exact. Nothing is rewritten.
-    A lock JSON alone is insufficient; copy the study's full/ folder.
-    """
-    path = Path(path)
-    if not path.is_file():
-        raise Blocked(f"Missing Adapter selection lock: {path}; requires 72 valid screening runs")
-    runner = importlib.import_module("scripts.run_g2")
-    record = signed_json(path)
-    protocol_record = signed_json(path.parent / "protocol_lock.json")
-    protocol = protocol_record["payload"]
-    payload = record["payload"]
-    if (payload.get("version") != "g2_adapter_selection_v1"
-            or payload.get("valid_runs") != 72 or payload.get("categories") != list(CATEGORIES)
-            or payload.get("selection_rule") != runner.SELECTION_RULE
-            or payload.get("study_sha256") != protocol_record["sha256"]
-            or payload.get("backbone") != protocol["backbone"]["name"]
-            or len(protocol["grid"]) != 9 or len({tuple(p) for p in protocol["grid"]}) != 9):
-        raise Blocked("Adapter selection lock does not describe the full declared 9 x 8 study")
-    study = dict(root=path.parent.parent, protocol=protocol, sha256=protocol_record["sha256"],
-                 pairs=[tuple(pair) for pair in protocol["grid"]])
-    # Confirm the declared backbone-dependent candidate grid with TV1 code.
-    runner.selected_pairs({"backbone": protocol["backbone"]}, {
-        "adapter_grids": {protocol["backbone"]["name"]: {
-            "r_values": sorted({p[0] for p in study["pairs"]}),
-            "d_values": sorted({p[1] for p in study["pairs"]})}}})
-    rows, manifests, budgets = [], {}, {}
-    for pair in study["pairs"]:
-        for category in CATEGORIES:
-            directory = runner.run_directory(study, category, pair, "adapter_screen")
-            saved, _ = load_checkpoint_payload(directory / "best.pt", require_sha256=True)
-            cfg = saved["config"]
-            expected = deepcopy(protocol)
-            for key in ("selection", "categories", "grid", "smoke"):
-                expected.pop(key)
-            expected.update(category=category, stage="adapter_screen", mode="full", sources=cfg["sources"],
-                            study_sha256=study["sha256"], selection_sha256=None,
-                            expected_steps=cfg["expected_steps"])
-            expected["adapter"].update(r=pair[0], d=pair[1])
-            if (cfg != expected or manifests.setdefault(category, cfg["sources"]) != cfg["sources"]
-                    or budgets.setdefault(category, cfg["expected_steps"]) != cfg["expected_steps"]):
-                raise Blocked(f"Screening protocol drift: {directory}")
-            context = dict(config=cfg, config_sha256=sha256_json(cfg), expected_steps=cfg["expected_steps"])
-            row = runner.read_valid_result(directory, context)
-            if row is None or not runner.real_evidence(row):
-                raise Blocked(f"Missing valid full GPU screening evidence: {directory}")
-            rows.append(row)
-    if payload != runner.selection_payload(study, rows):
-        raise Blocked("Adapter lock ranking/tie-break/checkpoint evidence mismatch")
-    return record
-
-
-def load_trained_checkpoint(path, experiment, category, selection=None):
+def load_trained_checkpoint(path, experiment, category):
     if experiment not in {"E1", "E2"}:
         raise Blocked(f"{experiment} is reserved; D6 implements only E1/E2")
     path = Path(path)
     if not path.is_file():
-        raise Blocked(f"Missing {experiment}/{category} checkpoint: {path}")
+        pending = "; E2 may await D10 joint selection and main training" if experiment == "E2" else ""
+        raise Blocked(f"Missing {experiment}/{category} checkpoint: {path}{pending}")
     payload, _ = load_checkpoint_payload(path, require_sha256=True)
     cfg, meta = payload["config"], payload["metadata"]
     if cfg.get("category") != category:
@@ -144,43 +81,14 @@ def load_trained_checkpoint(path, experiment, category, selection=None):
         if cfg.get("version") != "g1_e1_v1" or cfg["training"].get("mode") != "train":
             raise Blocked("E1 requires a trained G1 E1 checkpoint (smoke/overfit cannot be accepted)")
     else:
-        if selection is None:
-            raise Blocked("E2 requires a validated Adapter selection lock")
         if (cfg.get("stage") != "E2" or cfg.get("mode") != "full"
-                or cfg.get("selection_sha256") != selection["sha256"]
-                or cfg.get("study_sha256") != selection["payload"]["study_sha256"]
-                or cfg["backbone"]["name"] != selection["payload"]["backbone"]
-                or {k: cfg["adapter"][k] for k in ("r", "d")} != selection["payload"]["selected_pair"]
+                or any(type(cfg.get("adapter", {}).get(k)) is not int or cfg["adapter"][k] <= 0
+                       for k in ("r", "d"))
                 or meta.get("config_sha256") != sha256_json(cfg)):
-            raise Blocked("E2 checkpoint category/config/r/d/selection provenance mismatch")
-        runner = importlib.import_module("scripts.run_g2")
-        context = dict(config=cfg, config_sha256=sha256_json(cfg), expected_steps=cfg["expected_steps"])
-        result = runner.read_valid_result(path.parent, context)
-        if result is None or not runner.real_evidence(result) or file_sha256(path) != result["best_checkpoint_sha256"]:
-            raise Blocked("E2 requires complete full GPU training artifacts (best/last/metrics and SHA sidecars)")
+            raise Blocked("E2 checkpoint stage/config/r/d provenance mismatch")
+        # D6 evaluates trained checkpoints; it does not certify D10 selection.
+        # Legacy selection fields are preserved in the exported checkpoint config.
     return payload
-
-
-def validate_e2_study(payload, selection, lock_path):
-    """Main E2 must inherit the selected screen's sources, budget and protocol."""
-    cfg = payload["config"]
-    path = Path(lock_path)
-    protocol_record = signed_json(path.parent / "protocol_lock.json")
-    if protocol_record["sha256"] != selection["payload"]["study_sha256"]:
-        raise Blocked("E2 study protocol differs from selection lock")
-    pair = selection["payload"]["selected_pair"]
-    directory = path.parent / "adapter_screen" / f"adapter_r{pair['r']}_d{pair['d']}" / cfg["category"]
-    screen, _ = load_checkpoint_payload(directory / "best.pt", require_sha256=True)
-    expected = deepcopy(protocol_record["payload"])
-    for key in ("selection", "categories", "grid", "smoke"):
-        expected.pop(key)
-    expected.update(category=cfg["category"], stage="E2", mode="full", sources=screen["config"]["sources"],
-                    study_sha256=protocol_record["sha256"], selection_sha256=selection["sha256"],
-                    expected_steps=screen["config"]["expected_steps"])
-    expected["adapter"].update(pair)
-    if (cfg != expected or payload["metadata"]["decoder_initial_sha256"]
-            != screen["metadata"]["decoder_initial_sha256"]):
-        raise Blocked("E2 main config/initialization differs from the locked screening study")
 
 
 def source_identity(manifest):
@@ -262,8 +170,14 @@ def relocate_config(saved, args):
 
 
 def validate_e1_budget(path, payload, cfg, pools):
-    """best.pt may be early; last.pt and the G1 report prove the final budget."""
+    """Audit final budget when retained; a legacy best-only checkpoint is usable.
+
+    Saved configuration/source hashes still bind the scientific protocol. Missing
+    final artifacts do not imply that this evaluator verified full training.
+    """
     directory = Path(path).parent
+    if not (directory / "last.pt").is_file() or not (directory / "metrics.json").is_file():
+        return False
     last, _ = load_checkpoint_payload(directory / "last.pt", require_sha256=True)
     report = json.loads((directory / "metrics.json").read_text())
     d, t = cfg["data"], cfg["training"]
@@ -282,6 +196,7 @@ def validate_e1_budget(path, payload, cfg, pools):
             or report.get("best_epoch") != payload["training_state"]["epoch"]
             or report.get("best_synthetic_dev", {}).get("synthetic_dev_aupro_0_05") != payload["metadata"]["best_metric"]):
         raise Blocked("E1 lacks complete training budget/provenance: keep best.pt, last.pt, metrics.json and SHA sidecars")
+    return True
 
 
 def restore_model(payload, cfg, experiment, device):
@@ -303,8 +218,7 @@ def restore_model(payload, cfg, experiment, device):
 
 
 def implementation_identity():
-    paths = {ROOT / p for p in ("scripts/eval_g2.py", "scripts/run_g2.py", "src/train/g1_e1.py",
-                               "src/train/g2_e2.py", "src/train/screen_representation.py",
+    paths = {ROOT / p for p in ("scripts/eval_g2.py", "src/train/g1_e1.py", "src/train/screen_representation.py",
                                "src/utils/checkpoint.py", "src/utils/resume.py")}
     for directory in ("src/data", "src/eval", "src/metrics", "src/models", "src/geometry"):
         paths.update((ROOT / directory).rglob("*.py"))
@@ -369,7 +283,8 @@ def completed_result(directory, signature, checkpoint):
         result = json.loads(path.read_text())
         if ((directory / "metrics.json.sha256").read_text().strip() != file_sha256(path)
                 or result["evaluation_sha256"] != signature or result["checkpoint_sha256"] != file_sha256(checkpoint)
-                or result["status"] != "PASS"):
+                or result["status"] not in {"PASS", "CPU_PASS"}
+                or result.get("acceptance_eligible") is not (result["status"] == "PASS")):
             return None
         validate_metrics(result)
         rows = json.loads((directory / "native_maps.json").read_text())
@@ -397,17 +312,17 @@ def completed_result(directory, signature, checkpoint):
         return None
 
 
-def prepare_job(args, experiment, category, selection):
+def prepare_job(args, experiment, category):
+    if experiment not in {"E1", "E2"}:
+        raise Blocked(f"{experiment} is reserved; D6 implements only E1/E2")
     path = Path(getattr(args, f"{experiment.lower()}_root")) / category / "best.pt"
-    payload = load_trained_checkpoint(path, experiment, category, selection)
-    if experiment == "E2":
-        validate_e2_study(payload, selection, args.selection_lock)
+    payload = load_trained_checkpoint(path, experiment, category)
     cfg, pools = relocate_config(payload["config"], args)
-    if experiment == "E1":
-        validate_e1_budget(path, payload, cfg, pools)
-    identity = dict(version="g2_dev_evaluator_v1", experiment=experiment, checkpoint_sha256=file_sha256(path),
+    budget_verified = validate_e1_budget(path, payload, cfg, pools) if experiment == "E1" else False
+    identity = dict(version="g2_dev_evaluator_v2", experiment=experiment, checkpoint_sha256=file_sha256(path),
                     checkpoint_config_sha256=sha256_json(payload["config"]),
                     scientific_protocol=scientific_identity(cfg), smoke=args.smoke,
+                    final_training_budget_verified=budget_verified,
                     runtime=dict(torch=str(torch.__version__), cuda=torch.version.cuda, device=args.device,
                                  gpu=torch.cuda.get_device_name(torch.device(args.device))
                                  if torch.device(args.device).type == "cuda" else None,
@@ -416,9 +331,9 @@ def prepare_job(args, experiment, category, selection):
     return path, payload, cfg, pools, identity
 
 
-def evaluate_category(args, experiment, category, selection):
+def evaluate_category(args, experiment, category):
     directory = Path(args.output_root) / experiment / category
-    path, payload, cfg, pools, identity = prepare_job(args, experiment, category, selection)
+    path, payload, cfg, pools, identity = prepare_job(args, experiment, category)
     signature = sha256_json(identity)
     if args.preflight:
         return dict(status="READY", experiment=experiment, category=category, checkpoint=str(path),
@@ -464,6 +379,7 @@ def evaluate_category(args, experiment, category, selection):
                   verification_scope="real_pretrained" if real else "fixture", device=args.device, git_commit=git_commit(),
                   checkpoint=str(path.resolve()), checkpoint_sha256=identity["checkpoint_sha256"],
                   checkpoint_config_sha256=identity["checkpoint_config_sha256"], evaluation_sha256=signature,
+                  final_training_budget_verified=identity["final_training_budget_verified"],
                   pair_protocol_sha256=sha256_json(identity["scientific_protocol"]),
                   dev_samples_sha256=sha256_json(dev_identity), native_maps_sha256=sha256_json(capture.rows),
                   qa_report_sha256=file_sha256(directory / "qa_report.json"),
@@ -478,7 +394,7 @@ def evaluate_category(args, experiment, category, selection):
     return result
 
 
-def write_comparison(output_root, results, *, mode="full"):
+def write_comparison(output_root, results, *, mode="full", experiments=("E1", "E2"), categories=CATEGORIES):
     directory = Path(output_root)
     directory.mkdir(parents=True, exist_ok=True)
     rows, paired = [], []
@@ -520,13 +436,36 @@ def write_comparison(output_root, results, *, mode="full"):
         writer.writeheader()
         writer.writerows(rows)
     os.replace(directory / "metrics_E1_E2.csv.tmp", directory / "metrics_E1_E2.csv")
-    summary = dict(version="g2_e1_e2_evaluation_v1", status="PASS" if complete else "BLOCKED", mode=mode,
+    selected = [results.get((exp, cat), {"status": "NOT RUN"}) for exp in experiments for cat in categories]
+    statuses = {record["status"] for record in selected}
+    operation_status = "BLOCKED"
+    if "FAIL" in statuses:
+        operation_status = "FAIL"
+    elif mode == "preflight" and statuses == {"READY"}:
+        operation_status = "READY"
+    elif mode == "smoke" and statuses == {"SMOKE_PASS"}:
+        operation_status = "SMOKE_PASS"
+    elif statuses <= {"PASS", "CPU_PASS"} and selected:
+        operation_status = "CPU_PASS" if "CPU_PASS" in statuses else "PASS"
+        if "E1" in experiments and "E2" in experiments and any(
+                row["pair_status"] != "PASS" for row in rows if row["category"] in categories):
+            operation_status = "BLOCKED"
+    individual_macro = {
+        exp: {metric: math.fsum(row[f"{exp}_{metric}"] for row in rows) / 8 for metric in METRICS}
+        if counts[exp] == 8 and mode == "full" else None for exp in counts
+    }
+    summary = dict(version="g2_e1_e2_evaluation_v2", status=operation_status, mode=mode,
+                   comparison_status="PASS" if complete else "BLOCKED",
                    experiments=["E1", "E2"], split="dev_synthetic", max_fpr=.05,
+                   requested_experiments=list(experiments), requested_categories=list(categories),
                    interpretation="Synthetic DEV comparison only; no TEST tuning or real anomaly claim",
                    expected_categories=8, coverage=counts, paired_pass=len(paired), complete=complete,
-                   macro_mean_8categories=macro, records=rows, git_commit=git_commit())
+                   macro_mean_8categories=macro, per_experiment_macro_mean_8categories=individual_macro,
+                   records=rows, git_commit=git_commit())
     write_metrics_json(summary, directory / "summary.json")
-    write_metrics_json(dict(status=summary["status"], coverage=counts, paired_pass=len(paired), expected=8,
+    write_metrics_json(dict(status=summary["status"], comparison_status=summary["comparison_status"],
+                            requested_experiments=list(experiments), requested_categories=list(categories),
+                            coverage=counts, paired_pass=len(paired), expected=8,
                             missing=[dict(experiment=exp, category=row["category"], status=row[f"{exp}_status"],
                                           reason=row[f"{exp}_reason"]) for row in rows for exp in counts
                                      if row[f"{exp}_{METRICS[0]}"] is None], records=rows), directory / "coverage.json")
@@ -554,9 +493,8 @@ def parse_args(argv=None):
     parser.add_argument("--experiments", nargs="+", choices=("E1", "E2", "E3", "E4", "E5"), default=["E1", "E2"])
     parser.add_argument("--categories", nargs="+", default=["all"])
     parser.add_argument("--e1-root", default="outputs/G1/E1", help="Root containing <category>/best.pt and SHA sidecar")
-    parser.add_argument("--e2-root", default="outputs/G2/D6/dinov3_vitb16/full/E2",
-                        help="TV1 full/E2 root; keep complete training artifacts")
-    parser.add_argument("--selection-lock", help="Default: sibling full/adapter_selection_lock.json; 72-run evidence required")
+    parser.add_argument("--e2-root", default="outputs/G2/E2",
+                        help="Root containing trained <category>/best.pt and SHA sidecar; optional until E2 training")
     parser.add_argument("--data-root")
     parser.add_argument("--repo-dir", help="Exact original official DINOv3 checkout, relocated only")
     parser.add_argument("--weights", help="Exact pretrained checkpoint, SHA must match training")
@@ -564,7 +502,7 @@ def parse_args(argv=None):
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--smoke", action="store_true", help="Three original DEV samples per category; separate outputs, no acceptance")
-    parser.add_argument("--preflight", action="store_true", help="Validate actual checkpoint/data/lock without inference")
+    parser.add_argument("--preflight", action="store_true", help="Validate actual checkpoint/data/protocol without inference")
     parser.add_argument("--report-only", action="store_true", help="Audit existing results without running inference")
     args = parser.parse_args(argv)
     requested = [c for group in args.categories for c in group.split(",")]
@@ -576,8 +514,6 @@ def parse_args(argv=None):
     if len(set(args.experiments)) != len(args.experiments) or sum((args.smoke, args.preflight, args.report_only)) > 1:
         parser.error("Use distinct experiments and at most one of --smoke/--preflight/--report-only")
     args.experiments = [exp for exp in ("E1", "E2", "E3", "E4", "E5") if exp in args.experiments]
-    if args.selection_lock is None:
-        args.selection_lock = str(Path(args.e2_root).parent / "adapter_selection_lock.json")
     if args.smoke or args.preflight:
         args.output_root = str(Path(args.output_root) / ("smoke" if args.smoke else "preflight"))
     output = Path(args.output_root).resolve()
@@ -596,31 +532,22 @@ def main(argv=None):
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.INFO)
-    results, selection, selection_error = {}, None, None
+    results = {}
     try:
-        if "E2" in args.experiments:
-            try:
-                selection = validate_adapter_selection(args.selection_lock)
-            except (OSError, ValueError, KeyError, RuntimeError) as exc:
-                selection_error = f"Adapter selection BLOCKED: {exc}"
-        if selection is not None:
-            write_metrics_json(selection, directory / "adapter_selection_lock.json")
         for exp in args.experiments:
             for category in CATEGORIES:
                 requested = category in args.categories
                 row = dict(status="NOT RUN", experiment=exp, category=category, reason="Not requested")
                 try:
-                    if exp == "E2" and selection_error:
-                        raise Blocked(selection_error)
                     if requested and not args.report_only:
                         prior = results.get(("E1", category)) if exp == "E2" else None
                         if prior is not None and prior.get("pair_protocol_sha256"):
-                            _, _, _, _, candidate = prepare_job(args, exp, category, selection)
+                            _, _, _, _, candidate = prepare_job(args, exp, category)
                             if prior["pair_protocol_sha256"] != sha256_json(candidate["scientific_protocol"]):
                                 raise Blocked("E1/E2 backbone, decoder, seeds, sources, loss or training budget differs")
-                        row = evaluate_category(args, exp, category, selection)
-                    elif not args.smoke and not args.preflight:
-                        path, _, _, _, identity = prepare_job(args, exp, category, selection)
+                        row = evaluate_category(args, exp, category)
+                    elif requested and args.report_only:
+                        path, _, _, _, identity = prepare_job(args, exp, category)
                         saved = completed_result(directory / exp / category, sha256_json(identity), path)
                         if saved is not None:
                             row = saved
@@ -638,22 +565,14 @@ def main(argv=None):
                 if row["status"] in {"PASS", "SMOKE_PASS", "READY"}:
                     logging.info("%s/%s %s", exp, category, row["status"])
         mode = "smoke" if args.smoke else ("preflight" if args.preflight else "full")
-        summary = write_comparison(directory, results, mode=mode)
-        selected = [results[exp, category] for exp in args.experiments for category in args.categories]
-        if any(row["status"] == "FAIL" for row in selected):
-            summary["status"] = "FAIL"
-        elif args.smoke and all(row["status"] == "SMOKE_PASS" for row in selected):
-            summary["status"] = "SMOKE_PASS"
-        elif args.preflight and all(row["status"] == "READY" for row in selected):
-            summary["status"] = "READY"
-        write_metrics_json(summary, directory / "summary.json")
+        summary = write_comparison(directory, results, mode=mode, experiments=args.experiments, categories=args.categories)
         write_metrics_json(dict(arguments=vars(args), git_commit=git_commit(), implementation=implementation_identity(),
                                 environment=dict(torch=str(torch.__version__), cuda=torch.version.cuda,
                                                  cuda_available=torch.cuda.is_available(),
                                                  gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None)),
                            directory / "run_manifest.json")
         print(json.dumps({k: v for k, v in summary.items() if k != "records"}, indent=2, ensure_ascii=False))
-        return 0 if summary["status"] in {"PASS", "SMOKE_PASS", "READY"} else (1 if summary["status"] == "FAIL" else 2)
+        return 0 if summary["status"] in {"PASS", "CPU_PASS", "SMOKE_PASS", "READY"} else (1 if summary["status"] == "FAIL" else 2)
     finally:
         logging.getLogger().removeHandler(handler)
         handler.close()

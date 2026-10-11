@@ -12,9 +12,9 @@ from PIL import Image
 import pytest
 import torch
 from torch import nn
+import yaml
 
 from scripts import eval_g2 as g2
-from scripts import run_g2 as tv1
 from src.data.loader import G1NativeDataset
 from src.models.msila import build_g2_model
 from src.train import g1_e1, g2_e2
@@ -91,10 +91,9 @@ def test_trained_e1_restore_and_checkpoint_provenance(trained, tmp_path, monkeyp
         g2.load_trained_checkpoint(corrupt,"E1","rice")
 
 
-def test_actual_e2_training_interface_restore_and_cpu_evidence_rejected(trained,tmp_path,monkeypatch):
+def test_actual_e2_checkpoint_without_selection_lock_and_fixture_rejected(trained,tmp_path,monkeypatch):
     cfg = deepcopy(trained["cfg"])
-    cfg.update(stage="E2",mode="full",study_sha256=g2.sha256_json("unit study"),
-               selection_sha256=g2.sha256_json("unit lock"),expected_steps=1)
+    cfg.update(stage="E2",mode="full",study_sha256=g2.sha256_json("unit protocol"),expected_steps=1)
     cfg["adapter"] = dict(r=32,d=128,kernel_size=3,gamma_init=0.,bias=True)
     cfg["training"]["checkpoint_interval_steps"] = 1
     context = dict(config=cfg,config_sha256=g2.sha256_json(cfg),expected_steps=1)
@@ -109,12 +108,24 @@ def test_actual_e2_training_interface_restore_and_cpu_evidence_rejected(trained,
     head = nn.ModuleDict({"adapter":built[0].adapter,"decoder":built[0].decoder})
     assert all(torch.equal(v,head.state_dict()[k]) for k,v in payload["model_state"].items())
     assert any(k.startswith("adapter.") for k in payload["model_state"])
-    with pytest.raises(g2.Blocked,match="selection lock"):
+    accepted = g2.load_trained_checkpoint(folder/"best.pt","E2","rice")
+    assert accepted["config"] == payload["config"]
+    assert not list(tmp_path.rglob('*selection_lock*'))
+    payload["config"]["adapter"]["r"] += 1
+    torch.save(payload,folder/"best.pt")
+    (folder/"best.pt.sha256").write_text(g2.file_sha256(folder/"best.pt"))
+    with pytest.raises(g2.Blocked,match="config/r/d provenance"):
         g2.load_trained_checkpoint(folder/"best.pt","E2","rice")
-    selection = dict(sha256=cfg["selection_sha256"],payload=dict(study_sha256=cfg["study_sha256"],
-                     backbone=cfg["backbone"]["name"],selected_pair={"r":32,"d":128}))
-    with pytest.raises(g2.Blocked,match="full GPU"):
-        g2.load_trained_checkpoint(folder/"best.pt","E2","rice",selection)
+
+
+def test_legacy_e1_best_only_keeps_scientific_protocol(trained,tmp_path):
+    original = trained["path"]
+    original.with_name("last.pt").unlink()
+    original.with_name("metrics.json").unlink()
+    path,payload,cfg,pools,identity = g2.prepare_job(args_for(trained,tmp_path),"E1","rice")
+    assert path == original and payload["training_state"]["global_step"] > 0
+    assert not identity["final_training_budget_verified"]
+    assert identity["scientific_protocol"] == g2.scientific_identity(trained["cfg"])
 
 
 def test_relocation_fair_protocol_sources_and_test_exclusion(trained,tmp_path):
@@ -176,6 +187,89 @@ def test_exact_reused_metrics_p99_dice_native_exports(trained,tmp_path):
     assert not any("TEST" in row["source"]["path"] for row in capture.rows)
 
 
+def hand_computable_dev(scores, masks, bins):
+    """Metric fixtures only; no generated experiment/checkpoint or acceptance claim."""
+    protocol = yaml.safe_load((g2.ROOT/"configs/full_scale_synthetic.yaml").read_text())
+    native = []
+    for index,(score,mask,size_bin) in enumerate(zip(scores,masks,bins)):
+        native.append(dict(image=torch.full((3,*mask.shape),float(index)),
+                           mask=torch.from_numpy(mask[None].astype(np.float32)),
+                           meta=dict(sample_id=f"metric_fixture_{index}",original_hw=list(mask.shape),
+                                     synthetic=dict(is_anomaly=bool(mask.any()),size_bin=size_bin))))
+    cfg = dict(category="rice",synthetic_protocol=protocol,evaluation=dict(example_limit=0))
+    predict = lambda model,image,cfg,device: torch.from_numpy(scores[int(image[0,0,0])].astype(np.float32))
+    return g2.evaluate_dev(None,native,cfg,"cpu",predict_fn=predict)
+
+
+def test_hand_computed_native_tiny_mixed_normal_p99_and_pooled_dice(tmp_path):
+    # 4-pixel tiny region, 129-pixel mixed region, one normal-only false positive.
+    # All foreground scores outrank every background -> both AU-PROs exactly 1.
+    normal = np.array([[0.,.1],[.2,.6]],dtype=np.float32)
+    tiny = np.array([[1,1,0],[1,1,0]],dtype=np.uint8)
+    mixed = np.zeros((13,11),dtype=np.uint8)
+    mixed.flat[:129] = 1
+    masks = [np.zeros_like(normal,dtype=np.uint8),tiny,mixed]
+    scores = [normal,np.where(tiny,.9,.1),np.where(mixed,.9,.1)]
+    protocol = yaml.safe_load((g2.ROOT/"configs/full_scale_synthetic.yaml").read_text())
+    metrics = hand_computable_dev(scores,masks,[None,protocol["dev_tiny_bins"][0],"mixed_control"])
+    assert metrics["qa_status"] == "PASS" and metrics["aupro_max_fpr"] == .05
+    assert metrics["dev_tiny"]["regions"] == 1 and metrics["dev_mixed"]["regions"] == 2
+    assert metrics["synthetic_dev_aupro_0_05"] == pytest.approx(1.)
+    assert metrics["dev_tiny"]["aupro_0_05"] == pytest.approx(1.)
+    assert metrics["dev_mixed"]["aupro_0_05"] == pytest.approx(1.)
+    # Linear P99 on [0,.1,.2,.6]: .2 + .97*(.6-.2), not anomalous pixels.
+    assert metrics["normal_score_p99"] == pytest.approx(.588)
+    rows = []
+    for index,(score,mask) in enumerate(zip(scores,masks)):
+        np.save(tmp_path/f"score{index}.npy",score.astype(np.float32))
+        np.save(tmp_path/f"mask{index}.npy",mask)
+        rows.append(dict(score_path=f"score{index}.npy",mask_path=f"mask{index}.npy"))
+    dice = g2.dice_from_exports(tmp_path,rows,"rice",.5)
+    assert (dice["tp"],dice["fp"],dice["fn"]) == (133,1,0)
+    assert dice["f1"] == pytest.approx(266/267)
+
+
+@pytest.mark.parametrize("case,expected",[("perfect",1.),("inverted",0.),("tie",.025),("one_fp",.5)])
+def test_hand_computed_aupro_cutoff_and_orientation(case,expected):
+    # Exactly 40 normal pixels; one high background costs FPR=1/40=.025.
+    mask = np.zeros((4,11),dtype=np.uint8)
+    mask[0,:4] = 1
+    score = np.where(mask,.8,.1)
+    if case == "inverted":
+        score = 1-score
+    elif case == "tie":
+        score.fill(.5)  # PRO=FPR; integral[0,.05]/.05 = .025.
+    elif case == "one_fp":
+        score[-1,-1] = .9  # PRO=1 only after .025: AU-PRO=(.05-.025)/.05.
+    protocol = yaml.safe_load((g2.ROOT/"configs/full_scale_synthetic.yaml").read_text())
+    metrics = hand_computable_dev([score],[mask],[protocol["dev_tiny_bins"][0]])
+    assert metrics["aupro_max_fpr"] == .05
+    assert metrics["synthetic_dev_aupro_0_05"] == pytest.approx(expected)
+    assert metrics["dev_tiny"]["aupro_0_05"] == pytest.approx(expected)
+    assert metrics["normal_score_p99"] is None  # no normal-only image in this fixture
+
+
+def test_locked_dice_threshold_cannot_be_retuned(trained,tmp_path):
+    cfg = deepcopy(trained["cfg"])
+    cfg["synthetic_protocol"]["prediction_threshold"] = .7
+    with pytest.raises((g2.Blocked,ValueError),match="threshold|protocol"):
+        g2.relocate_config(cfg,args_for(trained,tmp_path))
+
+
+def test_dice_includes_normal_fp_and_threshold_is_inclusive(tmp_path):
+    # At the locked >= .5 rule: one TP, one FN, one FP -> Dice=2/(2+1+1).
+    masks = [np.array([[1,1],[0,0]],dtype=np.uint8),np.zeros((1,2),dtype=np.uint8)]
+    scores = [np.array([[.5,.499],[0.,0.]],dtype=np.float32),np.array([[.5,0.]],dtype=np.float32)]
+    rows = []
+    for index,(score,mask) in enumerate(zip(scores,masks)):
+        np.save(tmp_path/f"s{index}.npy",score)
+        np.save(tmp_path/f"m{index}.npy",mask)
+        rows.append(dict(score_path=f"s{index}.npy",mask_path=f"m{index}.npy"))
+    dice = g2.dice_from_exports(tmp_path,rows,"rice",.5)
+    assert (dice["tp"],dice["fp"],dice["fn"]) == (1,1,1)
+    assert dice["f1"] == pytest.approx(.5)
+
+
 def valid_result(category="rice",score=.2):
     return dict(status="PASS",category=category,acceptance_eligible=True,**{k:score for k in g2.METRICS},
                 qa_status="PASS",native_resolution=True,aupro_max_fpr=.05,
@@ -212,6 +306,40 @@ def test_non_acceptance_statuses_never_count(status,tmp_path):
     assert summary["macro_mean_8categories"] is None
 
 
+def test_independent_e1_all8_succeeds_without_e2_or_any_lock(tmp_path,monkeypatch):
+    calls = []
+    def evaluate(args,experiment,category):
+        calls.append((experiment,category))
+        return valid_result(category,.2)
+    monkeypatch.setattr(g2,"evaluate_category",evaluate)
+    code = g2.main(["--experiments","E1","--device","cpu","--output-root",str(tmp_path)])
+    summary = json.loads((tmp_path/"summary.json").read_text())
+    assert code == 0 and summary["status"] == "PASS"
+    assert summary["coverage"] == {"E1":8,"E2":0}
+    assert summary["comparison_status"] == "BLOCKED" and not summary["complete"]
+    assert summary["macro_mean_8categories"] is None
+    assert summary["per_experiment_macro_mean_8categories"]["E1"][g2.METRICS[0]] == pytest.approx(.2)
+    assert all(row["E2_status"] == "NOT RUN" for row in summary["records"])
+    assert calls == [("E1",category) for category in g2.CATEGORIES]
+
+
+def test_missing_e2_does_not_prevent_requested_e1(tmp_path,monkeypatch):
+    def evaluate(args,experiment,category):
+        if experiment == "E2":
+            raise g2.Blocked("Missing E2 checkpoint; awaits D10 joint selection and main training")
+        return valid_result(category,.2)
+    monkeypatch.setattr(g2,"evaluate_category",evaluate)
+    monkeypatch.setattr(g2,"prepare_job",lambda *a: (_ for _ in ()).throw(g2.Blocked("Missing E2 checkpoint")))
+    code = g2.main(["--categories","rice","--device","cpu","--output-root",str(tmp_path)])
+    summary = json.loads((tmp_path/"summary.json").read_text())
+    assert code == 2 and summary["coverage"] == {"E1":1,"E2":0}
+    rice = summary["records"][3]
+    assert rice["E1_status"] == "PASS" and rice["E2_status"] == "BLOCKED"
+    assert rice["E2_synthetic_dev_aupro_0_05"] is None
+    assert all(row["E1_status"] == row["E2_status"] == "NOT RUN"
+               for row in summary["records"] if row["category"] != "rice")
+
+
 def test_missing_metric_blocked_and_nonfinite_metric_failed():
     result = valid_result()
     result["normal_score_p99"] = None
@@ -236,74 +364,6 @@ def test_cli_missing_inputs_preserves_all8_and_null_metrics(tmp_path):
     assert all(r["E1_status"] == r["E2_status"] == "BLOCKED" for r in summary["records"])
     assert all(r["E2_minus_E1_aupro_0_05"] is None for r in summary["records"])
     assert len(json.loads((tmp_path/"coverage.json").read_text())["missing"]) == 16
-
-
-@pytest.fixture
-def selection_fixture(tmp_path,monkeypatch):
-    """Mock 72-run ledger ONLY for validator tests, no real result claimed."""
-    protocol = dict(backbone=dict(name="dinov3_vits16",channels=384),
-                    adapter=dict(kernel_size=3,gamma_init=0.,bias=True),
-                    grid=[[r,d] for r in (32,64,128) for d in (128,256,384)],
-                    selection=tv1.SELECTION_RULE,categories=list(g2.CATEGORIES),smoke={},
-                    training={},data={},evaluation={},loss={},synthetic_protocol={})
-    study = dict(protocol=protocol,root=tmp_path,sha256=g2.sha256_json(protocol),
-                 pairs=[tuple(p) for p in protocol["grid"]])
-    rows,cfgs = [],{}
-    factory = tv1.ResidualAdapterFactory(tv1.AdapterFactoryConfig(in_dim=384,**protocol["adapter"]))
-    for pair in study["pairs"]:
-        for category in g2.CATEGORIES:
-            cfg = deepcopy(protocol)
-            for key in ("selection","categories","grid","smoke"):
-                cfg.pop(key)
-            cfg.update(category=category,stage="adapter_screen",mode="full",sources={"train":[],"dev":[]},
-                       study_sha256=study["sha256"],selection_sha256=None,expected_steps=2)
-            cfg["adapter"].update(r=pair[0],d=pair[1])
-            cfgs[tv1.run_directory(study,category,pair,"adapter_screen")] = cfg
-            rows.append(dict(category=category,adapter={"r":pair[0],"d":pair[1]},
-                config_sha256=g2.sha256_json(cfg),metrics_sha256=g2.sha256_json([pair,category,"metrics"]),
-                best_checkpoint_sha256=g2.sha256_json([pair,category,"best"]),
-                last_checkpoint_sha256=g2.sha256_json([pair,category,"last"]),
-                decoder_initial_sha256=g2.sha256_json(category),
-                adapter_trainable_parameters=factory.build_rd(r=pair[0],d=pair[1]).trainable_params,
-                best_synthetic_dev={"synthetic_dev_aupro_0_05":.2},mode="full",
-                verification_scope="real_pretrained",device="cuda"))
-    record = {"payload":tv1.selection_payload(study,rows)}
-    record["sha256"] = g2.sha256_json(record["payload"])
-    path = tmp_path/"full/adapter_selection_lock.json"
-    g2.write_metrics_json(record,path)
-    g2.write_metrics_json(dict(payload=protocol,sha256=study["sha256"]),path.parent/"protocol_lock.json")
-    monkeypatch.setattr(g2,"load_checkpoint_payload",lambda p,**kw: ({"config":cfgs[Path(p).parent]},True))
-    lookup = {(r["category"],r["adapter"]["r"],r["adapter"]["d"]):r for r in rows}
-    monkeypatch.setattr(tv1,"read_valid_result",lambda p,c: lookup[c["config"]["category"],
-                         c["config"]["adapter"]["r"],c["config"]["adapter"]["d"]])
-    return path,record,cfgs,rows
-
-
-def test_lock_replays_all72_with_predeclared_tie_break(selection_fixture):
-    path,record,_,rows = selection_fixture
-    assert g2.validate_adapter_selection(path) == record
-    assert record["payload"]["selected_pair"] == {"r":32,"d":128}
-    assert len(rows) == 72
-
-
-@pytest.mark.parametrize("failure",["71runs","checksum","pair","fixture","budget","missing"])
-def test_invalid_selection_evidence_blocked(selection_fixture,failure):
-    path,record,cfgs,rows = selection_fixture
-    if failure == "71runs":
-        record["payload"]["valid_runs"] = 71
-    elif failure == "pair":
-        record["payload"]["selected_pair"] = {"r":128,"d":384}
-    elif failure == "fixture":
-        rows[0]["verification_scope"] = "fixture"
-    elif failure == "budget":
-        cfgs[next(iter(cfgs))]["training"]["epochs"] = 1
-    elif failure == "missing":
-        path.unlink()
-    if failure != "missing":
-        record["sha256"] = "0"*64 if failure == "checksum" else g2.sha256_json(record["payload"])
-        g2.write_metrics_json(record,path)
-    with pytest.raises(g2.Blocked):
-        g2.validate_adapter_selection(path)
 
 
 def test_resume_checks_native_files_and_input_signature(tmp_path):
@@ -370,7 +430,7 @@ def test_complete_evaluation_pipeline_cpu_fixture_never_accepted(trained,tmp_pat
         model.decoder.load_state_dict(payload["model_state"],strict=True)
         return model.eval()
     monkeypatch.setattr(g2,"restore_model",fixture_restorer)
-    result = g2.evaluate_category(args,"E1","rice",None)
+    result = g2.evaluate_category(args,"E1","rice")
     assert result["status"] == "CPU_PASS" and result["verification_scope"] == "fixture"
     assert not result["acceptance_eligible"] and result["n_samples"] == 7
     assert result["dev_seed"] == trained["cfg"]["training"]["dev_seed"]
@@ -383,27 +443,11 @@ def test_complete_evaluation_pipeline_cpu_fixture_never_accepted(trained,tmp_pat
     saved = valid_result()
     monkeypatch.setattr(g2,"completed_result",lambda *a: saved)
     monkeypatch.setattr(g2,"restore_model",lambda *a: pytest.fail("Valid resume must not load/infer again"))
-    assert g2.evaluate_category(args,"E1","rice",None) == saved
-
-
-def test_main_e2_config_bound_to_the_original_screen(selection_fixture,monkeypatch):
-    path,selection,cfgs,_ = selection_fixture
-    screen = deepcopy(next(iter(cfgs.values())))
-    screen["adapter"].update(selection["payload"]["selected_pair"])
-    main = deepcopy(screen)
-    main.update(stage="E2",selection_sha256=selection["sha256"])
-    monkeypatch.setattr(g2,"load_checkpoint_payload",lambda *a,**kw: (
-        dict(config=screen,metadata=dict(decoder_initial_sha256="unit init")),True))
-    payload = dict(config=main,metadata=dict(decoder_initial_sha256="unit init"))
-    g2.validate_e2_study(payload,selection,path)
-    main["training"]["seed"] = 42
-    with pytest.raises(g2.Blocked,match="locked screening study"):
-        g2.validate_e2_study(payload,selection,path)
+    assert g2.evaluate_category(args,"E1","rice") == saved
 
 
 def test_preflight_blocks_protocol_mismatch_before_e2_inference(tmp_path,monkeypatch):
-    monkeypatch.setattr(g2,"validate_adapter_selection",lambda *a: {})
-    monkeypatch.setattr(g2,"evaluate_category",lambda args,exp,cat,sel: (
+    monkeypatch.setattr(g2,"evaluate_category",lambda args,exp,cat: (
         dict(status="READY",pair_protocol_sha256="E1 protocol") if exp == "E1"
         else pytest.fail("Different E2 protocol must be rejected before inference")))
     monkeypatch.setattr(g2,"prepare_job",lambda *a: (None,None,None,None,{"scientific_protocol":"other protocol"}))
