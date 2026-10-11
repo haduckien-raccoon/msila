@@ -99,7 +99,8 @@ def predict_native_e4(model, image, cfg, device):
         logits = model(batch)
         if logits.shape != (len(views), 1, 512, 512) or not torch.isfinite(logits).all():
             raise ValueError("E4 native inference requires finite [B,1,512,512] logits")
-        maps.extend(logits.sigmoid()[:, 0].cpu())
+        probability_logits = logits.float() if cfg['evaluation'].get('probability_fp32', False) else logits
+        maps.extend(probability_logits.sigmoid()[:, 0].cpu())
     result = stitch_tiles_hann(maps, records, (h, w), local_size=512)
     if result.shape != (h, w) or not torch.isfinite(result).all():
         raise ValueError("E4 native Hann stitching failed")

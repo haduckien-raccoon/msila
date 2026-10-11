@@ -70,6 +70,16 @@ def train_main(context, pools, output_dir, *, device, resume=False, model_factor
                                on_epoch=on_epoch, reuse_checkpoint=reuse_checkpoint)
 
 
+def train_fixed(context, pools, output_dir, *, device, resume=False, model_factory=None,
+                on_epoch=None, on_checkpoint=None):
+    """Explicit user-fixed E5 experiment; never creates or claims a D10 lock."""
+    from src.train.g2_fixed import require_fixed_context
+    require_fixed_context(context)
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume,
+                               experiment='E5', model_factory=model_factory,
+                               on_epoch=on_epoch, on_checkpoint=on_checkpoint)
+
+
 def _require_debug_context(context, experiment):
     """E3/E4 technical smoke is independent of the obsolete D6 selection lock."""
     cfg = context["config"]
@@ -204,6 +214,11 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     """
     cfg, digest = context["config"], context["config_sha256"]
     main = cfg.get("mode") in {"main", "main_smoke"}
+    fixed = cfg.get('mode') in {'fixed', 'fixed_smoke'}
+    export_native = main or fixed
+    if fixed:
+        from src.train.g2_fixed import require_fixed_context
+        require_fixed_context(context)
     if main:
         from src.train.g2_main import require_main_context
         require_main_context(context)
@@ -223,7 +238,8 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     elif (output_dir / "metrics.json").exists():
         raise RuntimeError("BLOCKED: metrics exist without a resumable checkpoint")
 
-    seed_everything(t["seed"], deterministic=True, warn_only=False)
+    seed_everything(t["seed"], deterministic=t.get('deterministic_algorithms', True) if fixed else True,
+                    warn_only=False)
     if experiment == "E5" or main:
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
@@ -251,10 +267,20 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     native_train = G1NativeDataset(pools["train"], cfg["synthetic_protocol"],
                                    seed=t["seed"], role="train",
                                    variants=d["train_variants_per_image"], fixed=False)
+    if fixed:
+        from src.train.g2_fixed_data import IlluminatedNativeDataset
+        native_train = IlluminatedNativeDataset(pools['train'], cfg['synthetic_protocol'],
+                                                seed=t['seed'], role='train',
+                                                variants=d['train_variants_per_image'], fixed=False,
+                                                illumination=cfg['illumination'])
     tiles = G1TileDataset(native_train, tile_size=d["tile_size"], overlap=d["overlap"])
+    local_tiles = tiles
     if experiment in {"E4", "E5"}:
         tiles = PairedG2Tiles(tiles, context_size=cfg["paired_views"]["context_size"])
     dev_kwargs = {"predict_fn": predict_native_e4} if experiment in {"E4", "E5"} else {}
+    if fixed:
+        from src.train.g2_fixed import predict_fixed_native, precision_dtype
+        dev_kwargs = {'predict_fn': predict_fixed_native}
     native_dev = G1NativeDataset(pools["dev"], cfg["synthetic_protocol"],
                                  seed=t["dev_seed"], role="dev",
                                  variants=d["dev_variants_per_image"], fixed=True)
@@ -263,6 +289,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         optimizer=optimizer, device=device, frozen_modules={"backbone": model.extractor},
         max_grad_norm=t["max_grad_norm"],
         model_forward=paired_model_forward if experiment in {"E4", "E5"} else None,
+        amp_dtype=precision_dtype(t['precision']) if fixed else None,
     )
     history, best, best_epoch, step = [], None, None, 0
     start_epoch, start_batch, latest_dev, dev_step = 0, 0, None, 0
@@ -286,6 +313,8 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         restored = resume_training_checkpoint(last_path, model=trainable, optimizer=optimizer,
                                               expected_config=cfg, map_location=device)
         state = restored.metadata
+        if fixed:
+            trainer.scaler.load_state_dict(state['grad_scaler'])
         history, best, best_epoch = state["history"], state["best_metric"], state["best_epoch"]
         start_epoch, start_batch, step = state["next_epoch"], state["next_batch"], restored.global_step
         latest_dev = state["dev"]
@@ -331,6 +360,10 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         if main:
             result.update(git_sha=cfg["git_sha"], run_id=cfg["run_id"],
                           selection_sha256=cfg["selection_sha256"], main_protocol_sha256=cfg["study_sha256"])
+        if fixed:
+            result.update(grad_scaler=trainer.scaler.state_dict(), selection_status=cfg['selection_status'],
+                          execution_gpu=torch.cuda.get_device_name(device) if device.type == 'cuda' else None,
+                          precision=t['precision'])
         return result
 
     def checkpoint(path, epoch, next_epoch, next_batch):
@@ -355,8 +388,13 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
 
     for epoch in range(start_epoch, t["epochs"]):
         native_train.set_epoch(epoch)
-        batches = DataLoader(tiles, batch_size=t["batch_size"], shuffle=True,
+        sampler = None
+        if fixed:
+            from src.train.g2_fixed_data import NativeTileSampler
+            sampler = NativeTileSampler(local_tiles, t['seed'] + epoch)
+        batches = DataLoader(tiles, batch_size=t["batch_size"], shuffle=sampler is None, sampler=sampler,
                              num_workers=d["num_workers"], collate_fn=paired_tile_collate if experiment in {"E4", "E5"} else g1_tile_collate,
+                             pin_memory=fixed and device.type == 'cuda',
                              generator=torch.Generator().manual_seed(t["seed"] + epoch))
         next_batch = start_batch if epoch == start_epoch else 0
         for batch_index, batch in enumerate(batches):
@@ -374,7 +412,10 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                                                for p in model.extractor.parameters()):
                 raise RuntimeError("Frozen backbone contract violated")
             for name, module in trainable.items():
-                if not all(p.grad is not None and torch.isfinite(p.grad).all() for p in module.parameters()):
+                # The shared trainer already checks every gradient for NaN/Inf.
+                # Avoid the second per-parameter GPU sync in the fixed run.
+                if not all(p.grad is not None and (fixed or torch.isfinite(p.grad).all())
+                           for p in module.parameters()):
                     raise RuntimeError(f"{name} gradients are absent or nonfinite")
             entry["seconds"] = time.monotonic() - tick
             history.append(entry)
@@ -427,12 +468,13 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     if best_path.is_file():
         payload, _ = load_checkpoint_payload(best_path, require_sha256=True)
         trainable.load_state_dict(payload["model_state"], strict=True)
-        if main:
+        if export_native:
             # Observe the existing native inference/metric pass; no metric reimplementation.
             from scripts.eval_g2 import CaptureNative, dice_from_exports
             native_dir = output_dir / "native_dev"
             capture = CaptureNative(native_dev, native_dir,
-                                    predict_fn=predict_native_e4 if experiment in {"E4", "E5"} else predict_native)
+                                    predict_fn=(predict_fixed_native if fixed else
+                                                predict_native_e4 if experiment in {"E4", "E5"} else predict_native))
             best_dev = evaluate_dev(model, native_dev, cfg, device, native_dir, predict_fn=capture)
             save_json(capture.rows, native_dir / "native_maps.json")
             best_dev.update(synthetic_dice=dice_from_exports(native_dir, capture.rows, cfg["category"],
@@ -477,17 +519,20 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
             result["debug_pair"] = cfg["debug_pair"]
         elif experiment == "E5":
             result.update(fusion_updated=fusion_updated, git_sha=cfg["git_sha"], run_id=cfg["run_id"],
-                          screening_budget=cfg["screening_budget"])
+                          **({'fixed_budget': cfg['fixed_budget']} if fixed else
+                             {'screening_budget': cfg['screening_budget']}))
             save_json(history, output_dir / "loss_history.json")
         if experiment in {"E4", "E5"}:
             result.update(context_aligned=True, adapter_sharing="shared_across_views_per_layer",
                           projection_sharing="shared_across_views_per_layer",
                           pair_strategy=model.pair_strategy)
-    if main:
+    if export_native:
         save_json(history, output_dir / "loss_history.json")
-        result.update(git_sha=cfg["git_sha"], run_id=cfg["run_id"], main_budget=cfg["main_budget"],
-                      selection_sha256=cfg["selection_sha256"], selection_status="locked_joint_D10",
-                      scientific_evidence=complete and cfg["mode"] == "main"
+        result.update(git_sha=cfg["git_sha"], run_id=cfg["run_id"],
+                      **({'fixed_budget': cfg['fixed_budget'], 'illumination': cfg['illumination']} if fixed else
+                         {'main_budget': cfg['main_budget']}),
+                      selection_sha256=cfg["selection_sha256"], selection_status=cfg['selection_status'],
+                      scientific_evidence=complete and cfg["mode"] in {'main', 'fixed'}
                       and result["verification_scope"] == "real_pretrained" and device.type == "cuda",
                       reuse_g1_checkpoint=str(reuse_checkpoint) if reuse_checkpoint else None,
                       reuse_g1_sha256=file_sha256(reuse_checkpoint) if reuse_checkpoint else None,
@@ -495,6 +540,6 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                                       "manifest_sha256": file_sha256(native_dir / "native_maps.json"),
                                       "qa_sha256": file_sha256(native_dir / "qa_report.json")} if best_dev is not None else None)
     save_json(result, output_dir / "metrics.json")
-    if main:
+    if export_native:
         (output_dir / "metrics.json.sha256").write_text(file_sha256(output_dir / "metrics.json") + "\n")
     return result

@@ -51,7 +51,7 @@ def save_public_example(image, mask, score, record, directory):
 
 
 @torch.no_grad()
-def evaluate_public(model, cfg, device, output, *, example_limit=8):
+def evaluate_public(model, cfg, device, output, *, example_limit=8, predict_fn=predict_native):
     """All public images, exact native geometry, existing disk-backed AU-PRO."""
     records = test_records(cfg)
     output = Path(output); output.mkdir(parents=True, exist_ok=True)
@@ -67,7 +67,7 @@ def evaluate_public(model, cfg, device, output, *, example_limit=8):
             raise ValueError(f'Native TEST_PUBLIC image/mask shape mismatch: {record.image_path}: {hw} != {mask.shape}')
         if not record.is_normal and not mask.any():
             raise ValueError(f'Abnormal TEST_PUBLIC mask is empty: {record.mask_path}')
-        score = predict_native(model, image, cfg, device).numpy()
+        score = predict_fn(model, image, cfg, device).numpy()
         sample_id = f'{index:05d}_{Path(record.image_path).stem}'
         qa = build_anomaly_map_qa_report([dict(anomaly_map=score, gt_mask=mask, meta=dict(
             image_id=sample_id, category=cfg['category'], split='test_public', original_hw=list(hw),

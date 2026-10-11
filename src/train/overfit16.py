@@ -494,6 +494,7 @@ class Overfit16Trainer:
         frozen_modules: Mapping[str, nn.Module] | None = None,
         threshold: float = 0.5,
         max_grad_norm: float | None = None,
+        amp_dtype: torch.dtype | None = None,
     ) -> None:
         if not isinstance(model, nn.Module):
             raise TypeError("model must be nn.Module")
@@ -518,6 +519,12 @@ class Overfit16Trainer:
         self.frozen_modules = dict(frozen_modules or {})
         self.threshold = float(threshold)
         self.max_grad_norm = max_grad_norm
+        if amp_dtype not in {None, torch.float16, torch.bfloat16}:
+            raise ValueError('amp_dtype must be None, float16 or bfloat16')
+        if amp_dtype is not None and self.device.type != 'cuda':
+            raise ValueError('Mixed precision training requires CUDA')
+        self.amp_dtype = amp_dtype
+        self.scaler = torch.amp.GradScaler('cuda', enabled=amp_dtype == torch.float16)
 
         self.model.to(self.device)
         self.criterion.to(self.device)
@@ -555,7 +562,8 @@ class Overfit16Trainer:
 
         self.optimizer.zero_grad(set_to_none=True)
 
-        output = self.model_forward(self.model, batch)
+        with torch.autocast(self.device.type, dtype=self.amp_dtype, enabled=self.amp_dtype is not None):
+            output = self.model_forward(self.model, batch)
         logits = _extract_logits(output)
 
         if tuple(logits.shape) != tuple(target.shape):
@@ -564,12 +572,23 @@ class Overfit16Trainer:
                 f"logits={tuple(logits.shape)}, mask={tuple(target.shape)}"
             )
 
-        criterion_output = self.criterion(logits, target)
+        # Keep BCE and the tiny-mask Dice reduction in FP32 under AMP.
+        criterion_output = self.criterion(logits.float() if self.amp_dtype is not None else logits, target)
         loss, bce, dice_loss, positive_samples = _loss_terms(criterion_output)
 
-        loss.backward()
+        self.scaler.scale(loss).backward()
+        self.scaler.unscale_(self.optimizer)
 
-        grad_norm_before_clip = _gradient_l2_norm(self.optimizer)
+        try:
+            grad_norm_before_clip = _gradient_l2_norm(self.optimizer)
+        except OverfitTrainerError as exc:
+            if ('NaN/Inf' in str(exc) and self.scaler.is_enabled()
+                    and self.scaler.get_scale() > 1 and torch.isfinite(loss)):
+                # FP16 overflow: reduce the scale and retry the SAME batch before
+                # counting an optimizer update. The FP32/default path is unchanged.
+                self.scaler.update()
+                return self.train_step(batch, step=step, epoch=epoch)
+            raise
 
         if self.max_grad_norm is not None:
             params = [
@@ -580,7 +599,8 @@ class Overfit16Trainer:
             ]
             torch.nn.utils.clip_grad_norm_(params, float(self.max_grad_norm))
 
-        self.optimizer.step()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
         counts = _confusion_counts(
             logits.detach(),

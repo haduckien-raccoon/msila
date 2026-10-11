@@ -907,13 +907,23 @@ def sync_tree(source, target):
         copy_atomic(path, destination)
 
 
-def good_member_path(member, category):
+def good_member_path(member, category, *, include_test_public=False):
     parts = PurePosixPath(member.name).parts
     if (PurePosixPath(member.name).is_absolute() or ".." in parts or "\\" in member.name
             or member.issym() or member.islnk()):
         raise ValueError(f"BLOCKED: unsafe archive member: {member.name}")
     if not member.isfile():
         return None
+    if include_test_public:
+        # Preserve the public split's defect/GT hierarchy for the existing loader.
+        for index, part in enumerate(parts):
+            if part.lower() == 'test_public':
+                prefix = parts[:index]
+                if any(p in MVTEC_AD2_CATEGORIES and p != category for p in prefix):
+                    raise ValueError(f'BLOCKED: wrong category in {member.name}')
+                if any(p.lower() in {'ground_truth', 'masks', 'mask', 'gt'} for p in prefix):
+                    return Path(category, 'ground_truth', 'TEST_PUBLIC', *parts[index + 1:])
+                return Path(category, 'TEST_PUBLIC', *parts[index + 1:])
     for index, part in enumerate(parts):
         if part.lower() in {"train", "validation"} and index + 1 < len(parts) and parts[index + 1].lower() == "good":
             prefix = parts[:index]
@@ -923,7 +933,7 @@ def good_member_path(member, category):
     return None
 
 
-def prepare_archives(archive_dir, archive_names, local_archives, data_root):
+def prepare_archives(archive_dir, archive_names, local_archives, data_root, *, include_test_public=False):
     """Copy ALL eight Drive archives locally before opening ANY for extraction."""
     if set(archive_names) != set(MVTEC_AD2_CATEGORIES) or len(set(archive_names.values())) != 8:
         raise ValueError("BLOCKED: specify eight distinct category archives")
@@ -942,7 +952,7 @@ def prepare_archives(archive_dir, archive_names, local_archives, data_root):
         names, destinations = [], set()
         with tarfile.open(path, "r:gz") as archive:
             for member in archive:
-                relative = good_member_path(member, category)
+                relative = good_member_path(member, category, include_test_public=include_test_public)
                 if relative is None:
                     continue
                 if relative in destinations:

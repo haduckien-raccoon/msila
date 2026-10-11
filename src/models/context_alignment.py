@@ -331,7 +331,9 @@ class ContextToLocalAligner(nn.Module):
         ones = torch.ones_like(x_local)
 
         points = torch.stack((x_local, y_local, ones), dim=-1)  # [B,H,W,3]
-        mapped = torch.einsum("bij,bhwj->bhwi", l2c, points)
+        # Geometry stays FP32/FP64 even when the feature forward uses AMP.
+        with torch.autocast(context_feature.device.type, enabled=False):
+            mapped = torch.einsum("bij,bhwj->bhwi", l2c, points)
         denom = mapped[..., 2]
 
         eps = torch.finfo(matrix_dtype).eps * 32
@@ -364,7 +366,11 @@ class ContextToLocalAligner(nn.Module):
                     f"(tolerance={tol}). Check geometry metadata."
                 )
 
-        # grid_sample expects grid and input to use compatible floating dtypes.
+        # AMP grid_sample uses FP32; keep exact pixel-center coordinates rather
+        # than quantizing them to BF16/FP16 before that promotion.
+        if torch.is_autocast_enabled(context_feature.device.type):
+            return grid
+        # Without autocast grid_sample needs matching input/grid dtypes.
         return grid.to(dtype=context_feature.dtype)
 
     def _validate_feature_set(self, context_features: Mapping[str, Tensor]) -> None:
@@ -422,6 +428,9 @@ class ContextToLocalAligner(nn.Module):
                 padding_mode=self.padding_mode,
                 align_corners=False,
             )
+        # CUDA autocast executes grid_sample in FP32. Projection expects the
+        # same feature dtype for Local and aligned Context sources.
+        aligned_packed = aligned_packed.to(dtype=packed.dtype)
         aligned = torch.split(aligned_packed, channels, dim=1)
 
         out = {key: value for key, value in zip(_OUTPUT_KEYS, aligned)}
