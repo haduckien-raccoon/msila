@@ -31,6 +31,7 @@ __all__ = [
     "ViewGeometryMeta",
     "build_view_meta",
     "build_view_meta_from_transform_meta",
+    "build_padded_view_meta",
     "crop_resize_matrix",
     "transform_points_xy",
     "transform_box_xyxy",
@@ -343,6 +344,55 @@ def build_view_meta_from_transform_meta(
         context_input_hw=context_input_hw,
         validate=validate,
     )
+
+
+def build_padded_view_meta(
+    *,
+    source_hw: Sequence[int],
+    local_box_xyxy: Sequence[int],
+    context_box_xyxy: Sequence[int],
+    local_input_hw: Sequence[int] = (512, 512),
+    context_input_hw: Sequence[int] = (512, 512),
+) -> Dict[str, Tensor]:
+    """Describe boundary tiles in a virtual padded-native coordinate frame.
+
+    Native crop boxes keep their full FOV, including negative origins. Translate
+    both boxes by the SAME left/top padding before invoking the existing strict
+    builder; never clip or shift Context separately. ``source_hw`` in the returned
+    geometry is the padded canvas size. ``native_hw``, ``padding_ltrb`` and the
+    native/view transforms retain the exact original-image coordinates.
+    Padding describes geometry only; image/mask padding is performed by tiling.
+    """
+    h, w = _as_hw(source_hw, "source_hw")
+    local = _as_box(local_box_xyxy, "local_box_xyxy")
+    context = _as_box(context_box_xyxy, "context_box_xyxy")
+    if min(local[2], w) <= max(local[0], 0) or min(local[3], h) <= max(local[1], 0):
+        raise ValueError("Local crop must intersect the native image")
+    left = max(0, -min(local[0], context[0]))
+    top = max(0, -min(local[1], context[1]))
+    right = max(0, max(local[2], context[2]) - w)
+    bottom = max(0, max(local[3], context[3]) - h)
+    shift = lambda box: (box[0]+left, box[1]+top, box[2]+left, box[3]+top)
+    meta = build_view_meta(
+        source_hw=(h+top+bottom, w+left+right),
+        local_box_xyxy=shift(local), context_box_xyxy=shift(context),
+        local_input_hw=local_input_hw, context_input_hw=context_input_hw,
+    )
+    native_to_source = torch.tensor([[1., 0., left], [0., 1., top], [0., 0., 1.]], dtype=torch.float64)
+    geometry = meta.as_tensor_dict()
+    geometry.update(
+        native_hw=torch.tensor([h, w], dtype=torch.int64),
+        padding_ltrb=torch.tensor([left, top, right, bottom], dtype=torch.int64),
+        local_native_xyxy=torch.tensor(local, dtype=torch.int64),
+        context_native_xyxy=torch.tensor(context, dtype=torch.int64),
+        native_to_source=native_to_source,
+        source_to_native=torch.linalg.inv(native_to_source),
+        native_to_local=meta.source_to_local @ native_to_source,
+        native_to_context=meta.source_to_context @ native_to_source,
+        local_to_native=torch.linalg.inv(native_to_source) @ meta.local_to_source,
+        context_to_native=torch.linalg.inv(native_to_source) @ meta.context_to_source,
+    )
+    return geometry
 
 
 def validate_view_meta(meta: ViewGeometryMeta, *, atol: float = 1e-9) -> None:
