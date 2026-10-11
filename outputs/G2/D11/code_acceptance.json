@@ -1,0 +1,82 @@
+{
+  "version": "g2_d11_tv1_code_acceptance_v1",
+  "task": "D11-TV1 / PROMPT 13",
+  "branch": "g2/member1",
+  "base_git_sha": "f345c5f0a5f91223d65e31964b58d479dfa965ad",
+  "code_status": "PASS",
+  "experimental_status": "BLOCKED / NOT RUN",
+  "real_pass": 0,
+  "expected_logical_cells": 36,
+  "completed_physical_runs": 0,
+  "planned_physical_runs_with_average_reuse": 32,
+  "blocked_reasons": [
+    "No joint_selection_lock.json with audited 360 D10 results in workspace",
+    "Colab GPU training not executed; local GPU was not used"
+  ],
+  "gpu_status": "NOT RUN",
+  "peak_vram": null,
+  "scientific_metrics_created": false,
+  "selection_lock_created": false,
+  "evaluator_modified": false,
+  "integration_merge_performed": false,
+  "notebook": {
+    "status": "PASS",
+    "cells": 19,
+    "checks": [
+      "nbformat",
+      "Python AST",
+      "embedded subprocess Python AST",
+      "empty outputs"
+    ]
+  },
+  "tests": [
+    {
+      "artifact": "regression_tests.xml",
+      "tests": 663,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4,
+      "seconds": 212.032
+    },
+    {
+      "artifact": "d11_targeted_tests.xml",
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 76.821
+    },
+    {
+      "artifact": "g1_rng_reuse_tests.xml",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 3.977
+    }
+  ],
+  "prepare_command": [
+    ".venv/bin/python",
+    "scripts/run_g2.py",
+    "--stage",
+    "main",
+    "--prepare",
+    "--device",
+    "cpu"
+  ],
+  "prepare_expected_exit": 2,
+  "prepare_actual_exit": 2,
+  "source_sha256": {
+    "docs/G2_CONTRACT.md": "72e52b5d95a8306b0ffd20b0482be12f14e742dffe82f11d20d2932bd8e70b34",
+    "configs/g2_main.yaml": "57362eeaf05acdfa72ce28455920ac9ae908eb068362c7d0db1d842e870653de",
+    "configs/g2_joint_search.yaml": "c1643e6cb9a865e142711ca80efbb9ed850673ce2cec54c9fb5475a2678e7441",
+    "configs/g2_experiments.yaml": "e0c0e9a1736357ed0d01f2ed65f156455ee716d19693e59483b8329a67c0beb9",
+    "scripts/run_g2.py": "2f44f121d0f5b51dbc0d7174d6b8def42920eefd0e7063cc4c37c3530dae7856",
+    "src/train/g2_main.py": "b2a7dce4cc58e4855c8c26f2478be4200a42b6245c42e2031c607401e2a1010d",
+    "src/train/g2_e2.py": "6863d87566d276b8acca10c7f93d6a29317abb64eeefe2bdc94fd219c0db2269",
+    "src/models/msila.py": "4e94d6acd6a95867c4047624e0140e8b959e1676975e921aa36c7544d6adfdea",
+    "notebooks/G2_03_Training.ipynb": "8c7954970384ba2ba37d70da13c11a8bc69520636ffb35ed269726c47c8c7491",
+    "tests/test_g2_tv1_d11.py": "cf8e8b92dd15eff69c9ad7b1b9fed0c9ddcdb2583e35b0232987b3a42b76e55f",
+    "tests/test_g2_tv1_d10.py": "7e22678f826e2a9e2066e5d031d181a9e0a263eedf88e5d5419d7ede9435cd31"
+  }
+}

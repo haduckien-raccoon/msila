@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="3.977" timestamp="2026-10-11T15:08:03.678927+07:00" hostname="Raccoon2005"><testcase classname="tests.test_g2_tv1_d11" name="test_g1_same_scientific_protocol_is_reused_without_optimizer_updates" time="2.296" /></testsuite></testsuites>

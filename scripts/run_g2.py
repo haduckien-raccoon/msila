@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G2 TV1: D6 preflight, E3/E4 preparation/debug; main awaits D10.
+"""G2 TV1: technical preflight/debug, D10 screening and locked D11 main training.
 
 Examples (paths/checkpoints configured in YAML):
   python scripts/run_g2.py --stage adapter_preflight --device cpu
@@ -88,7 +88,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/g2_runner.yaml")
     parser.add_argument("--stage", required=True,
-                        choices=("adapter_preflight", "adapter_screen", "fusion_preflight", "joint_search", "E2", "E3", "E4", "E5"))
+                        choices=("adapter_preflight", "adapter_screen", "fusion_preflight", "joint_search", "main", "E2", "E3", "E4", "E5"))
     parser.add_argument("--debug-pair", nargs=2, type=int, metavar=("R", "D"),
                         help="E2/E3/E4 debug: explicit provisional widths; no selection evidence")
     parser.add_argument("--prepare", action="store_true",
@@ -100,20 +100,24 @@ def parse_args(argv=None):
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--backbone", choices=tuple(BACKBONES))
     parser.add_argument("--owner", choices=("tv1", "tv2"), default="tv1")
-    parser.add_argument("--run-id", help="D10 protocol namespace; changing a budget creates a new protocol directory")
+    parser.add_argument("--run-id", help="D10/D11 protocol namespace; changed settings create a new protocol directory")
     parser.add_argument("--r", type=int)
     parser.add_argument("--d", type=int)
-    parser.add_argument("--fusions", nargs="+", help="D10 candidate filter; average/weighted aliases accepted")
-    parser.add_argument("--max-jobs", type=int, help="D10: bound jobs per invocation; coverage still retains all 180 cells")
-    parser.add_argument("--drive-output", help="D10 Drive mirror; sync after epochs, job completion and errors")
-    parser.add_argument("--preflight", action="store_true", help="D10 asset/config preflight without training")
-    parser.add_argument("--report-only", action="store_true", help="D10 audit existing coverage without training")
+    parser.add_argument("--fusions", nargs="+", help="D10/D11 Fusion job filter; average/weighted aliases accepted")
+    parser.add_argument("--max-jobs", type=int, help="D10/D11: bound physical jobs; coverage retains all owner cells")
+    parser.add_argument("--drive-output", help="D10/D11 Drive mirror; sync after epochs, job completion and errors")
+    parser.add_argument("--preflight", action="store_true", help="D10/D11 asset/config preflight without training")
+    parser.add_argument("--report-only", action="store_true", help="D10/D11 audit existing coverage without training")
+    parser.add_argument("--joint-lock", help="D11: immutable joint_selection_lock.json")
+    parser.add_argument("--tv1-manifest", help="D11: original TV1 D10 180-cell manifest and evidence")
+    parser.add_argument("--tv2-manifest", help="D11: original TV2 D10 180-cell manifest and evidence")
+    parser.add_argument("--experiments", nargs="+", choices=("E1", "E2", "E3", "E4", "E5"), help="D11 job filter")
     for flag in ("data-root", "repo-dir", "weights", "output-root"):
         parser.add_argument(f"--{flag}")
     args = parser.parse_args(argv)
     if args.inference and args.stage != "E4":
         parser.error("--inference is supported for --stage E4")
-    if args.prepare and (args.stage not in {"E3", "E4", "joint_search"} or args.smoke or args.inference or args.resume):
+    if args.prepare and (args.stage not in {"E3", "E4", "joint_search", "main"} or args.smoke or args.inference or args.resume):
         parser.error("--prepare requires --stage E3/E4/joint_search and cannot train, infer or resume")
     if args.debug_pair and not (args.stage in {"E2", "E3", "E4"} and (args.smoke or args.prepare)):
         parser.error("--debug-pair requires --stage E2/E3/E4 --smoke, or --stage E3/E4 --prepare")
@@ -123,9 +127,13 @@ def parse_args(argv=None):
         parser.error("--max-jobs must be positive")
     if sum((args.prepare, args.preflight, args.report_only, args.smoke)) > 1:
         parser.error("Use at most one of --prepare/--preflight/--report-only/--smoke")
-    if args.stage != "joint_search" and any((args.preflight, args.report_only, args.run_id,
+    if args.stage not in {"joint_search", "main"} and any((args.preflight, args.report_only, args.run_id,
                                               args.r is not None, args.fusions, args.max_jobs, args.drive_output)):
         parser.error("Joint-search flags require --stage joint_search")
+    if args.stage != "main" and any((args.joint_lock, args.tv1_manifest, args.tv2_manifest, args.experiments)):
+        parser.error("Main flags require --stage main")
+    if args.stage == "main" and args.r is not None:
+        parser.error("D11 r/d come exclusively from the joint lock; no overrides")
     return args
 
 
@@ -744,6 +752,9 @@ def summarize(study, stage, outcomes, *, smoke, lock=None):
 def main(argv=None):
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.stage == "main":
+        from src.train.g2_main import run_from_cli
+        return run_from_cli(args)
     if args.stage == "joint_search":
         from src.train.g2_joint_search import run_from_cli
         return run_from_cli(args)

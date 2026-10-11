@@ -1,0 +1,30 @@
+{
+  "task": "D11",
+  "owner": "tv1",
+  "categories": [
+    "can",
+    "fabric",
+    "fruit_jelly",
+    "rice"
+  ],
+  "git_sha": "f345c5f0a5f91223d65e31964b58d479dfa965ad",
+  "status": "BLOCKED",
+  "reason": "BLOCKED: missing joint_selection_lock.json: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/selection/joint_selection_lock.json",
+  "gpu_status": "NOT RUN",
+  "selection_performed": false,
+  "main_budget_source": "original D10 training_protocol.json; unresolved",
+  "settings": {
+    "version": "g2_d11_runner_v1",
+    "base_config": "configs/g2_runner.yaml",
+    "output_root": "outputs/G2/D11",
+    "run_id": "main_v1",
+    "joint_lock": "outputs/G2/D10/selection/joint_selection_lock.json",
+    "tv1_manifest": null,
+    "tv2_manifest": null,
+    "reuse_e4_average": true,
+    "g1_checkpoints": {},
+    "drive_sync": "epoch_and_job_end",
+    "oom_policy": "record_failure_no_automatic_batch_change",
+    "owner": "tv1"
+  }
+}

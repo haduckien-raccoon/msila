@@ -399,13 +399,13 @@ def build_g2_model(
             model_name=backbone["name"], norm=backbone.get("norm", True),
             feature_mode="multilayer" if experiment in {"E3", "E4", "E5"} else "deepest", check_finite=True,
         )
-    elif (experiment not in {"E2", "E5"} or extractor.model_name != backbone["name"]
-          or extractor.feature_mode != ("multilayer" if experiment == "E5" else "deepest") or extractor.training
+    elif (extractor.model_name != backbone["name"]
+          or extractor.feature_mode != ("multilayer" if experiment in {"E3", "E4", "E5"} else "deepest") or extractor.training
           or extractor.repo_dir != Path(backbone["repo_dir"]).resolve()
           or Path(extractor.weights).resolve() != Path(backbone["weights"]).resolve()
           or extractor.norm != backbone.get("norm", True)
           or any(p.requires_grad or p.grad is not None for p in extractor.parameters())):
-        raise ValueError("Only a matching frozen/eval E2 deepest or E5 multilayer extractor may be reused")
+        raise ValueError("Only a matching frozen/eval extractor with the experiment's feature mode may be reused")
     hidden_channels = resolved["decoder"]["hidden_channels"]
     deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
     if experiment == "E1":

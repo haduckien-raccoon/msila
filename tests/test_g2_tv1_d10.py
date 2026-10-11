@@ -48,7 +48,7 @@ def context_for(study, fusion="attention"):
 
 def test_user_budget_and_separate_main_budget_are_explicit(settings_path):
     declared = yaml.safe_load((ROOT / "configs/g2_joint_search.yaml").read_text())
-    assert declared["screening_budget"] == dict(epochs=20, batch_size=32, max_steps=None, max_minutes=None)
+    assert declared["screening_budget"] == dict(epochs=10, batch_size=32, max_steps=None, max_minutes=None)
     cfg, _, _, _ = search.load_settings(args_for(settings_path))
     assert cfg["screening_budget"] == dict(epochs=2, batch_size=2, max_steps=4, max_minutes=None)
     assert cfg["main_budget"]["max_steps"] is None
@@ -305,7 +305,7 @@ def test_notebook_valid_empty_outputs_and_orchestration_only():
             assert "Overfit16Trainer" not in cell.source and "loss.backward" not in cell.source
     joined = "\n".join(sources)
     assert "RUN_FULL_SEARCH = False" in joined and "safetensors>=0.8" in joined
-    assert "SCREENING_EPOCHS = 20" in joined and "SCREENING_BATCH_SIZE = 32" in joined
+    assert "SCREENING_EPOCHS = 10" in joined and "SCREENING_BATCH_SIZE = 32" in joined
     assert "prepare_archives" in joined and "--stage','joint_search" in joined
     assert "run_logged" not in joined  # Its timer sync would violate the epoch-only policy.
     output_cells = [source for source in sources if "# @title OUTPUT" in source]

@@ -19,14 +19,14 @@ from src.data.loader import G1NativeDataset, G1TileDataset, g1_tile_collate
 from src.losses.anomaly_loss import AnomalySegmentationLoss
 from src.models.msila import build_g2_model
 from src.models.dinov3_extractor import DINOv3FeatureExtractor
-from src.train.g1_e1 import evaluate_dev, file_sha256, module_sha256
+from src.train.g1_e1 import evaluate_dev, file_sha256, module_sha256, predict_native
 from src.train.g2_context import PairedG2Tiles, paired_tile_collate, paired_model_forward, predict_native_e4
 from src.train.optimizer import build_optimizer
 from src.train.overfit16 import Overfit16Trainer
 from src.train.screen_adapter import enforce_protocol_lock, seed_everything
 from src.train.screen_representation import save_json, save_yaml
 from src.utils.checkpoint import save_training_checkpoint
-from src.utils.resume import load_checkpoint_payload, resume_training_checkpoint
+from src.utils.resume import load_checkpoint_payload, resume_training_checkpoint, restore_rng_state
 
 
 def train_e2(context, pools, output_dir, *, device, resume=False, model_factory=None, on_checkpoint=None):
@@ -58,6 +58,16 @@ def train_e5(context, pools, output_dir, *, device, resume=False, model_factory=
         raise RuntimeError("BLOCKED: E5 smoke is limited to one epoch and two updates")
     return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E5",
                                model_factory=model_factory, on_epoch=on_epoch)
+
+
+def train_main(context, pools, output_dir, *, device, resume=False, model_factory=None, on_epoch=None,
+               reuse_checkpoint=None):
+    """D11 uses the same loop only after the runner has audited the D10 lock."""
+    from src.train.g2_main import require_main_context
+    require_main_context(context)
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume,
+                               experiment=context["config"]["stage"], model_factory=model_factory,
+                               on_epoch=on_epoch, reuse_checkpoint=reuse_checkpoint)
 
 
 def _require_debug_context(context, experiment):
@@ -130,6 +140,8 @@ def infer_e4(context, pools, output_dir, *, device, expected_metrics=None):
 
 def trainable_modules(model, experiment):
     """TV2 can restore this ModuleDict directly from best.pt['model_state']."""
+    if experiment == "E1":
+        return nn.ModuleDict({"decoder": model.decoder})
     if experiment == "E2":
         return nn.ModuleDict({"adapter": model.adapter, "decoder": model.decoder})
     if experiment in {"E3", "E4"}:
@@ -148,8 +160,8 @@ class FrozenE2Factory:
     """
 
     def __init__(self, cfg, *, device, experiment="E2"):
-        if experiment not in {"E2", "E5"}:
-            raise ValueError("Frozen factory supports only E2 or E5")
+        if experiment not in {"E1", "E2", "E3", "E4", "E5"}:
+            raise ValueError("Frozen factory supports E1--E5")
         self.experiment = experiment
         self.seed = cfg["training"]["seed"]
         b = cfg["backbone"]
@@ -160,7 +172,7 @@ class FrozenE2Factory:
             torch.manual_seed(self.seed)
             self.extractor = DINOv3FeatureExtractor(
                 b["repo_dir"], b["weights"], model_name=b["name"], norm=b["norm"],
-                feature_mode="multilayer" if experiment == "E5" else "deepest", check_finite=True,
+                feature_mode="multilayer" if experiment in {"E3", "E4", "E5"} else "deepest", check_finite=True,
             )
             self.initialization_rng = torch.get_rng_state().clone()
         self.extractor.to(device).eval()
@@ -184,16 +196,20 @@ class FrozenE5Factory(FrozenE2Factory):
 
 
 def _train_segmentation(context, pools, output_dir, *, device, resume, experiment,
-                        model_factory=None, on_checkpoint=None, on_epoch=None):
+                        model_factory=None, on_checkpoint=None, on_epoch=None, reuse_checkpoint=None):
     """Complete the declared update budget or save INCOMPLETE for --resume.
 
     Cursor checkpoints keep the final batch of an epoch uncommitted until DEV
     and best.pt are durable. Resuming there evaluates DEV without another step.
     """
     cfg, digest = context["config"], context["config_sha256"]
-    if experiment not in {"E2", "E5"} and (model_factory is not None or on_checkpoint is not None):
+    main = cfg.get("mode") in {"main", "main_smoke"}
+    if main:
+        from src.train.g2_main import require_main_context
+        require_main_context(context)
+    if not main and experiment not in {"E2", "E5"} and (model_factory is not None or on_checkpoint is not None):
         raise ValueError("Colab callbacks are supported only for E2 Adapter screening")
-    if experiment in {"E3", "E4"}:
+    if not main and experiment in {"E3", "E4"}:
         _require_debug_context(context, experiment)
     t, d = cfg["training"], cfg["data"]
     output_dir, device = Path(output_dir), torch.device(device)
@@ -208,13 +224,13 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         raise RuntimeError("BLOCKED: metrics exist without a resumable checkpoint")
 
     seed_everything(t["seed"], deterministic=True, warn_only=False)
-    if experiment == "E5":
+    if experiment == "E5" or main:
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
     model = (build_g2_model(cfg, experiment=experiment) if model_factory is None
              else model_factory(cfg)).to(device)
     trainable = trainable_modules(model, experiment)
-    adapter_module = model.adapters if experiment in {"E3", "E4", "E5"} else model.adapter
+    adapter_module = model.adapters if experiment in {"E3", "E4", "E5"} else (model.adapter if experiment == "E2" else nn.Identity())
     optimizer_modules = dict(trainable.items())
     if experiment == "E5" and not any(True for _ in model.fusion.parameters()):
         optimizer_modules.pop("fusion")  # Average has no learned parameters.
@@ -225,7 +241,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     decoder_initial_sha = module_sha256(model.decoder)
     # All nine candidates share this category lock, including decoder init.
     fairness_root = output_dir.parent.parent if cfg["stage"] == "adapter_screen" else output_dir.parent
-    if experiment == "E5":
+    if experiment == "E5" or main:
         fairness_root = Path(context["fairness_root"])
     enforce_protocol_lock(fairness_root / "_fairness", category=cfg["category"], payload={
         "study_sha256": cfg["study_sha256"], "mode": cfg["mode"],
@@ -251,6 +267,21 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     history, best, best_epoch, step = [], None, None, 0
     start_epoch, start_batch, latest_dev, dev_step = 0, 0, None, 0
     adapter_updated, decoder_updated = False, False
+    if reuse_checkpoint is not None:
+        if not main or experiment != "E1" or last_path.exists():
+            raise ValueError("G1 reuse requires a fresh D11 E1 run")
+        from src.train.g2_main import valid_g1_checkpoint
+        legacy = valid_g1_checkpoint(reuse_checkpoint, context, pools)
+        legacy_last = legacy["_last_payload"]
+        model.decoder.load_state_dict(legacy_last["model_state"], strict=True)
+        optimizer.load_state_dict(legacy_last["optimizer_state"])
+        history = legacy_last["metadata"]["history"]
+        step = legacy_last["training_state"]["global_step"]
+        best = legacy["metadata"]["best_metric"]
+        best_epoch = legacy["training_state"]["epoch"]
+        latest_dev, dev_step = legacy_last["metadata"]["dev"], step
+        decoder_updated = True
+        start_epoch = t["epochs"]
     if last_path.exists():
         restored = resume_training_checkpoint(last_path, model=trainable, optimizer=optimizer,
                                               expected_config=cfg, map_location=device)
@@ -297,6 +328,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         if experiment == "E5":
             result.update(fusion_updated=fusion_updated or module_sha256(model.fusion) != fusion_before,
                           git_sha=cfg["git_sha"], run_id=cfg["run_id"])
+        if main:
+            result.update(git_sha=cfg["git_sha"], run_id=cfg["run_id"],
+                          selection_sha256=cfg["selection_sha256"], main_protocol_sha256=cfg["study_sha256"])
         return result
 
     def checkpoint(path, epoch, next_epoch, next_batch):
@@ -304,6 +338,20 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                                  global_step=step, config=cfg, metadata=metadata(next_epoch, next_batch))
         if on_checkpoint is not None:
             on_checkpoint(path)
+
+    if reuse_checkpoint is not None:
+        # Retain the original G1 files. This D11 wrapper records the reuse proof.
+        restore_rng_state(legacy_last["rng_state"])
+        checkpoint(last_path, legacy_last["training_state"]["epoch"], t["epochs"], 0)
+        full_state = history, step, latest_dev, dev_step
+        model.decoder.load_state_dict(legacy["model_state"], strict=True)
+        optimizer.load_state_dict(legacy["optimizer_state"])
+        history, step = legacy["metadata"]["history"], legacy["training_state"]["global_step"]
+        latest_dev, dev_step = legacy["metadata"]["dev"], step
+        restore_rng_state(legacy["rng_state"])
+        checkpoint(best_path, best_epoch, legacy["metadata"]["next_epoch"], legacy["metadata"]["next_batch"])
+        history, step, latest_dev, dev_step = full_state
+        restore_rng_state(legacy_last["rng_state"])
 
     for epoch in range(start_epoch, t["epochs"]):
         native_train.set_epoch(epoch)
@@ -363,7 +411,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     adapter_updated |= module_sha256(adapter_module) != adapter_before
     decoder_updated |= module_sha256(model.decoder) != decoder_before
     complete = step == context["expected_steps"]
-    if not frozen_unchanged or (complete and not (adapter_updated and decoder_updated)):
+    if not frozen_unchanged or (complete and not (decoder_updated and (adapter_updated or experiment == "E1"))):
         raise RuntimeError("Backbone changed or trainable modules failed to update")
     if experiment in {"E3", "E4", "E5"}:
         projection_updated |= module_sha256(model.projection) != projection_before
@@ -379,13 +427,25 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     if best_path.is_file():
         payload, _ = load_checkpoint_payload(best_path, require_sha256=True)
         trainable.load_state_dict(payload["model_state"], strict=True)
-        best_dev = evaluate_dev(model, native_dev, cfg, device, output_dir, **dev_kwargs)
+        if main:
+            # Observe the existing native inference/metric pass; no metric reimplementation.
+            from scripts.eval_g2 import CaptureNative, dice_from_exports
+            native_dir = output_dir / "native_dev"
+            capture = CaptureNative(native_dev, native_dir,
+                                    predict_fn=predict_native_e4 if experiment in {"E4", "E5"} else predict_native)
+            best_dev = evaluate_dev(model, native_dev, cfg, device, native_dir, predict_fn=capture)
+            save_json(capture.rows, native_dir / "native_maps.json")
+            best_dev.update(synthetic_dice=dice_from_exports(native_dir, capture.rows, cfg["category"],
+                                                           cfg["synthetic_protocol"]["prediction_threshold"])["f1"],
+                            dice_threshold=cfg["synthetic_protocol"]["prediction_threshold"])
+        else:
+            best_dev = evaluate_dev(model, native_dev, cfg, device, output_dir, **dev_kwargs)
     if complete and (best_dev is None or best_dev["synthetic_dev_aupro_0_05"] != best):
         raise ValueError("Best checkpoint DEV does not reproduce its selected score")
     result = dict(
         status="PASS" if complete else "INCOMPLETE", training_complete=complete,
         mode=cfg["mode"], stage=cfg["stage"], category=cfg["category"],
-        adapter={"r": cfg["adapter"]["r"], "d": cfg["adapter"]["d"]},
+        adapter=None if experiment == "E1" else {"r": cfg["adapter"]["r"], "d": cfg["adapter"]["d"]},
         study_sha256=cfg["study_sha256"], config_sha256=digest,
         expected_steps=context["expected_steps"], global_step=step, best_epoch=best_epoch,
         best_synthetic_dev=best_dev, last_synthetic_dev=latest_dev,
@@ -413,9 +473,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         result.update(selection_status=cfg["selection_status"], adapter_pair_role=cfg["adapter_pair_role"],
                       scientific_evidence=experiment == "E5" and cfg["mode"] == "screening"
                       and result["verification_scope"] == "real_pretrained" and device.type == "cuda")
-        if experiment != "E5":
+        if experiment != "E5" and not main:
             result["debug_pair"] = cfg["debug_pair"]
-        else:
+        elif experiment == "E5":
             result.update(fusion_updated=fusion_updated, git_sha=cfg["git_sha"], run_id=cfg["run_id"],
                           screening_budget=cfg["screening_budget"])
             save_json(history, output_dir / "loss_history.json")
@@ -423,5 +483,18 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
             result.update(context_aligned=True, adapter_sharing="shared_across_views_per_layer",
                           projection_sharing="shared_across_views_per_layer",
                           pair_strategy=model.pair_strategy)
+    if main:
+        save_json(history, output_dir / "loss_history.json")
+        result.update(git_sha=cfg["git_sha"], run_id=cfg["run_id"], main_budget=cfg["main_budget"],
+                      selection_sha256=cfg["selection_sha256"], selection_status="locked_joint_D10",
+                      scientific_evidence=complete and cfg["mode"] == "main"
+                      and result["verification_scope"] == "real_pretrained" and device.type == "cuda",
+                      reuse_g1_checkpoint=str(reuse_checkpoint) if reuse_checkpoint else None,
+                      reuse_g1_sha256=file_sha256(reuse_checkpoint) if reuse_checkpoint else None,
+                      native_exports={"directory": "native_dev", "count": len(capture.rows),
+                                      "manifest_sha256": file_sha256(native_dir / "native_maps.json"),
+                                      "qa_sha256": file_sha256(native_dir / "qa_report.json")} if best_dev is not None else None)
     save_json(result, output_dir / "metrics.json")
+    if main:
+        (output_dir / "metrics.json.sha256").write_text(file_sha256(output_dir / "metrics.json") + "\n")
     return result
