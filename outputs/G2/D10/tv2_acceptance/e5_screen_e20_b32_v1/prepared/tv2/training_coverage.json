@@ -1,0 +1,21 @@
+{
+  "status": "NOT RUN",
+  "real_pass": 0,
+  "expected": 180,
+  "owner": "tv2",
+  "categories": [
+    "sheet_metal",
+    "vial",
+    "wallplugs",
+    "walnuts"
+  ],
+  "counts": {
+    "NOT RUN": 180
+  },
+  "full_search_cells": 360,
+  "screening_only": true,
+  "selection_performed": false,
+  "selection_lock": null,
+  "protocol_sha256": null,
+  "git_sha": "bb2df3a911fb5725bcd7b59ef8618691162a264c"
+}

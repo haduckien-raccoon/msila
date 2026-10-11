@@ -1,0 +1,77 @@
+{
+  "task": "D9-TV1",
+  "code_status": "PASS",
+  "cpu_combinations_pass": 45,
+  "expected_combinations": 45,
+  "technical_only": true,
+  "experiment_runs": 0,
+  "gpu_status": "NOT RUN",
+  "peak_vram_status": "NOT RUN",
+  "selection_status": "pending_joint_selection_D10",
+  "selection_lock": null,
+  "base_commit": "41cc70a681e71d3113a9a59224691f221a6e72c3",
+  "integration_commit": "41cc70a681e71d3113a9a59224691f221a6e72c3",
+  "working_branch": "g2/member1",
+  "git_dirty": true,
+  "tests": {
+    "tests": 466,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 4,
+    "passed": 462,
+    "duration_seconds": 46.664,
+    "junit": "targeted_tests.xml",
+    "skips": [
+      {
+        "test": "test_real_debug_e4_one_batch_checkpoint_if_explicitly_enabled",
+        "reason": "NOT RUN: E4 real GPU batch is opt-in on Colab, never required locally"
+      },
+      {
+        "test": "test_real_debug_e3_one_batch_checkpoint_if_explicitly_enabled",
+        "reason": "NOT RUN: real E3 GPU batch is opt-in on Colab, never required locally"
+      },
+      {
+        "test": "test_real_e2_one_train_batch_when_assets_available",
+        "reason": "NOT RUN: real E2 batch requires MVTEC_AD2_ROOT, DINOV3_REPO, DINOV3_WEIGHTS"
+      },
+      {
+        "test": "test_optional_real_dinov3_smoke",
+        "reason": "Set DINOV3_REPO and DINOV3_WEIGHTS for real-backbone smoke test."
+      }
+    ]
+  },
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.6.0+cpu",
+    "device": "cpu"
+  },
+  "changed_code_files": [
+    "configs/g2_experiments.yaml",
+    "configs/g2_runner.yaml",
+    "scripts/run_g2.py",
+    "scripts/g2_fusion_preflight.py",
+    "src/models/msila.py",
+    "src/models/fusion_factory.py",
+    "src/models/position_attention_fusion.py",
+    "tests/test_g2_tv1_e5.py",
+    "tests/test_g2_tv1_contract.py"
+  ],
+  "source_sha256": {
+    "configs/g2_experiments.yaml": "e0c0e9a1736357ed0d01f2ed65f156455ee716d19693e59483b8329a67c0beb9",
+    "configs/g2_runner.yaml": "bb9d0ba092c3c409f7ee4a068506d750daa16781335378e57e5a1c641f6491e4",
+    "scripts/run_g2.py": "8ce835ef3a66c887c224ee837ee1fd213529494d4ea2f8ae9b49414b7e3a7546",
+    "scripts/g2_fusion_preflight.py": "479d53f348c7d8506fbdf2a37a6540520f280c76cea4d5a4d069d404b038fd98",
+    "src/models/msila.py": "5ee6af895832a7af844b3414fc4a39f73d519ce67679febc788e7d348345f670",
+    "src/models/fusion_factory.py": "c37e8cb55c67ebc4f2e7be2eb7a1a3b66595c9333cd6270c4f8e2a873a695353",
+    "src/models/position_attention_fusion.py": "d7e5762d23c3ce2dcccf8cd0191cf49454f183331cf5761e2850dd1e8b6cf374",
+    "tests/test_g2_tv1_e5.py": "71fb5ae87bc081a4f03e7d8ceaea185a7c988c439df4959e114d0bb3ffcf82e4",
+    "tests/test_g2_tv1_contract.py": "2c93a8b46a0088430cee5fc47de4b906c2ccada7f454b6f8beff2e526a8e6ebd"
+  },
+  "unchanged_tv2": [
+    "src/models/fusions/weighted_sum.py",
+    "src/models/fusions/concat.py",
+    "src/models/fusions/gated.py",
+    "src/eval"
+  ],
+  "report": "docs/D9_TV1_E5_PREFLIGHT.md"
+}

@@ -1,0 +1,42 @@
+# D6-TV1: nine technical checks. Official main selection remains pending D10.
+version: g2_runner_v2
+model_config: configs/g2_experiments.yaml
+backbone: dinov3_vitb16
+output_root: outputs/G2/D6
+stage_output_roots:
+  E3: outputs/G2/D7
+  E4: outputs/G2/D8
+  fusion_preflight: outputs/G2/D9
+  E5: outputs/G2/D9
+adapter_grids:
+  dinov3_vits16:
+    r_values: [32, 64, 128]
+    d_values: [128, 256, 384]
+  dinov3_vitb16:
+    r_values: [64, 128, 256]
+    d_values: [256, 512, 768]
+  dinov3_vith16plus:
+    r_values: [128, 256, 384]
+    d_values: [384, 768, 1280]
+
+# No metric/ranking/selection lock is produced by D6.
+selection:
+  status: pending_joint_selection_D10
+  method: joint_rd_fusion
+  legacy_adapter_lock: audit_only
+
+# Budget/seed/loss/data come from model_config and are fixed across all pairs.
+training:
+  checkpoint_interval_steps: 20
+execution:
+  full_device: cuda
+  deterministic_resize: true
+
+# E2/E3/E4 debug smoke: resolved r/d are defaults, never selected hyperparameters.
+# Official main training awaits the D10 joint protocol; old outputs stay intact.
+smoke:
+  epochs: 1
+  max_steps: 2
+  max_train_sources: 2
+  max_dev_sources: 1
+  dev_variants_per_image: 3

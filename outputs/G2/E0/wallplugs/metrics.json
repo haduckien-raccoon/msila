@@ -1,0 +1,9 @@
+{
+  "schema": "msila.g2.e0.v1",
+  "category": "wallplugs",
+  "status": "NOT RUN",
+  "mode": "full",
+  "verification_scope": "not_run",
+  "reason": "Dataset missing: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/data/mvtec_ad2; Official DINOv3 checkout missing: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/third_party/dinov3; Pretrained checkpoint missing: /media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/models/dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth; CUDA unavailable",
+  "split": "dev_synthetic"
+}

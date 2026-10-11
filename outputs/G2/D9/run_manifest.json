@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "cpu_pass": 45,
+  "expected_combinations": 45,
+  "gpu_status": "NOT RUN",
+  "experiment_runs": 0,
+  "selection_status": "pending_joint_selection_D10",
+  "selection_lock": null,
+  "commit": "41cc70a681e71d3113a9a59224691f221a6e72c3",
+  "branch": "g2/member1",
+  "git_dirty": true,
+  "integration_commit": "41cc70a681e71d3113a9a59224691f221a6e72c3",
+  "seed": 2026,
+  "verification_scope": "CPU_mock_4x4",
+  "errors": [],
+  "source_code_sha256": {
+    "scripts/g2_fusion_preflight.py": "479d53f348c7d8506fbdf2a37a6540520f280c76cea4d5a4d069d404b038fd98",
+    "scripts/run_g2.py": "8ce835ef3a66c887c224ee837ee1fd213529494d4ea2f8ae9b49414b7e3a7546",
+    "configs/g2_experiments.yaml": "e0c0e9a1736357ed0d01f2ed65f156455ee716d19693e59483b8329a67c0beb9",
+    "src/models/msila.py": "5ee6af895832a7af844b3414fc4a39f73d519ce67679febc788e7d348345f670",
+    "src/models/fusion_factory.py": "c37e8cb55c67ebc4f2e7be2eb7a1a3b66595c9333cd6270c4f8e2a873a695353",
+    "src/models/position_attention_fusion.py": "d7e5762d23c3ce2dcccf8cd0191cf49454f183331cf5761e2850dd1e8b6cf374",
+    "src/models/fusions/weighted_sum.py": "014dacfc8934b86ef60da44bed224096f11b0214623db21fc17358eebdc757d4",
+    "src/models/fusions/concat.py": "d45b6313a99cb5aa10923361becbd4d7da0209ab0c44264e2792211ac632e452",
+    "src/models/fusions/gated.py": "2b943da8649a385f6622e01887c8036b7dfd6dd8afc9c2e5bbb67c32878136eb",
+    "src/models/mean_fusion.py": "235f52e63f91c0d690c06ca05c25d255caabd67b4b4dc7ec559b46aa656b90bd"
+  }
+}

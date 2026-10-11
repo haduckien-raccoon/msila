@@ -1,0 +1,91 @@
+{
+  "version": "g2_joint_search_v1",
+  "status": "INCOMPLETE",
+  "expected_candidates": 45,
+  "expected_categories": 8,
+  "expected_cells": 360,
+  "unique_cells": 360,
+  "duplicate_ids": [],
+  "missing_ids": [],
+  "real_pass": 0,
+  "status_counts": {
+    "NOT RUN": 360
+  },
+  "complete_candidates": 0,
+  "gpu_benchmark_pass": 0,
+  "gpu_benchmark_status_counts": {
+    "NOT RUN": 360
+  },
+  "macro_requires_categories": 8,
+  "budget_status": "LOCKED",
+  "integration_sha": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "units": {
+    "aupro_005": "normalized AU-PRO, FPR <= 0.05",
+    "latency": "median milliseconds, native inference on named CUDA GPU",
+    "peak_vram": "peak allocated CUDA bytes, including resident model"
+  },
+  "owner_coverage": {
+    "tv1": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice"
+      ]
+    },
+    "tv2": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ]
+    }
+  },
+  "accounted_cells": 0,
+  "search_status": "INCOMPLETE",
+  "selection_status": "BLOCKED",
+  "selection_performed": false,
+  "selection_lock": null,
+  "excluded_infeasible_candidates": [],
+  "unresolved_infeasible_run_ids": [],
+  "owner_provenance": {
+    "tv1": {
+      "manifest": "/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv1/tv1_joint_search_180.csv",
+      "manifest_sha256": "4c9de7970582fea75b30feb29d2ab2071999b3b900e07ee418d73dda2e8790d9",
+      "categories": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice"
+      ],
+      "cells": 180,
+      "protocol_sha256": null
+    },
+    "tv2": {
+      "manifest": "/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv2/tv2_joint_search_180.csv",
+      "manifest_sha256": "71d772c283effd2a936b7b0359ec5a19802a964509605f0d6d5f1241eefad187",
+      "categories": [
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ],
+      "cells": 180,
+      "protocol_sha256": null
+    }
+  },
+  "selection_reasons": [
+    "Incomplete search: 0/360 terminal audited cells; FAIL/OOM/INFEASIBLE are not terminal under the predeclared TV1 resource policy"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "status": "PREPARED",
+  "git_sha": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "owner": "tv1",
+  "settings": {
+    "version": "g2_d10_runner_v1",
+    "base_config": "configs/g2_runner.yaml",
+    "output_root": "outputs/G2/D10",
+    "run_id": "e5_screen_e20_b32_v1",
+    "screening_budget": {
+      "epochs": 20,
+      "batch_size": 32,
+      "max_steps": null,
+      "max_minutes": null
+    },
+    "batch_policy": "fixed_for_all_candidates",
+    "oom_policy": "record_failure_no_automatic_batch_change",
+    "drive_sync": "epoch_and_job_end",
+    "paired_strategy": "sequential",
+    "num_workers": 2,
+    "d9_preflight": "outputs/G2/D9/fusion_preflight_45.csv",
+    "d6_preflight": "outputs/G2/D6/adapter_preflight.csv",
+    "d9_sha256": "e55a1fd32b58b18fc8815f6f4da0a813a81c7fd468080fc337812d9fc7e4beb4",
+    "d6_sha256": "4d9de5cc25efbafc2bafa23867f59dc03ae75c6eac770309892133a2d45a7a93"
+  },
+  "screening_budget": {
+    "epochs": 20,
+    "batch_size": 32,
+    "max_steps": null,
+    "max_minutes": null
+  },
+  "main_budget": {
+    "epochs": 20,
+    "batch_size": 4,
+    "max_steps": null,
+    "max_minutes": null
+  },
+  "d9_status": "45/45 PASS",
+  "scope": "E5 screening only",
+  "runtime": {
+    "device": "cpu",
+    "torch": "2.6.0+cpu",
+    "cuda": null,
+    "gpu": null,
+    "dtype": "float32",
+    "amp": false,
+    "tf32": false
+  },
+  "verification": "NOT RUN",
+  "gpu_training": "NOT RUN",
+  "config_sha256": "b898fd3a04f851e5d0df7558379b9dec41ee09c6d70c49cfc80168b19548a425",
+  "protocol_sha256": null
+}

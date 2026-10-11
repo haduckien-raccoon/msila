@@ -28,6 +28,9 @@ from torch import Tensor
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
+from src.data.tiling import TileRecord, crop_with_padding, extract_local_context
+from src.geometry.view_meta import build_padded_view_meta
+
 
 __all__ = [
     "IMAGENET_MEAN",
@@ -215,6 +218,52 @@ class NestedMultiViewTransform:
         std = self._std.to(device=x.device, dtype=x.dtype)
         # Per-channel normalization: x'_c = (x_c - mu_c) / sigma_c.
         return (x - mean) / std
+
+    def from_tile(
+        self, image: Any, record: TileRecord, *, mask: Tensor | None = None,
+        source_meta: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Build an E4 sample from ONE already augmented native image and mask.
+
+        Uses the existing tiling resize (bilinear, align_corners=False). RGB
+        padding follows tiling's reflect/replicate policy; supervision pads with
+        zero so padded pixels never acquire synthetic positive labels. No anomaly
+        generator is invoked here. The legacy random/center ``__call__`` API is
+        unchanged. Return keys follow G2: image/context/mask/meta/view_meta.
+        """
+        if (self.cfg.local_size, self.cfg.context_size, self.cfg.input_size) != (512, 768, 512):
+            raise ValueError("G2 tile views require Local 512, Context 768, input 512")
+        x = self._to_chw_float01(image)
+        local_box, context_box = record.local_xyxy, record.context_xyxy
+        if (tuple(local_box[i+2]-local_box[i] for i in (0, 1)) != (512, 512)
+                or tuple(context_box[i+2]-context_box[i] for i in (0, 1)) != (768, 768)
+                or any(local_box[i]-context_box[i] != 128 for i in (0, 1))
+                or record.center_xy != ((local_box[0]+local_box[2])/2, (local_box[1]+local_box[3])/2)):
+            raise ValueError("TileRecord must contain concentric Local 512 / Context 768 boxes")
+        geometry = build_padded_view_meta(
+            source_hw=x.shape[-2:], local_box_xyxy=local_box, context_box_xyxy=context_box,
+        )
+        local, context = extract_local_context(x, record)
+        meta = dict(source_meta or {}, tile_id=record.tile_id, native_hw=list(x.shape[-2:]),
+                    local_native_xyxy=list(local_box), context_native_xyxy=list(context_box))
+        view_meta = dict(meta, geometry=geometry, geometry_source_frame="padded_native",
+                         context_resize="bilinear_align_corners_false")
+        if "sample_id" in meta:
+            view_meta.update(local_sample_id=meta["sample_id"], context_sample_id=meta["sample_id"])
+        sample = dict(image=self._normalize(local).contiguous(),
+                      context=self._normalize(context).contiguous(), meta=meta, view_meta=view_meta)
+        if mask is not None:
+            if not isinstance(mask, Tensor):
+                raise TypeError("Native mask must be a torch.Tensor")
+            if mask.ndim == 2:
+                mask = mask.unsqueeze(0)
+            if tuple(mask.shape) != (1, *x.shape[-2:]):
+                raise ValueError("Native mask must be [1,H,W], matching the native image")
+            if not bool(torch.isfinite(mask).all()) or not bool(((mask == 0) | (mask == 1)).all()):
+                raise ValueError("Native mask must be finite and binary")
+            sample["mask"] = crop_with_padding(mask.to(device=x.device, dtype=x.dtype),
+                                                local_box, pad_mode="constant", pad_value=0.).contiguous()
+        return sample
 
     def __call__(self, image: Any) -> Dict[str, Any]:
         x = self._to_chw_float01(image)

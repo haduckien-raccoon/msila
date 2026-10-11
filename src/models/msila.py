@@ -20,6 +20,7 @@ post-processing remain outside this module.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -27,17 +28,25 @@ import torch
 from torch import Tensor, nn
 
 from .attention_fusion import AttentionFusion
+from .adapter_factory import AdapterCandidate, AdapterFactoryConfig, ResidualAdapterFactory
+from .backbone_registry import adapter_pairs, backbone_spec
 from .basic_decoder import BasicDecoder
+from .cached_training import cached_meta_to_aligner_geometry
+from .context_alignment import ContextToLocalAligner
 from .contracts import (
     DINO_FEATURE_KEYS,
     MULTIVIEW_FEATURE_KEYS,
     ContractError,
+    g2_input_image,
     validate_anomaly_logits,
     validate_dino_features,
     validate_image,
     validate_multiview_features,
 )
 from .dinov3_extractor import DINOv3FeatureExtractor
+from .feature_projection import SixFeatureProjection
+from .feature_selector import FeatureSelector
+from .fusion_factory import build_fusion, canonical_fusion_method
 from .mean_fusion import MeanFusion
 from .residual_adapter import ResidualAdapter2d
 
@@ -49,24 +58,375 @@ class E1(nn.Module):
     Input is normalized RGB; output is raw logits at the input tile size.
     """
 
-    def __init__(self, extractor: nn.Module, hidden_channels: int = 64):
+    def __init__(self, extractor: nn.Module, hidden_channels: int = 64,
+                 deterministic_resize: bool = False):
         super().__init__()
+        if not isinstance(extractor, nn.Module):
+            raise TypeError("extractor must be a torch.nn.Module")
         if getattr(extractor, "blocks", None) != (extractor.depth,):
             raise ValueError("E1 requires feature_mode='deepest'")
         self.extractor = extractor
         self.extractor.requires_grad_(False)
         self.extractor.eval()
-        self.decoder = BasicDecoder(extractor.out_channels, hidden_channels)
+        self.decoder = BasicDecoder(extractor.out_channels, hidden_channels,
+                                    deterministic_resize=deterministic_resize)
 
     def train(self, mode: bool = True):
         super().train(mode)
         self.extractor.eval()
         return self
 
-    def forward(self, image: Tensor) -> Tensor:
+    @property
+    def feature_key(self) -> str:
+        return f"b{self.extractor.depth}"
+
+    @property
+    def num_trainable_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def extract_deep_feature(self, image: Tensor) -> Tensor:
+        """Run exactly one frozen deepest feature, shared by E1 and E2."""
         with torch.no_grad():
-            feature = self.extractor(image)[f"b{self.extractor.depth}"]
-        return self.decoder(feature, output_size=image.shape[-2:])
+            features = self.extractor(image)
+        if not isinstance(features, Mapping) or set(features) != {self.feature_key}:
+            raise ContractError("E1/E2 extractor must return exactly one deepest feature")
+        return features[self.feature_key]
+
+    def _decoder_feature(self, feature: Tensor) -> Tensor:
+        return feature
+
+    def forward(
+        self, image: Tensor | Mapping[str, object], *, return_trace: bool = False,
+    ) -> Tensor | tuple[Tensor, dict[str, object]]:
+        """G2: model(batch); legacy G1: model(image). Return raw logits."""
+        image = g2_input_image(image)
+        feature = self.extract_deep_feature(image)
+        decoder_feature = self._decoder_feature(feature)
+        logits = self.decoder(decoder_feature, output_size=image.shape[-2:])
+        validate_anomaly_logits(logits, image)
+        if return_trace:
+            return logits, {
+                "dino": {self.feature_key: feature},
+                "decoder_feature": decoder_feature,
+            }
+        return logits
+
+
+class E2(E1):
+    """G2 E2 = E1 + one existing residual Adapter before the same decoder.
+
+    Frozen deepest DINOv3 -> C->r->DWConv->d->C Adapter -> BasicDecoder.
+    No Context, projection or Fusion module is constructed. Adapter r/d are
+    independent internal widths; the decoder still consumes backbone width C.
+    """
+
+    def __init__(
+        self,
+        extractor: nn.Module,
+        *,
+        adapter_bottleneck_dim: int,
+        adapter_projection_dim: int,
+        hidden_channels: int = 64,
+        adapter_kernel_size: int = 3,
+        gamma_init: float = 0.0,
+        adapter_bias: bool = True,
+        deterministic_resize: bool = False,
+    ) -> None:
+        super().__init__(extractor, hidden_channels=hidden_channels,
+                         deterministic_resize=deterministic_resize)
+        factory = ResidualAdapterFactory(AdapterFactoryConfig(
+            in_dim=extractor.out_channels,
+            kernel_size=adapter_kernel_size,
+            gamma_init=gamma_init,
+            bias=adapter_bias,
+        ))
+        self.adapter = factory.build_rd(
+            r=adapter_bottleneck_dim, d=adapter_projection_dim,
+        ).model
+
+    @property
+    def adapter_r(self) -> int:
+        return self.adapter.r
+
+    @property
+    def adapter_d(self) -> int:
+        return self.adapter.d
+
+    def _decoder_feature(self, feature: Tensor) -> Tensor:
+        # Only DINO extraction is no_grad; Adapter and decoder remain in graph.
+        return self.adapter(feature)
+
+
+class E3(nn.Module):
+    """Three frozen Local layers -> independent Adapters -> projection -> mean.
+
+    Canonical b4/b8/b12 names are shallow/middle/deep slots for the reused
+    projector/selector. ``source_blocks`` records the actual backbone blocks.
+    No Context modules or tensors are used. Adapter d is independent of the
+    common projection width ``fusion_dim`` consumed by BasicDecoder.
+    """
+
+    def __init__(
+        self, extractor: nn.Module, *, adapter_bottleneck_dim: int,
+        adapter_projection_dim: int, fusion_dim: int = 64, hidden_channels: int = 64,
+        adapter_kernel_size: int = 3, gamma_init: float = 0.0,
+        adapter_bias: bool = True, deterministic_resize: bool = False,
+    ) -> None:
+        super().__init__()
+        expected = backbone_spec(extractor.model_name).blocks
+        if tuple(extractor.blocks) != expected or extractor.feature_mode != "multilayer":
+            raise ValueError(f"E3 requires three registry blocks {expected}")
+        if type(fusion_dim) is not int or fusion_dim < 1:
+            raise ValueError("fusion_dim must be a positive integer")
+        self.extractor = extractor
+        self.extractor.requires_grad_(False)
+        self.extractor.eval()
+        self.source_blocks = expected
+        self.selector = FeatureSelector("multi_local")
+        self.source_block_map = dict(zip(self.selector.source_keys, expected))
+        factory = ResidualAdapterFactory(AdapterFactoryConfig(
+            in_dim=extractor.out_channels, kernel_size=adapter_kernel_size,
+            gamma_init=gamma_init, bias=adapter_bias,
+        ))
+        self.adapters = nn.ModuleDict({
+            key: factory.build_rd(r=adapter_bottleneck_dim, d=adapter_projection_dim).model
+            for key in self.selector.source_keys
+        })
+        # Three projectors; shared-view mode constructs no unused Context params.
+        self.projection = SixFeatureProjection(extractor.out_channels, fusion_dim,
+                                               share_across_views=True, check_finite=True)
+        self.fusion = MeanFusion(validate=True)
+        self.decoder = BasicDecoder(fusion_dim, hidden_channels,
+                                    deterministic_resize=deterministic_resize)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.extractor.eval()
+        return self
+
+    @property
+    def num_sources(self) -> int:
+        return self.selector.num_sources
+
+    @property
+    def adapter_r(self) -> int:
+        return self.adapters[self.selector.source_keys[0]].r
+
+    @property
+    def adapter_d(self) -> int:
+        return self.adapters[self.selector.source_keys[0]].d
+
+    @property
+    def num_trainable_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def forward(self, image: Tensor | Mapping[str, object], *, return_trace: bool = False):
+        image = g2_input_image(image)
+        with torch.no_grad():
+            features = self.extractor(image)
+        physical_keys = {f"b{block}" for block in self.source_blocks}
+        if not isinstance(features, Mapping) or set(features) != physical_keys:
+            raise ContractError("E3 extractor must return exactly the three registry layers")
+        adapted = {key: self.adapters[key](features[f"b{block}"])
+                   for key, block in self.source_block_map.items()}
+        raw_slots = {f"L{slot}": adapted[key]
+                     for slot, key in zip((4, 8, 12), self.selector.source_keys)}
+        projected = self.projection.project_sources(raw_slots, source_keys=self.selector.source_keys)
+        fused = self.fusion(self.selector(projected))
+        logits = self.decoder(fused, output_size=image.shape[-2:])
+        validate_anomaly_logits(logits, image)
+        if return_trace:
+            return logits, dict(dino=features, adapted=adapted, projected=projected,
+                                decoder_feature=fused, source_keys=self.selector.source_keys,
+                                source_blocks=self.source_block_map, num_sources=self.num_sources)
+        return logits
+
+
+class E4(E3):
+    """E3 parameters shared across Local/Context, align then average six sources.
+
+    Input is the synchronized G2 batch: image, context, view_meta (a list of
+    geometry mappings). Three Adapters/projectors are shared per layer across
+    views, so trainable params and seeded decoder initialization match E3.
+    Physical registry blocks map to canonical shallow/middle/deep slots.
+    """
+
+    def __init__(self, extractor, *, pair_strategy="concat", deterministic_sampling=True, **kwargs):
+        super().__init__(extractor, **kwargs)
+        if pair_strategy not in {"concat", "sequential"}:
+            raise ValueError("pair_strategy must be concat or sequential")
+        self.pair_strategy = pair_strategy
+        self.selector = FeatureSelector("multi_local_context")
+        self.source_block_map = dict(zip(self.selector.source_keys, self.source_blocks * 2))
+        self.aligner = ContextToLocalAligner(check_finite=True, check_bounds=True,
+                                            deterministic_sampling=deterministic_sampling)
+
+    def _fuse_projected(self, projected, *, return_trace):
+        return self.fusion(self.selector(projected)), {}
+
+    def forward(self, image: Mapping[str, object], *, return_trace: bool = False):
+        if not isinstance(image, Mapping):
+            raise ContractError("E4 requires a synchronized batch with image/context/view_meta")
+        batch = image
+        local = g2_input_image(batch)
+        if "context" not in batch or "view_meta" not in batch:
+            raise ContractError("E4 requires context and view_meta for Context-to-Local alignment")
+        context = batch["context"]
+        for item in batch["view_meta"]:
+            if ("local_sample_id" in item and "context_sample_id" in item
+                    and item["local_sample_id"] != item["context_sample_id"]):
+                raise ContractError("E4 Local and Context must share the same native sample")
+        geometry = cached_meta_to_aligner_geometry(
+            [{"geometry": item.get("geometry", item)} for item in batch["view_meta"]],
+            device=local.device,
+        )
+        for key, tensor in (("local_input_hw", local), ("context_input_hw", context)):
+            actual = torch.tensor(tensor.shape[-2:], device=tensor.device)
+            if not bool((geometry[key] == actual).all()):
+                raise ContractError(f"E4 {key} does not match the view tensor")
+        if bool((torch.linalg.det(geometry["local_to_context"]).abs() <= 1e-8).any()):
+            raise ContractError("E4 Local-to-Context geometry is singular")
+        with torch.no_grad():
+            features = self.extractor.extract_local_context(local, context, strategy=self.pair_strategy)
+        expected = {f"{view}{block}" for view in ("L", "C") for block in self.source_blocks}
+        if set(features) != expected:
+            raise ContractError("E4 extractor must return exactly three Local and three Context features")
+        local_slots, context_slots, adapted = {}, {}, {}
+        for slot, block, adapter_key in zip((4, 8, 12), self.source_blocks, tuple(self.adapters)):
+            adapter = self.adapters[adapter_key]
+            local_slots[f"L{slot}"] = adapter(features[f"L{block}"])
+            context_slots[f"C{slot}"] = adapter(features[f"C{block}"])
+            adapted[f"local_b{slot}"] = local_slots[f"L{slot}"]
+            adapted[f"context_b{slot}"] = context_slots[f"C{slot}"]
+        aligned = self.aligner(context_slots, geometry, target_hw=local_slots["L4"].shape[-2:])
+        projected = self.projection.project_sources(local_slots, aligned, source_keys=self.selector.source_keys)
+        fused, fusion_trace = self._fuse_projected(projected, return_trace=return_trace)
+        logits = self.decoder(fused, output_size=local.shape[-2:])
+        validate_anomaly_logits(logits, local)
+        if return_trace:
+            return logits, dict(dino=features, adapted=adapted, aligned_context=aligned, projected=projected,
+                                decoder_feature=fused, source_keys=self.selector.source_keys,
+                                source_blocks=self.source_block_map, num_sources=self.num_sources,
+                                geometry=geometry, **fusion_trace)
+        return logits
+
+
+class E5(E4):
+    """The exact E4 paired/aligned pipeline with one factory-selected Fusion."""
+
+    def __init__(self, extractor, *, fusion_method="mean", **kwargs):
+        super().__init__(extractor, **kwargs)
+        # Construct after the base heads so Fusion choice cannot change their
+        # seeded initial state. Average is only a baseline, never a selection.
+        self.fusion = build_fusion(fusion_method, self.projection.fusion_dim)
+        self.fusion_method = self.fusion.method
+
+    def _fuse_projected(self, projected, *, return_trace):
+        if return_trace:
+            result = self.fusion(projected, return_trace=True)
+            fused = result.pop("feature")
+            return fused, dict(fusion=self.fusion_method, fusion_trace=result)
+        return self.fusion(projected), {}
+
+
+def resolve_g2_config(
+    config: Mapping[str, Any], *, root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Resolve backbone metadata/checkpoint and Adapter widths without loading.
+
+    Only backbone.name selects the mapped checkpoint. C/depth/patch size come
+    from the existing registry, checked again by DINOv3FeatureExtractor when
+    loaded. Null r/d use declared ratios of C; explicit integer widths override
+    either ratio independently. The input config is never mutated.
+    """
+    resolved = deepcopy(dict(config))
+    fusion = resolved.get("fusion", {})
+    if "method" in fusion:
+        fusion["method"] = canonical_fusion_method(fusion["method"])
+    if tuple(fusion.get("feature_order", MULTIVIEW_FEATURE_KEYS)) != MULTIVIEW_FEATURE_KEYS:
+        raise ValueError("fusion.feature_order must use the six canonical source slots")
+    backbone = resolved["backbone"]
+    spec = backbone_spec(backbone["name"])
+    if backbone.get("frozen", True) is not True:
+        raise ValueError("G2 requires a frozen DINOv3 backbone")
+    backbone.update(channels=spec.channels, deepest_block=spec.depth,
+                    feature_blocks=list(spec.blocks), patch_size=spec.patch_size)
+    weights = backbone.get("weights")
+    if weights is None:
+        try:
+            weights = backbone["checkpoints"][backbone["name"]]
+        except KeyError as exc:
+            raise KeyError(f"No checkpoint configured for {backbone['name']}") from exc
+    base = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    for key, value in (("repo_dir", backbone["repo_dir"]), ("weights", weights)):
+        path = Path(value).expanduser()
+        backbone[key] = str((base / path).resolve() if not path.is_absolute() else path.resolve())
+
+    adapter = resolved["adapter"]
+    if adapter.get("r") is None or adapter.get("d") is None:
+        # Reuse the existing C-based width rounding; no second Adapter design.
+        scaled_r, scaled_d = adapter_pairs(spec.channels, {
+            "r_ratios": [adapter.get("r_ratio", 1/6)],
+            "d_ratios": [adapter.get("d_ratio", 2/3)],
+            "round_to": adapter.get("round_to", 8),
+        })[0]
+        if adapter.get("r") is None:
+            adapter["r"] = scaled_r
+        if adapter.get("d") is None:
+            adapter["d"] = scaled_d
+    AdapterCandidate(adapter["r"], adapter["d"])
+    AdapterFactoryConfig(in_dim=spec.channels,
+                         kernel_size=adapter.get("kernel_size", 3),
+                         gamma_init=adapter.get("gamma_init", 0.0),
+                         bias=adapter.get("bias", True))
+    return resolved
+
+
+def build_g2_model(
+    config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
+    extractor: DINOv3FeatureExtractor | None = None,
+) -> E1 | E3:
+    """Build E1--E5; E5 reuses E4 and changes only its six-source Fusion."""
+    if experiment not in {"E1", "E2", "E3", "E4", "E5"}:
+        raise NotImplementedError("build_g2_model currently supports only E1, E2, E3, E4 and E5")
+    resolved = resolve_g2_config(config, root=root)
+    backbone, adapter = resolved["backbone"], resolved["adapter"]
+    if not Path(backbone["weights"]).is_file():
+        raise FileNotFoundError(f"DINOv3 checkpoint not found: {backbone['weights']}")
+    if extractor is None:
+        extractor = DINOv3FeatureExtractor(
+            repo_dir=backbone["repo_dir"], weights=backbone["weights"],
+            model_name=backbone["name"], norm=backbone.get("norm", True),
+            feature_mode="multilayer" if experiment in {"E3", "E4", "E5"} else "deepest", check_finite=True,
+        )
+    elif (experiment not in {"E2", "E5"} or extractor.model_name != backbone["name"]
+          or extractor.feature_mode != ("multilayer" if experiment == "E5" else "deepest") or extractor.training
+          or extractor.repo_dir != Path(backbone["repo_dir"]).resolve()
+          or Path(extractor.weights).resolve() != Path(backbone["weights"]).resolve()
+          or extractor.norm != backbone.get("norm", True)
+          or any(p.requires_grad or p.grad is not None for p in extractor.parameters())):
+        raise ValueError("Only a matching frozen/eval E2 deepest or E5 multilayer extractor may be reused")
+    hidden_channels = resolved["decoder"]["hidden_channels"]
+    deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
+    if experiment == "E1":
+        return E1(extractor, hidden_channels=hidden_channels,
+                  deterministic_resize=deterministic_resize)
+    model_class = {"E2": E2, "E3": E3, "E4": E4, "E5": E5}[experiment]
+    projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment in {"E3", "E4", "E5"} else {}
+    if experiment in {"E4", "E5"}:
+        options = resolved.get("paired_views", {})
+        projection.update(pair_strategy=options.get("pair_strategy", options.get("strategy", "concat")),
+                          deterministic_sampling=options.get("deterministic_sampling", True))
+    if experiment == "E5":
+        projection["fusion_method"] = resolved["fusion"].get("method", "mean")
+    return model_class(
+        extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
+        adapter_kernel_size=adapter.get("kernel_size", 3),
+        gamma_init=adapter.get("gamma_init", 0.0), adapter_bias=adapter.get("bias", True),
+        hidden_channels=hidden_channels,
+        deterministic_resize=deterministic_resize,
+        **projection,
+    )
 
 
 class MSILA(nn.Module):

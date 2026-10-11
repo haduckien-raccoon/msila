@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "cpu_pass": 9,
+  "expected": 9,
+  "gpu_pass": 0,
+  "gpu_status": "NOT RUN",
+  "peak_vram_unit": "bytes (torch.cuda.max_memory_reserved)",
+  "selection_status": "pending_joint_selection_D10",
+  "performance_evaluation": "NOT RUN"
+}
