@@ -71,6 +71,11 @@ class StepLog:
     background_probability: float | None = None
     probability_min: float = 0.0
     probability_max: float = 0.0
+    segmentation_loss: float = 0.0
+    illumination_loss: float = 0.0
+    illumination_contribution: float = 0.0
+    illumination_pairs: int = 0
+    illumination_rejected: int = 0
 
     def to_dict(self) -> dict[str, int | float | None]:
         return asdict(self)
@@ -501,6 +506,7 @@ class Overfit16Trainer:
         threshold: float = 0.5,
         max_grad_norm: float | None = None,
         amp_dtype: torch.dtype | None = None,
+        illumination_loss_weight: float = 0.0,
     ) -> None:
         if not isinstance(model, nn.Module):
             raise TypeError("model must be nn.Module")
@@ -525,6 +531,11 @@ class Overfit16Trainer:
         self.frozen_modules = dict(frozen_modules or {})
         self.threshold = float(threshold)
         self.max_grad_norm = max_grad_norm
+        if not math.isfinite(illumination_loss_weight) or illumination_loss_weight < 0:
+            raise ValueError('illumination_loss_weight must be finite and nonnegative')
+        from src.losses.illumination_loss import IlluminationConsistencyLoss
+        self.illumination_loss_weight = float(illumination_loss_weight)
+        self.illumination_criterion = IlluminationConsistencyLoss()
         if amp_dtype not in {None, torch.float16, torch.bfloat16}:
             raise ValueError('amp_dtype must be None, float16 or bfloat16')
         if amp_dtype is not None and self.device.type != 'cuda':
@@ -582,7 +593,30 @@ class Overfit16Trainer:
         criterion_output = self.criterion(logits.float() if self.amp_dtype is not None else logits, target)
         loss, bce, dice_loss, positive_samples = _loss_terms(criterion_output)
 
+        segmentation_loss = loss.detach()
         self.scaler.scale(loss).backward()
+        # Free the supervised activations before the second forward. Both
+        # backwards accumulate into one optimizer update; the teacher is fixed
+        # at the current pre-update model, not a second trainable branch.
+        loss = loss.detach()
+        illumination_loss, contribution, pairs = 0., 0., 0
+        if self.illumination_loss_weight:
+            if 'illumination_batch' not in batch or 'illumination_indices' not in batch:
+                raise OverfitTrainerError('Illumination consistency requires paired TRAIN data')
+            indices, illuminated = batch['illumination_indices'], batch['illumination_batch']
+            pairs = len(indices)
+            if pairs:
+                if illuminated is None or not torch.equal(illuminated['mask'], target[indices]):
+                    raise OverfitTrainerError('Illumination pair mask mismatch')
+                with torch.autocast(self.device.type, dtype=self.amp_dtype, enabled=self.amp_dtype is not None):
+                    lit_logits = _extract_logits(self.model_forward(self.model, illuminated))
+                auxiliary = self.illumination_criterion(lit_logits, logits.detach()[indices], target[indices])
+                # Scale by active fraction: probability changes the expected
+                # regularization strength, not the weight of a lone sample.
+                weighted = auxiliary * self.illumination_loss_weight * pairs / len(target)
+                self.scaler.scale(weighted).backward()
+                illumination_loss, contribution = float(auxiliary.detach()), float(weighted.detach())
+                loss = loss + weighted.detach()
         self.scaler.unscale_(self.optimizer)
 
         try:
@@ -639,6 +673,11 @@ class Overfit16Trainer:
             background_probability=(float(probs[~foreground].mean().item()) if negative_pixels else None),
             probability_min=float(probs.min().item()),
             probability_max=float(probs.max().item()),
+            segmentation_loss=float(segmentation_loss),
+            illumination_loss=illumination_loss,
+            illumination_contribution=contribution,
+            illumination_pairs=pairs,
+            illumination_rejected=sum(bool(m.get('illumination', {}).get('rejected')) for m in batch.get('meta', [])),
         )
 
     @torch.no_grad()

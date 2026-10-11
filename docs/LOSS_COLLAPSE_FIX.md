@@ -1,5 +1,9 @@
 # Kiểm tra loss và bản đồ nền đen — fix/los
 
+Bản này ghi audit và thay đổi v3. Điều tra tiếp về synthetic shortcut,
+augmentation xóa nhãn và loss illumination mới nằm ở
+[SYNTH_ILLUMINATION_FIX.md](SYNTH_ILLUMINATION_FIX.md); notebook hiện dùng v4.
+
 ## Bằng chứng từ run thật
 
 Đã đọc `notebook_environment.json`, toàn bộ 7.090 dòng `loss_history.json`,
@@ -76,7 +80,7 @@ hash; checkpoint loss cũ không được resume dưới cấu hình mới.
 
 Dùng [notebook Fixed E5](../notebooks/G2_05_E5_Fixed_Attention.ipynb) sau khi đưa
 nhánh `fix/los` lên remote. Notebook và `configs/g2_fixed_attention.yaml` dùng
-namespace `e5_r128_d512_attention_loss_v3`, 5 epochs, batch 32, inference 16,
+namespace `e5_r128_d512_attention_consistency_v4`, 5 epochs, batch 32, inference 16,
 seed 42/dev seed 17017 và cùng DINO commit để đối chiếu với run đã audit. Trên L4, `auto`
 resolve BF16. Sửa đường dẫn Drive, chạy preflight → smoke → full. Run mới không
 restore namespace cũ. Nếu chủ động đổi budget, đặt RUN_NAME mới.

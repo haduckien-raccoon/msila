@@ -22,7 +22,7 @@ from src.models.msila import resolve_g2_config
 from src.losses.anomaly_loss import AnomalySegmentationLoss
 from src.train.g1_e1 import check_assets, discover_sources
 from src.train.g2_context import predict_native_e4
-from src.train.g2_fixed_data import validate_illumination
+from src.train.g2_fixed_data import validate_illumination, validate_illumination_objective
 from src.train.screen_representation import read_yaml, save_json, save_yaml, sha256_file as raw_sha256_file, sha256_json
 from src.utils.resume import load_checkpoint_payload
 
@@ -90,6 +90,10 @@ def save_learning_diagnostics(history, model, directory, epoch, loss_config):
                  foreground_probability=foreground,
                  background_probability=sum(background)/len(background) if background else None,
                  adapter_gates=gates, adapter_branch_grad_norm_last_batch=gradients, warnings=warnings)
+    entry.update(illumination_pairs=sum(r.get('illumination_pairs', 0) for r in rows),
+                 illumination_rejected=sum(r.get('illumination_rejected', 0) for r in rows),
+                 illumination_contribution_mean=sum(r.get('illumination_contribution', 0.) for r in rows)/len(rows),
+                 segmentation_loss_mean=sum(r.get('segmentation_loss', r['loss']) for r in rows)/len(rows))
     report['epochs'] = [r for r in report['epochs'] if r['epoch'] != epoch + 1] + [entry]
     save_json(report, path)
     logging.info('learning epoch=%s positive_batches=%s/%s p_fg=%s p_bg=%s gates=%s warnings=%s',
@@ -171,9 +175,15 @@ def prepare_study(args):
                                         tie_break='earliest_epoch', selection_split='VALIDATION/good')):
         raise ValueError('Fixed E5 still requires the native G2 geometry, loss and DEV selection protocol')
     validate_illumination(settings['illumination'])
+    appearance = settings.get('synthetic_appearance', 'legacy')
+    if appearance not in {'legacy', 'diverse_v1'}:
+        raise ValueError('Unknown synthetic appearance')
+    mode, weight = settings.get('illumination_mode', 'augmentation'), settings.get('illumination_loss_weight', 0.)
+    validate_illumination_objective(mode, weight, settings['illumination'])
     cfg.update(version='g2_user_fixed_e5_v1', stage='E5', run_id=settings['run_id'],
                selection_status=SELECTION, selection_sha256=None, adapter_pair_role='user_fixed',
-               illumination=deepcopy(settings['illumination']), tile_sampler='native_grouped_v1')
+               illumination=deepcopy(settings['illumination']), tile_sampler='native_grouped_v1',
+               synthetic_appearance=appearance, illumination_mode=mode, illumination_loss_weight=weight)
     cfg['backbone']['checkpoint_sha256'] = sha256_file(cfg['backbone']['weights'])
     repo = Path(cfg['backbone']['repo_dir'])
     cfg['backbone']['source_sha256'] = {str(p.relative_to(repo)): sha256_file(p) for p in sorted(repo.rglob('*.py'))}
@@ -228,6 +238,8 @@ def require_fixed_context(context):
     if cfg['mode'] == 'fixed_smoke' and (cfg['training']['epochs'] != 1 or not 1 <= cfg['expected_steps'] <= 2):
         raise ValueError('Smoke is bounded and never experimental acceptance')
     validate_illumination(cfg['illumination'])
+    validate_illumination_objective(cfg.get('illumination_mode', 'augmentation'),
+                                    cfg.get('illumination_loss_weight', 0.), cfg['illumination'])
 
 
 def completed_training(directory, context):

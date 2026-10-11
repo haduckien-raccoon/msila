@@ -66,14 +66,29 @@ class PairedG2Tiles(Dataset):
         local, context, view_meta = prepare_pair(sample["image"], record,
                                                   sample_id=sample["meta"]["sample_id"])
         mask = crop_with_padding(sample["mask"], record.local_xyxy, pad_mode="constant")
-        return dict(image=local, context=context, mask=mask, view_meta=view_meta,
-                    meta={**sample["meta"], "tile": asdict(record)})
+        result = dict(image=local, context=context, mask=mask, view_meta=view_meta,
+                      meta={**sample["meta"], "tile": asdict(record)})
+        if 'illumination_image' in sample:
+            result['illumination_pair'] = None
+            if sample['illumination_image'] is not None:
+                lit_local, lit_context, lit_meta = prepare_pair(
+                    sample['illumination_image'], record, sample_id=sample['meta']['sample_id'])
+                result['illumination_pair'] = dict(image=lit_local, context=lit_context,
+                    view_meta=lit_meta, mask=mask, meta=result['meta'])
+        return result
 
 
 def paired_tile_collate(samples):
     batch = g1_tile_collate(samples)
     batch.update(context=torch.stack([sample["context"] for sample in samples]),
                  view_meta=[sample["view_meta"] for sample in samples])
+    if any('illumination_pair' in sample for sample in samples):
+        if not all('illumination_pair' in sample for sample in samples):
+            raise ValueError('Mixed illumination pairing contracts in one batch')
+        indices = [i for i, sample in enumerate(samples) if sample['illumination_pair'] is not None]
+        batch['illumination_indices'] = torch.tensor(indices, dtype=torch.long)
+        batch['illumination_batch'] = paired_tile_collate(
+            [samples[i]['illumination_pair'] for i in indices]) if indices else None
     return batch
 
 

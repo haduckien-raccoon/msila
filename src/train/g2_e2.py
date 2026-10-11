@@ -272,7 +272,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         native_train = IlluminatedNativeDataset(pools['train'], cfg['synthetic_protocol'],
                                                 seed=t['seed'], role='train',
                                                 variants=d['train_variants_per_image'], fixed=False,
-                                                illumination=cfg['illumination'])
+                                                illumination=cfg['illumination'],
+                                                illumination_mode=cfg.get('illumination_mode', 'augmentation'),
+                                                appearance=cfg.get('synthetic_appearance', 'legacy'))
     tiles = G1TileDataset(native_train, tile_size=d["tile_size"], overlap=d["overlap"],
                           positive_tile_fraction=d.get("train_positive_tile_fraction", 0.0))
     local_tiles = tiles
@@ -291,6 +293,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         max_grad_norm=t["max_grad_norm"],
         model_forward=paired_model_forward if experiment in {"E4", "E5"} else None,
         amp_dtype=precision_dtype(t['precision']) if fixed else None,
+        illumination_loss_weight=cfg.get('illumination_loss_weight', 0.) if fixed else 0.,
     )
     history, best, best_epoch, step = [], None, None, 0
     start_epoch, start_batch, latest_dev, dev_step = 0, 0, None, 0
@@ -426,6 +429,10 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                          epoch + 1, step, context["expected_steps"], entry["loss"], entry["bce"], entry["dice_loss"],
                          entry['positive_samples'], entry['positive_pixels'], entry['foreground_probability'],
                          entry['background_probability'], entry['recall'])
+            if cfg.get('illumination_mode') == 'consistency':
+                logging.info('illumination pairs=%d rejected=%d KL=%.6f weighted=%.6f segmentation=%.6f',
+                             entry['illumination_pairs'], entry['illumination_rejected'],
+                             entry['illumination_loss'], entry['illumination_contribution'], entry['segmentation_loss'])
             if step % t["checkpoint_interval_steps"] == 0 or step == context["expected_steps"]:
                 checkpoint(last_path, epoch, epoch, next_batch)
         if stopped:

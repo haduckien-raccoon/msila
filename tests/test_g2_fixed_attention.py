@@ -27,6 +27,17 @@ from src.losses.anomaly_loss import AnomalySegmentationLoss
 
 
 def fixed_study(setup):
+    # The new per-epoch schedule actually exercises scratches on these 96x128
+    # fixtures. Declare fitting areas explicitly; production bins stay locked.
+    protocol = yaml.safe_load((g2_fixed.ROOT / 'configs/full_scale_synthetic.yaml').read_text())
+    protocol['size_bins']['mixed_control'] = [129, 256]
+    protocol['rationale'] = 'CPU fixture areas fit the 96x128 source, not production or TEST calibration.'
+    protocol_path = setup['path'].parent / 'fixture_synthetic.yaml'
+    protocol_path.write_text(yaml.safe_dump(protocol))
+    model_path = Path(setup['runner']['model_config'])
+    model_cfg = yaml.safe_load(model_path.read_text())
+    model_cfg['synthetic_protocol'] = str(protocol_path)
+    model_path.write_text(yaml.safe_dump(model_cfg))
     settings = yaml.safe_load((g2_fixed.ROOT / 'configs/g2_fixed_attention.yaml').read_text())
     settings.update(model_config=setup['runner']['model_config'], epochs=2, batch_size=2,
                     num_workers=0, precision='fp32', checkpoint_interval_steps=1)
@@ -52,6 +63,8 @@ def test_fixed_protocol_geometry_no_selection_lock_and_hashes(setup):
     assert cfg['data']['tile_size'] == 512 and cfg['training']['seed'] == 42
     assert cfg['loss']['bce_mode'] == 'balanced'
     assert cfg['data']['train_positive_tile_fraction'] == .5
+    assert cfg['synthetic_appearance'] == 'diverse_v1'
+    assert cfg['illumination_mode'] == 'consistency' and cfg['illumination_loss_weight'] == .1
     assert not list(study['root'].rglob('*selection_lock.json'))
     altered = deepcopy(context); altered['config']['adapter']['r'] = 64
     with pytest.raises(ValueError, match='mismatch'):
@@ -116,6 +129,8 @@ def test_shared_full_training_checkpoint_resume_and_integrity(setup, monkeypatch
     assert len(diagnostics['epochs']) == 2
     last = diagnostics['epochs'][-1]
     assert last['positive_tiles'] > 0 and last['positive_pixels'] > 0
+    assert sum(r['illumination_pairs'] for r in diagnostics['epochs']) > 0
+    assert any(r['illumination_contribution_mean'] > 0 for r in diagnostics['epochs'])
     assert all(v > 0 for v in last['adapter_branch_grad_norm_last_batch'].values())
     assert result['source_blocks'] == [4, 8, 12] and result['feature_width'] == 64
     assert g2_fixed.completed_training(full, context)
@@ -253,6 +268,8 @@ def test_cli_notebook_contract_and_cpu_cannot_claim_gpu():
     text = ''.join(''.join(c['source']) for c in notebook['cells'])
     assert 'include_test_public=True' in text and "GITHUB_REF = 'fix/los'" in text
     assert "BCE_MODE = 'balanced'" in text and 'TRAIN_POSITIVE_TILE_FRACTION = 0.5' in text
-    assert 'loss_v3' in text and 'learning_diagnostics.json' in text
+    assert 'consistency_v4' in text and 'learning_diagnostics.json' in text
+    assert "SYNTHETIC_APPEARANCE = 'diverse_v1'" in text
+    assert "ILLUMINATION_MODE = 'consistency'" in text and 'illumination_loss_weight=ILLUMINATION_LOSS_WEIGHT' in text
     assert "SEED, DEV_SEED = 42, 17017" in text and 'scripts/run_g2_fixed.py' in text
     assert 'joint_selection_lock.json' not in text and 'loss.backward' not in text

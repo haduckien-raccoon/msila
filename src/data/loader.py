@@ -316,14 +316,23 @@ class G1NativeDataset(Dataset):
     tiles without retaining the entire native dataset in RAM.
     """
 
-    def __init__(self, sources, protocol, *, seed, role, variants=2, fixed=False):
+    def __init__(self, sources, protocol, *, seed, role, variants=2, fixed=False, appearance="legacy"):
         from itertools import product
         from collections import OrderedDict
         from .synthetic_anomaly import NativeTinyDefectGenerator
 
         if role not in {"train", "dev"} or variants < 1 or not sources:
             raise ValueError("G1 requires nonempty TRAIN/DEV good sources and variants >= 1")
-        self.generator = NativeTinyDefectGenerator(protocol)
+        if appearance not in {"legacy", "diverse_v1"}:
+            raise ValueError("Unknown synthetic appearance")
+        if appearance != "legacy" and (role != "train" or fixed):
+            raise ValueError("Diverse appearance is only permitted on changing TRAIN samples")
+        self.appearance = appearance
+        if appearance == "diverse_v1":
+            from .diverse_synthetic import DiverseNativeDefectGenerator
+            self.generator = DiverseNativeDefectGenerator(protocol)
+        else:
+            self.generator = NativeTinyDefectGenerator(protocol)
         self.sources = tuple(sources)
         expected = "train" if role == "train" else "validation"
         if any(r.split != expected or r.defect_type != "good" for r in sources):
@@ -352,7 +361,12 @@ class G1NativeDataset(Dataset):
             original = load_rgb_native(record.image_path)
             combo_index = source_index * self.variants + max(variant - 1, 0)
             if not self.fixed:
-                combo_index += self.epoch * len(self.sources) * self.variants
+                # Cross a defect-type block each epoch. With the locked four
+                # types / two placements this stride is coprime to the cycle;
+                # the old source-count stride can repeat the same slot forever.
+                stride = (len(self.combinations)//len(self.generator.protocol['defect_types']) + 1
+                          if self.appearance == "diverse_v1" else len(self.sources) * self.variants)
+                combo_index += self.epoch * stride
             kind, placement, size_bin = self.combinations[combo_index % len(self.combinations)]
             seed_text = f"{self.role}|{self.seed}|{self.epoch}|{index}".encode()
             sample_seed = int.from_bytes(hashlib.sha256(seed_text).digest()[:8], "big")

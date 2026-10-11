@@ -1,7 +1,7 @@
 # User-chosen E5 reference. This is NOT a D10 joint-selection result.
 version: g2_fixed_e5_v1
 model_config: configs/g2_experiments.yaml
-run_id: e5_r128_d512_attention_loss_v3
+run_id: e5_r128_d512_attention_consistency_v4
 r: 128
 d: 512
 fusion: attention
@@ -24,6 +24,13 @@ loss:
 # Synthetic TRAIN variants contain at least this fraction of positive tiles.
 # Number of tiles/updates is unchanged; normal sources keep full tile coverage.
 train_positive_tile_fraction: 0.5
+# TRAIN appearances are independent of the mask's nominal defect type. DEV
+# remains the frozen legacy proxy, so its high score is not real-defect evidence.
+synthetic_appearance: diverse_v1
+# Keep the clean supervised image; add a detached-teacher consistency term.
+# Weight is further multiplied by the active pair fraction in each batch.
+illumination_mode: consistency
+illumination_loss_weight: 0.1
 illumination:
   enabled: true
   probability: 0.5
