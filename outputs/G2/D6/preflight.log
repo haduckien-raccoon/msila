@@ -1,0 +1,32 @@
+2026-10-11 09:40:50,050 INFO CPU r=64 d=256 PASS
+2026-10-11 09:40:50,159 INFO CPU r=64 d=512 PASS
+2026-10-11 09:40:50,275 INFO CPU r=64 d=768 PASS
+2026-10-11 09:40:50,378 INFO CPU r=128 d=256 PASS
+2026-10-11 09:40:50,491 INFO CPU r=128 d=512 PASS
+2026-10-11 09:40:50,612 INFO CPU r=128 d=768 PASS
+2026-10-11 09:40:50,724 INFO CPU r=256 d=256 PASS
+2026-10-11 09:40:50,840 INFO CPU r=256 d=512 PASS
+2026-10-11 09:40:50,970 INFO CPU r=256 d=768 PASS
+
+Acceptance command: python scripts/run_g2.py --stage adapter_preflight --device cpu
+2026-10-11 09:53:27,814 INFO CPU r=64 d=256 PASS
+2026-10-11 09:53:27,956 INFO CPU r=64 d=512 PASS
+2026-10-11 09:53:28,113 INFO CPU r=64 d=768 PASS
+2026-10-11 09:53:28,283 INFO CPU r=128 d=256 PASS
+2026-10-11 09:53:28,441 INFO CPU r=128 d=512 PASS
+2026-10-11 09:53:28,601 INFO CPU r=128 d=768 PASS
+2026-10-11 09:53:28,742 INFO CPU r=256 d=256 PASS
+2026-10-11 09:53:28,899 INFO CPU r=256 d=512 PASS
+2026-10-11 09:53:29,070 INFO CPU r=256 d=768 PASS
+{
+  "status": "PASS",
+  "cpu_pass": 9,
+  "expected": 9,
+  "gpu_pass": 0,
+  "gpu_status": "NOT RUN",
+  "peak_vram_unit": "bytes (torch.cuda.max_memory_reserved)",
+  "selection_status": "pending_joint_selection_D10",
+  "performance_evaluation": "NOT RUN",
+  "stage": "adapter_preflight",
+  "operation": "technical_check"
+}

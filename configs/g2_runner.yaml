@@ -1,5 +1,5 @@
-# D6/D7/D8-TV1: selected backbone's 9 x 8 screen, then 8 runs per E2/E3/E4.
-version: g2_runner_v1
+# D6-TV1: nine technical checks. Official main selection remains pending D10.
+version: g2_runner_v2
 model_config: configs/g2_experiments.yaml
 backbone: dinov3_vitb16
 output_root: outputs/G2/D6
@@ -14,17 +14,11 @@ adapter_grids:
     r_values: [128, 256, 384]
     d_values: [384, 768, 1280]
 
-# Declared before training. Exact equal scores use fewer Adapter parameters,
-# then smaller r, then smaller d. Each category contributes exactly 1/8.
+# No metric/ranking/selection lock is produced by D6.
 selection:
-  metric: macro_synthetic_dev_aupro_0_05
-  direction: max
-  tie_break: [adapter_trainable_parameters, r, d]
-  expected_screen_runs: 72
-  expected_main_runs: 8
-  require_all_categories: true
-  require_full_budget: true
-  checkpoint_tie_break: earliest_epoch
+  status: pending_joint_selection_D10
+  method: joint_rd_fusion
+  legacy_adapter_lock: audit_only
 
 # Budget/seed/loss/data come from model_config and are fixed across all pairs.
 training:
@@ -33,8 +27,8 @@ execution:
   full_device: cuda
   deterministic_resize: true
 
-# Separate output namespace; these results NEVER contribute to selection locks
-# or the reported real PASS/72 and PASS/8 counts. E2/E3/E4 require a full lock.
+# E2 debug smoke only: resolved r/d are defaults, never selected hyperparameters.
+# Official main training awaits the D10 joint protocol; old outputs stay intact.
 smoke:
   epochs: 1
   max_steps: 2

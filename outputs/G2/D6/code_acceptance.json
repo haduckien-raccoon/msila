@@ -1,0 +1,47 @@
+{
+  "task": "D6-TV1 / PROMPT 03",
+  "status": "CODE PASS",
+  "cpu_pairs_pass": 9,
+  "cpu_pairs_expected": 9,
+  "gpu_smoke": "NOT RUN",
+  "peak_vram_oom": "NOT RUN",
+  "scientific_training": "NOT RUN",
+  "selection_status": "pending_joint_selection_D10",
+  "provenance": {
+    "commit": "6307a2f799706d93fa6fadcc7cdd2b53c1d67250",
+    "branch": "g2/member1",
+    "dirty": true,
+    "runtime_torch": "2.6.0+cpu",
+    "runtime_python": "3.12.3",
+    "source_sha256": {
+      "scripts/g2_adapter_preflight.py": "7c21db312e5deb715eb4a6ed48745d85926c2793afadc25c8c5f9d11de0f4284",
+      "scripts/run_g2.py": "21ea132db452b6a6dee44884332f46c60d43c0308b98a9f5a655779b85174637",
+      "src/models/msila.py": "4d907c152a86855885558892dd0f8f4bd462fac4a124e8b88510d371ba0b5bd4",
+      "src/models/adapter_factory.py": "d28e46f7073bfb7abb173a67f4aa30fcfe44a617c6d6cda7714e4bcbb1703b0e",
+      "src/models/residual_adapter.py": "6374d93f0cfe30e862e24ae72d0f8391ff5a8c576defad825856dc07b8e078b7",
+      "src/train/g2_e2.py": "a4c2a01b3a3be0ec24cc5196966829ebaedf258ff63e3f8f5ad756ec08520e64",
+      "src/train/overfit16.py": "7a492434a320729d6c8cd817e8f18d320d753a6b480364d88a3f4370c51a4853",
+      "src/train/optimizer.py": "94df8bc5bfbd0c1234b9f71a132f288432ce028442a1203f97e2d4214f94c2dc",
+      "src/losses/anomaly_loss.py": "238ffcb6cf37d2e599aa6e5250a8e05cfa56a86eacc80488384a140c61b4bbee"
+    }
+  },
+  "targeted_tests": {
+    "passed": 145,
+    "deselected": 1,
+    "command": "python -m pytest -q tests/test_g2_adapter_preflight.py tests/test_g2_tv1_runner.py tests/test_adapter_factory.py tests/test_g2_tv1_model.py tests/test_g2_tv1_contract.py -k 'not real_e2' --disable-warnings"
+  },
+  "final_preflight_recheck": {
+    "passed": 31,
+    "command": "python -m pytest -q tests/test_g2_adapter_preflight.py --disable-warnings"
+  },
+  "checks": [
+    "nbformat validation",
+    "all notebook code cells parsed with ast",
+    "git diff --check",
+    "actual CPU preflight CLI"
+  ],
+  "blocked": [
+    "Optional real-backbone GPU smoke/VRAM/OOM requires Colab; not run locally.",
+    "Official main remains pending D10 joint selection / D11 protocol integration."
+  ]
+}

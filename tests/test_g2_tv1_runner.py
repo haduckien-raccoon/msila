@@ -1,4 +1,4 @@
-"""D6 fixture smoke and orchestration tests, never real PASS/72 evidence."""
+"""D6-v3 technical CLI and legacy checkpoint regression tests on CPU fixtures."""
 from copy import deepcopy
 import importlib.util
 import json
@@ -79,7 +79,7 @@ def setup(tmp_path, monkeypatch):
 def test_exact_backbone_grid_and_fixed_category_protocol(setup, name, r_values, d_values):
     study = setup["study"](name)
     assert study["pairs"] == [(r, d) for r in r_values for d in d_values]
-    assert len(study["pairs"]) * len(runner.CATEGORIES) == 72
+    assert len(study["pairs"]) == 9
     contexts = [runner.make_context(study, "rice", pair, "adapter_screen")[0] for pair in study["pairs"]]
     assert len({c["config_sha256"] for c in contexts}) == 9
     fixed = []
@@ -105,20 +105,15 @@ def test_wrong_h_grid_rejected_before_execution(setup):
         runner.load_config(args)
 
 
-def test_cli_nine_pair_smoke_then_skip_without_training(setup, monkeypatch):
-    args = ["--config", str(setup["path"]), "--stage", "adapter_screen", "--categories", "rice",
-            "--device", "cpu", "--smoke"]
+def test_cli_adapter_screen_alias_is_cpu_preflight(setup, monkeypatch):
+    monkeypatch.setattr(runner, "train_e2", lambda *a, **k: pytest.fail("D6 must not invoke full training"))
+    args = ["--config", str(setup["path"]), "--stage", "adapter_screen", "--backbone", "dinov3_vitb16"]
     assert runner.main(args) == 0
-    path = setup["root"] / "dinov3_vits16" / "smoke" / "adapter_screen_summary.json"
-    summary = json.loads(path.read_text())
-    assert summary["status"] == "SMOKE_PASS"
-    assert len(summary["outcomes"]) == 9
-    assert {r["status"] for r in summary["outcomes"]} == {"PASS"}
-    assert summary["real_adapter_screen_pass"] == summary["real_E2_pass"] == 0
+    summary = json.loads((setup["root"] / "adapter_preflight_summary.json").read_text())
+    assert summary["cpu_pass"] == 9 and summary["gpu_status"] == "NOT RUN"
+    assert summary["selection_status"] == "pending_joint_selection_D10"
+    assert not list(setup["root"].rglob("*.pt"))
     assert not list(setup["root"].rglob("adapter_selection_lock.json"))
-    monkeypatch.setattr(runner, "train_e2", lambda *a, **k: pytest.fail("Completed runs must not train again"))
-    assert runner.main(args) == 0
-    assert {r["status"] for r in json.loads(path.read_text())["outcomes"]} == {"SKIP"}
 
 
 @pytest.mark.parametrize("name,pair", [("dinov3_vitb16", (64, 256)), ("dinov3_vith16plus", (128, 384))])
@@ -246,100 +241,57 @@ def test_invalid_completed_runs_never_count_or_retrain(setup, monkeypatch, mutat
         runner.execute_job(study, "rice", (32, 128), "adapter_screen", smoke=False, resume=True, device="cpu")
 
 
-def virtual_ledger(study, monkeypatch):
-    """Mock artifact validation for selection UNIT tests only, all in tmp_path."""
-    original_reader = runner.read_valid_result
-    ledger = {}
-    factory = ResidualAdapterFactory(AdapterFactoryConfig(in_dim=384, **study["protocol"]["adapter"]))
-    for pair in study["pairs"]:
-        for category in runner.CATEGORIES:
-            context, _ = runner.make_context(study, category, pair, "adapter_screen")
-            # One outstanding category must lose to a balanced macro candidate.
-            score = (1.0 if category == "can" else 0.0) if pair == (32, 128) else .1
-            if pair in {(64, 256), (128, 384)}:
-                score = .55
-            ledger[str(runner.run_directory(study, category, pair, "adapter_screen"))] = dict(
-                status="PASS", mode="full", category=category, adapter={"r": pair[0], "d": pair[1]},
-                config_sha256=context["config_sha256"], metrics_sha256=f"unit-test-{category}-{pair}",
-                best_checkpoint_sha256="unit-test-best", last_checkpoint_sha256="unit-test-last",
-                decoder_initial_sha256=f"same-init-{category}",
-                adapter_trainable_parameters=factory.build_rd(r=pair[0], d=pair[1]).trainable_params,
-                best_synthetic_dev={"synthetic_dev_aupro_0_05": score},
-                verification_scope="real_pretrained", device="cuda:0")
-
-    def mock_read(path, context):
-        if context["config"]["stage"] == "adapter_screen" and context["config"]["mode"] == "full":
-            return ledger.get(str(path))
-        return original_reader(path, context)
-
-    monkeypatch.setattr(runner, "read_valid_result", mock_read)
-    return ledger
 
 
-def test_lock_only_at_72_macro_selection_parameter_tie_and_idempotence(setup, monkeypatch):
+def test_selection_publisher_disabled_and_legacy_artifacts_preserved(setup):
     study = setup["study"]()
-    ledger = virtual_ledger(study, monkeypatch)
-    key, row = ledger.popitem()
-    assert len(runner.collect_results(study, "adapter_screen")[0]) == 71
-    assert runner.publish_selection(study) is None
     path = study["root"] / "full" / "adapter_selection_lock.json"
-    assert not path.exists()
-    ledger[key] = row
-    lock = runner.publish_selection(study)
-    assert lock["payload"]["valid_runs"] == 72
-    assert lock["payload"]["selected_pair"] == {"r": 64, "d": 256}
-    assert lock["payload"]["ranking"][0]["macro_synthetic_dev_aupro_0_05"] == .55
-    assert runner.validate_selection(study) == lock
-    mtime = path.stat().st_mtime_ns
-    assert runner.publish_selection(study) == lock
-    assert path.stat().st_mtime_ns == mtime
-    ledger.pop(key)
-    with pytest.raises(runner.G2Blocked, match="71/72"):
-        runner.validate_selection(study)
+    path.parent.mkdir(parents=True)
+    legacy = b"legacy audit sentinel"
+    path.write_bytes(legacy)
+    checkpoint = path.parent / "old_best.pt"
+    checkpoint.write_bytes(b"old checkpoint sentinel")
+    with pytest.raises(runner.G2Blocked, match="pending joint selection D10"):
+        runner.publish_selection(study)
+    assert path.read_bytes() == legacy
+    assert checkpoint.read_bytes() == b"old checkpoint sentinel"
 
 
-def test_lock_checksum_and_decoder_init_drift_block_selection(setup, monkeypatch):
+def test_legacy_reader_rejects_corrupt_checksum(setup):
     study = setup["study"]()
-    ledger = virtual_ledger(study, monkeypatch)
-    lock = runner.publish_selection(study)
-    lock["payload"]["selected_pair"]["r"] = 32
-    runner.save_json(lock, study["root"] / "full" / "adapter_selection_lock.json")
+    path = study["root"] / "full" / "adapter_selection_lock.json"
+    runner.save_json({"payload": {}, "sha256": "corrupt"}, path)
     with pytest.raises(runner.G2Blocked, match="checksum"):
         runner.validate_selection(study)
-    next(iter(ledger.values()))["decoder_initial_sha256"] = "changed"
-    with pytest.raises(ValueError, match="initialization drift"):
-        runner.rank_candidates(study, list(ledger.values()))
 
 
-def test_e2_all_eight_smoke_categories_use_locked_pair(setup, monkeypatch):
-    study = setup["study"]()
-    virtual_ledger(study, monkeypatch)
-    runner.publish_selection(study)
-    assert runner.main(["--config", str(setup["path"]), "--stage", "E2", "--categories", "all",
-                        "--device", "cpu", "--smoke"]) == 0
-    path = study["root"] / "smoke" / "E2_summary.json"
-    result = json.loads(path.read_text())
-    assert result["status"] == "SMOKE_PASS" and len(result["outcomes"]) == 8
-    assert {row["status"] for row in result["outcomes"]} == {"PASS"}
+def test_e2_debug_smoke_uses_one_explicit_pair_without_legacy_lock(setup, monkeypatch):
+    monkeypatch.setattr(runner, "validate_selection", lambda *a: pytest.fail("E2 must not require the old D6 lock"))
+    assert runner.main(["--config", str(setup["path"]), "--stage", "E2", "--categories", "rice",
+                        "--debug-pair", "64", "256", "--device", "cpu", "--smoke"]) == 0
+    root = setup["root"] / "dinov3_vits16" / "debug_d6_v3" / "smoke"
+    result = json.loads((root / "E2_summary.json").read_text())
+    assert result["status"] == "SMOKE_PASS" and len(result["outcomes"]) == 1
     assert {(row["r"], row["d"]) for row in result["outcomes"]} == {(64, 256)}
-    assert result["real_E2_pass"] == 0
+    assert result["real_E2_pass"] == 0 and result["selection_lock"] is None
+    assert result["selection_status"] == "pending_joint_selection_D10"
+    checkpoint, _ = load_checkpoint_payload(root / "E2/rice/last.pt")
+    assert checkpoint["config"]["adapter_pair_role"] == "debug_pair"
+    assert checkpoint["config"]["selection_status"] == "pending_joint_selection_D10"
     # The screen evidence is mock-only; none of this temp study is a real run.
 
 
-def test_e2_missing_lock_blocked_before_gpu_or_training(setup):
+def test_e2_main_pending_joint_selection_before_gpu_or_training(setup, monkeypatch):
+    monkeypatch.setattr(runner, "prepare_study", lambda *a, **kw: pytest.fail("Main must await D10"))
     assert runner.main(["--config", str(setup["path"]), "--stage", "E2", "--device", "cuda"]) == 2
     result = json.loads((setup["root"] / "dinov3_vits16" / "full" / "E2_summary.json").read_text())
-    assert result["status"] == "BLOCKED" and "lock" in result["reason"]
-    assert result["real_adapter_screen_pass"] == result["real_E2_pass"] == 0
+    assert result["status"] == "BLOCKED" and "pending joint selection D10" in result["reason"]
+    assert "complete 72" not in result["reason"]
 
 
-def test_full_without_cuda_not_run_zero_real_counts(setup, monkeypatch):
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    assert runner.main(["--config", str(setup["path"]), "--stage", "adapter_screen", "--device", "cuda"]) == 2
-    result = json.loads((setup["root"] / "dinov3_vits16" / "full" / "adapter_screen_summary.json").read_text())
-    assert result["status"] == "NOT RUN"
-    assert result["real_adapter_screen_pass"] == result["real_E2_pass"] == 0
-    assert not list(setup["root"].rglob("*.pt"))
+def test_debug_pair_cannot_bypass_official_main_selection():
+    with pytest.raises(SystemExit):
+        runner.parse_args(["--stage", "E2", "--debug-pair", "64", "256"])
 
 
 def test_resume_config_drift_rejected_before_writes(setup, monkeypatch):
