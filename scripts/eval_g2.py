@@ -1,4 +1,4 @@
-"""One synthetic DEV evaluator. D6 implements E1/E2; E3--E5 stay reserved.
+"""One synthetic DEV evaluator: D6 E1/E2 and D9 E5 joint-search intake.
 
 Reuse the training DEV evaluator verbatim through its native prediction hook:
 sigmoid -> existing Hann stitching -> native metric/QA. Dice is the existing
@@ -38,6 +38,8 @@ from src.eval.evaluator import MVTEC_AD2_CATEGORIES, write_metrics_json
 from src.metrics.segf1 import aggregate_seg_f1
 from src.models.msila import build_g2_model
 from src.train.g1_e1 import check_assets, discover_sources, evaluate_dev, file_sha256, predict_native
+from src.train.g2_context import predict_native_e4
+from src.train.g2_e2 import trainable_modules
 from src.train.screen_representation import sha256_json
 from src.utils.resume import load_checkpoint_payload
 
@@ -58,9 +60,11 @@ def unit_metric(value):
     return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
 
 
-def load_trained_checkpoint(path, experiment, category):
-    if experiment not in {"E1", "E2"}:
-        raise Blocked(f"{experiment} is reserved; D6 implements only E1/E2")
+def load_trained_checkpoint(path, experiment, category, *, joint_record=None, joint_spec=None):
+    if experiment not in {"E1", "E2", "E5"}:
+        raise Blocked(f"{experiment} is reserved; D6 implements only E1/E2; D9 accepts E5 manifests")
+    if experiment == "E5" and (joint_record is None or joint_spec is None):
+        raise Blocked("E5 requires an explicit joint-search manifest and declared screening protocol")
     path = Path(path)
     if not path.is_file():
         pending = "; E2 may await D10 joint selection and main training" if experiment == "E2" else ""
@@ -80,7 +84,7 @@ def load_trained_checkpoint(path, experiment, category):
     if experiment == "E1":
         if cfg.get("version") != "g1_e1_v1" or cfg["training"].get("mode") != "train":
             raise Blocked("E1 requires a trained G1 E1 checkpoint (smoke/overfit cannot be accepted)")
-    else:
+    elif experiment == "E2":
         if (cfg.get("stage") != "E2" or cfg.get("mode") != "full"
                 or any(type(cfg.get("adapter", {}).get(k)) is not int or cfg["adapter"][k] <= 0
                        for k in ("r", "d"))
@@ -88,7 +92,34 @@ def load_trained_checkpoint(path, experiment, category):
             raise Blocked("E2 checkpoint stage/config/r/d provenance mismatch")
         # D6 evaluates trained checkpoints; it does not certify D10 selection.
         # Legacy selection fields are preserved in the exported checkpoint config.
+    else:
+        from src.eval.g2_joint import validate_checkpoint_record
+        try:
+            validate_checkpoint_record(joint_record, payload, joint_spec)
+            validate_joint_budget(path, payload)
+        except (ValueError, KeyError) as exc:
+            raise Blocked(str(exc)) from exc
     return payload
+
+
+def validate_joint_budget(path, payload):
+    """Use retained TV1 best/last/report evidence; best alone proves no full budget."""
+    cfg = payload["config"]
+    directory = Path(path).parent
+    last, _ = load_checkpoint_payload(directory / "last.pt", require_sha256=True)
+    report = json.loads((directory / "metrics.json").read_text())
+    expected = cfg.get("expected_steps")
+    if (type(expected) is not int or expected <= 0 or last["config"] != cfg
+            or last["metadata"].get("config_sha256") != sha256_json(cfg)
+            or last["training_state"]["global_step"] != expected
+            or report.get("status") != "PASS" or report.get("training_complete") is not True
+            or report.get("config_sha256") != sha256_json(cfg)
+            or report.get("expected_steps") != expected or report.get("global_step") != expected
+            or report.get("verification_scope") != "real_pretrained"
+            or report.get("frozen_backbone_unchanged") is not True
+            or report.get("best_checkpoint_sha256") != file_sha256(path)
+            or report.get("last_checkpoint_sha256") != file_sha256(directory / "last.pt")):
+        raise Blocked("Joint checkpoint lacks complete training budget/best/last provenance")
 
 
 def source_identity(manifest):
@@ -115,7 +146,7 @@ def scientific_identity(cfg):
     optimizer = t.get("optimizer", {})
     return dict(
         category=cfg["category"],
-        backbone={k: b.get(k, True) for k in ("name", "checkpoint_sha256", "norm")},
+        backbone=dict(name=b["name"], checkpoint_sha256=b.get("checkpoint_sha256"), norm=b.get("norm", True)),
         decoder=dict(hidden_channels=cfg["decoder"]["hidden_channels"],
                      deterministic_resize=cfg["decoder"].get("deterministic_resize", False)),
         data={k: d[k] for k in ("tile_size", "overlap", "max_train_sources", "max_dev_sources",
@@ -199,6 +230,15 @@ def validate_e1_budget(path, payload, cfg, pools):
     return True
 
 
+def checkpoint_modules(model, experiment):
+    if experiment == "E1":
+        return model.decoder
+    if experiment == "E5":
+        return nn.ModuleDict({"adapters": model.adapters, "projection": model.projection,
+                              "decoder": model.decoder, "fusion": model.fusion})
+    return trainable_modules(model, experiment)
+
+
 def restore_model(payload, cfg, experiment, device):
     if experiment == "E1":
         # G1 config has no Adapter section; factory requires one even for E1.
@@ -206,8 +246,11 @@ def restore_model(payload, cfg, experiment, device):
         factory_cfg["adapter"] = dict(r=1, d=1, kernel_size=3, gamma_init=0., bias=True)
     else:
         factory_cfg = cfg
-    model = build_g2_model(factory_cfg, experiment=experiment, root=ROOT)
-    head = model.decoder if experiment == "E1" else nn.ModuleDict({"adapter": model.adapter, "decoder": model.decoder})
+    try:
+        model = build_g2_model(factory_cfg, experiment=experiment, root=ROOT)
+    except NotImplementedError as exc:
+        raise Blocked("Runtime lacks merged E5 model; run on g2/integration with TV1 D9 code") from exc
+    head = checkpoint_modules(model, experiment)
     head.load_state_dict(payload["model_state"], strict=True)
     if not model.extractor.backbone.__class__.__module__.startswith("dinov3."):
         raise Blocked("API fixture or unofficial backbone cannot produce experimental results")
@@ -218,7 +261,8 @@ def restore_model(payload, cfg, experiment, device):
 
 
 def implementation_identity():
-    paths = {ROOT / p for p in ("scripts/eval_g2.py", "src/train/g1_e1.py", "src/train/screen_representation.py",
+    paths = {ROOT / p for p in ("scripts/eval_g2.py", "scripts/summarize_g2_joint.py",
+                               "src/train/g1_e1.py", "src/train/g2_context.py", "src/train/screen_representation.py",
                                "src/utils/checkpoint.py", "src/utils/resume.py")}
     for directory in ("src/data", "src/eval", "src/metrics", "src/models", "src/geometry"):
         paths.update((ROOT / directory).rglob("*.py"))
@@ -227,14 +271,15 @@ def implementation_identity():
 
 class CaptureNative:
     """Observe the existing evaluator's one pass; export exact maps and masks."""
-    def __init__(self, native, directory):
+    def __init__(self, native, directory, *, predict_fn=predict_native):
         self.native, self.directory, self.index, self.rows = native, Path(directory), 0, []
+        self.predict_fn = predict_fn
 
     def __call__(self, model, image, cfg, device):
         sample = self.native[self.index]
         if not torch.equal(image, sample["image"]):
             raise RuntimeError("Native export order differs from evaluator input")
-        score = predict_native(model, image, cfg, device)
+        score = self.predict_fn(model, image, cfg, device)
         folder = self.directory / "maps" / sample["meta"]["sample_id"]
         folder.mkdir(parents=True, exist_ok=True)
         np.save(folder / "score.npy", score.numpy())
@@ -313,12 +358,19 @@ def completed_result(directory, signature, checkpoint):
 
 
 def prepare_job(args, experiment, category):
-    if experiment not in {"E1", "E2"}:
-        raise Blocked(f"{experiment} is reserved; D6 implements only E1/E2")
-    path = Path(getattr(args, f"{experiment.lower()}_root")) / category / "best.pt"
-    payload = load_trained_checkpoint(path, experiment, category)
+    joint_record = getattr(args, "joint_record", None)
+    joint_spec = getattr(args, "joint_spec", None)
+    if joint_record is not None:
+        if experiment != "E5" or not joint_record.get("checkpoint"):
+            raise Blocked("D10 trained E5 checkpoint missing; no random-weight fallback")
+        path = Path(joint_record["checkpoint"])
+    else:
+        if experiment not in {"E1", "E2"}:
+            raise Blocked(f"{experiment} is reserved; E5 requires --joint-manifest")
+        path = Path(getattr(args, f"{experiment.lower()}_root")) / category / "best.pt"
+    payload = load_trained_checkpoint(path, experiment, category, joint_record=joint_record, joint_spec=joint_spec)
     cfg, pools = relocate_config(payload["config"], args)
-    budget_verified = validate_e1_budget(path, payload, cfg, pools) if experiment == "E1" else False
+    budget_verified = validate_e1_budget(path, payload, cfg, pools) if experiment == "E1" else experiment == "E5"
     identity = dict(version="g2_dev_evaluator_v2", experiment=experiment, checkpoint_sha256=file_sha256(path),
                     checkpoint_config_sha256=sha256_json(payload["config"]),
                     scientific_protocol=scientific_identity(cfg), smoke=args.smoke,
@@ -328,11 +380,17 @@ def prepare_job(args, experiment, category):
                                  if torch.device(args.device).type == "cuda" else None,
                                  deterministic=True, amp=False, tf32=False),
                     implementation=implementation_identity())
+    if joint_record is not None:
+        from src.eval.g2_joint import joint_protocol_identity
+        identity["scientific_protocol"] = joint_protocol_identity(cfg)
+        identity.update(joint_run_id=joint_record["run_id"], joint_spec_sha256=sha256_json(joint_spec),
+                        benchmark={"requested": args.benchmark, "warmup": args.benchmark_warmup,
+                                   "repeats": args.benchmark_repeats})
     return path, payload, cfg, pools, identity
 
 
 def evaluate_category(args, experiment, category):
-    directory = Path(args.output_root) / experiment / category
+    directory = Path(getattr(args, "evaluation_directory", None) or (Path(args.output_root) / experiment / category))
     path, payload, cfg, pools, identity = prepare_job(args, experiment, category)
     signature = sha256_json(identity)
     if args.preflight:
@@ -360,7 +418,8 @@ def evaluate_category(args, experiment, category):
         native = torch.utils.data.Subset(native, range(min(3, len(native))))
     directory.mkdir(parents=True, exist_ok=True)
     cfg["evaluation"]["example_limit"] = 3
-    capture = CaptureNative(native, directory)
+    predict = predict_native_e4 if experiment == "E5" else predict_native
+    capture = CaptureNative(native, directory, predict_fn=predict)
     started = time.monotonic()
     result = evaluate_dev(model, native, cfg, args.device, directory, predict_fn=capture)
     dice = dice_from_exports(directory, capture.rows, category, cfg["synthetic_protocol"]["prediction_threshold"])
@@ -389,6 +448,19 @@ def evaluate_category(args, experiment, category):
                   elapsed_seconds=time.monotonic() - started, training_seed=cfg["training"]["seed"],
                   dev_seed=cfg["training"]["dev_seed"],
                   acceptance_eligible=not args.smoke and cuda and real)
+    if experiment == "E5":
+        from src.eval.g2_benchmark import BenchmarkUnavailable, benchmark_native
+        benchmark = dict(status="NOT RUN", reason="Benchmark not requested", latency=None, peak_vram=None)
+        if args.benchmark and not args.smoke:
+            try:
+                benchmark = benchmark_native(model, native[0]["image"], cfg, args.device,
+                                             predict_fn=predict, warmup=args.benchmark_warmup,
+                                             repeats=args.benchmark_repeats)
+            except BenchmarkUnavailable as exc:
+                benchmark.update(status="BLOCKED", reason=str(exc))
+        result.update(params=sum(p.numel() for p in checkpoint_modules(model, experiment).parameters()),
+                      benchmark=benchmark, run_id=args.joint_record["run_id"],
+                      training_git_sha=args.joint_record["git_sha"])
     write_metrics_json(result, directory / "metrics.json")
     (directory / "metrics.json.sha256").write_text(file_sha256(directory / "metrics.json") + "\n")
     return result
@@ -488,6 +560,154 @@ def write_comparison(output_root, results, *, mode="full", experiments=("E1", "E
     return summary
 
 
+def audit_joint_row(row, spec):
+    """Audit real checkpoint and signed D6 native exports; never trust a CSV score."""
+    from src.eval.evaluator import build_anomaly_map_qa_report
+    from src.eval.g2_joint import METRIC_FIELDS, METRIC_KEYS, joint_protocol_identity
+
+    payload = load_trained_checkpoint(row["checkpoint"], "E5", row["category"],
+                                      joint_record=row, joint_spec=spec)
+    if row["checkpoint_sha256"] is not None and row["checkpoint_sha256"] != file_sha256(row["checkpoint"]):
+        raise Blocked("Manifest checkpoint checksum differs")
+    if row["status"] != "PASS":
+        return
+    directory = Path(row["evaluation_json"]).parent
+    if Path(row["evaluation_json"]).name != "metrics.json":
+        raise Blocked("evaluation_json must point to evaluator metrics.json")
+    exported_config = json.loads((directory / "evaluation_config.json").read_text())
+    identity = exported_config["identity"]
+    if (identity.get("joint_run_id") != row["run_id"]
+            or identity.get("joint_spec_sha256") != sha256_json(spec)
+            or identity.get("checkpoint_config_sha256") != row["config_hash"]):
+        raise Blocked("Evaluation identity differs from manifest/search protocol")
+    result = completed_result(directory, sha256_json(identity), row["checkpoint"])
+    if (result is None or result["status"] != "PASS" or result.get("acceptance_eligible") is not True
+            or result.get("verification_scope") != "real_pretrained"
+            or torch.device(result.get("device", "cpu")).type != "cuda"
+            or result.get("experiment") != "E5" or result.get("category") != row["category"]
+            or result.get("run_id") != row["run_id"] or result.get("training_git_sha") != row["git_sha"]
+            or result.get("final_training_budget_verified") is not True):
+        raise Blocked("No valid real-pretrained CUDA evaluation/native exports")
+    if (row["protocol_hash"] != sha256_json(joint_protocol_identity(payload["config"]))
+            or row["protocol_hash"] != result["pair_protocol_sha256"]
+            or row["dev_hash"] != result["dev_samples_sha256"]
+            or row["params"] != result.get("params")
+            or any(row[key] != result[metric] for key, metric in zip(METRIC_FIELDS, METRIC_KEYS))):
+        raise Blocked("CSV metrics/params/protocol differ from audited evaluation")
+    native_rows = json.loads((directory / "native_maps.json").read_text())
+    for native_row in native_rows:
+        record = dict(anomaly_map=np.load(directory / native_row["score_path"], mmap_mode="r"),
+                      gt_mask=np.load(directory / native_row["mask_path"], mmap_mode="r"),
+                      meta=dict(image_id=native_row["sample_id"], category=row["category"], split="dev_synthetic",
+                                original_hw=native_row["original_hw"], anomaly_map_space="original_image",
+                                gt_mask_space="original_image"))
+        if build_anomaly_map_qa_report([record])["summary"]["status"] != "PASS":
+            raise Blocked("Native score/mask QA failed")
+    benchmark = result.get("benchmark", {})
+    if row["benchmark_status"] != benchmark.get("status", "NOT RUN"):
+        raise Blocked("Benchmark status differs from evaluation")
+    if row["latency"] is not None or row["peak_vram"] is not None:
+        import statistics
+        if (benchmark.get("status") != "PASS" or benchmark.get("cpu_fixture") is not False
+                or torch.device(benchmark.get("device", "cpu")).type != "cuda" or not benchmark.get("gpu")
+                or benchmark.get("native_hw") != native_rows[0]["original_hw"]
+                or benchmark.get("latency_unit") != "milliseconds" or benchmark.get("peak_vram_unit") != "allocated_bytes"
+                or row["latency"] != benchmark.get("latency") or row["peak_vram"] != benchmark.get("peak_vram")
+                or len(benchmark.get("samples_ms", [])) != benchmark.get("repeats")
+                or any(type(t) not in (int, float) or not math.isfinite(t) or t <= 0 for t in benchmark["samples_ms"])
+                or statistics.median(benchmark["samples_ms"]) != row["latency"]):
+            raise Blocked("Missing or incompatible real GPU benchmark evidence")
+
+
+def joint_result_row(row, result, directory):
+    """Only eligible full CUDA metrics enter the scientific joint-search CSV."""
+    from src.eval.g2_joint import METRIC_FIELDS, METRIC_KEYS
+
+    output = deepcopy(row)
+    output.update(status=result["status"], reason=result.get("reason"),
+                  evaluation_json=str((Path(directory) / "metrics.json").resolve()),
+                  benchmark_status=result.get("benchmark", {}).get("status", "NOT RUN"))
+    output.update(dict.fromkeys((*METRIC_FIELDS, "latency", "peak_vram")))
+    if result["status"] == "PASS" and result.get("acceptance_eligible") is True:
+        validate_metrics(result)
+        output.update({key: result[metric] for key, metric in zip(METRIC_FIELDS, METRIC_KEYS)})
+        output.update(checkpoint_sha256=result["checkpoint_sha256"], protocol_hash=result["pair_protocol_sha256"],
+                      dev_hash=result["dev_samples_sha256"], params=result["params"])
+        benchmark = result.get("benchmark", {})
+        if benchmark.get("status") == "PASS":
+            output.update(latency=benchmark["latency"], peak_vram=benchmark["peak_vram"])
+    elif result["status"] == "PASS":
+        raise Blocked("PASS without acceptance eligibility cannot enter joint manifest")
+    return output
+
+
+def run_joint(args):
+    """D9 skeleton or D10 checkpoint intake, using this evaluator's one pipeline."""
+    from src.eval.g2_joint import load_spec, read_manifest, skeleton, write_manifest, write_reports
+
+    directory = Path(args.output_root)
+    directory.mkdir(parents=True, exist_ok=True)
+    if args.init_joint:
+        if (directory / "joint_search_360.csv").exists():
+            raise Blocked("Existing joint manifest preserved; use --joint-manifest and --resume/--report-only")
+        try:
+            integration_sha = subprocess.check_output(
+                ["git", "rev-parse", args.integration_ref], cwd=ROOT, text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+        except subprocess.CalledProcessError:
+            integration_sha = None
+        spec = load_spec(args.joint_model_config, args.joint_runner_config, root=ROOT, integration_sha=integration_sha)
+        rows = skeleton(spec)
+    else:
+        source = Path(args.joint_manifest).resolve()
+        spec = json.loads((source.parent / "joint_search_spec.json").read_text())
+        rows = read_manifest(source, spec)
+    if args.r is not None and [args.r, args.d] not in spec["pairs"]:
+        raise Blocked("Requested r/d outside declared search")
+    if not args.init_joint:
+        for i, row in enumerate(rows):
+            if (row["category"] not in args.categories or args.r is not None and (row["r"], row["d"]) != (args.r, args.d)
+                    or args.fusions is not None and row["fusion"] not in args.fusions):
+                continue
+            job = deepcopy(args)
+            job.joint_record, job.joint_spec = row, spec
+            output = directory / "E5" / f"r{row['r']}_d{row['d']}" / row["fusion"] / row["category"]
+            job.evaluation_directory = str(output)
+            try:
+                if args.report_only:
+                    audit_joint_row(row, spec)
+                    continue
+                if spec["budget"] is None:
+                    raise Blocked(spec["budget_reason"])
+                if not row["checkpoint"]:
+                    raise Blocked("D10 training checkpoint missing")
+                if output.resolve() == Path(row["checkpoint"]).resolve().parent:
+                    raise Blocked("Evaluation output must be separate from training artifacts")
+                result = evaluate_category(job, "E5", row["category"])
+                rows[i] = joint_result_row(row, result, output)
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+                blocked = deepcopy(row)
+                blocked.update(status="BLOCKED" if isinstance(exc, (Blocked, OSError, KeyError)) else "FAIL",
+                               reason=str(exc), benchmark_status="NOT RUN")
+                from src.eval.g2_joint import METRIC_FIELDS
+                blocked.update(dict.fromkeys((*METRIC_FIELDS, "latency", "peak_vram")))
+                rows[i] = blocked
+                write_metrics_json(blocked, output / "attempt_status.json")
+            # Preserve each finished attempt for interruption/resume; never train.
+            write_manifest(directory / "joint_search_360.csv", rows, spec)
+            write_metrics_json(spec, directory / "joint_search_spec.json")
+    coverage = write_reports(rows, spec, directory, audit=lambda row: audit_joint_row(row, spec))
+    write_metrics_json(dict(arguments=vars(args), git_commit=git_commit(),
+                            integration_sha=spec.get("integration_sha"), torch=str(torch.__version__),
+                            cuda_available=torch.cuda.is_available(),
+                            mode="skeleton" if args.init_joint else "checkpoint_intake",
+                            training_performed=False, metrics_from_untrained_models=False), directory / "run_manifest.json")
+    print(json.dumps({k: v for k, v in coverage.items() if k != "records"}, indent=2))
+    if args.init_joint:
+        return 0  # Skeleton CODE success; scientific coverage remains explicit.
+    return 0 if coverage["status"] == "PASS" else 2
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--experiments", nargs="+", choices=("E1", "E2", "E3", "E4", "E5"), default=["E1", "E2"])
@@ -504,6 +724,17 @@ def parse_args(argv=None):
     parser.add_argument("--smoke", action="store_true", help="Three original DEV samples per category; separate outputs, no acceptance")
     parser.add_argument("--preflight", action="store_true", help="Validate actual checkpoint/data/protocol without inference")
     parser.add_argument("--report-only", action="store_true", help="Audit existing results without running inference")
+    parser.add_argument("--init-joint", action="store_true", help="Write a 360-cell D9 skeleton; no inference/training")
+    parser.add_argument("--joint-manifest", help="Versioned E5 45x8 CSV; sibling joint_search_spec.json required")
+    parser.add_argument("--joint-model-config", default="configs/g2_experiments.yaml")
+    parser.add_argument("--joint-runner-config", default="configs/g2_runner.yaml")
+    parser.add_argument("--integration-ref", default="g2/integration", help="Record inspected TV1 integration commit")
+    parser.add_argument("--r", type=int, help="Filter joint candidates (requires --d)")
+    parser.add_argument("--d", type=int, help="Filter joint candidates (requires --r)")
+    parser.add_argument("--fusions", nargs="+", choices=("mean", "weighted_sum", "concat", "gated", "attention"))
+    parser.add_argument("--benchmark", action="store_true", help="CUDA native-inference latency/VRAM, never CPU proxy")
+    parser.add_argument("--benchmark-warmup", type=int, default=1)
+    parser.add_argument("--benchmark-repeats", type=int, default=5)
     args = parser.parse_args(argv)
     requested = [c for group in args.categories for c in group.split(",")]
     if requested == ["all"]:
@@ -514,6 +745,19 @@ def parse_args(argv=None):
     if len(set(args.experiments)) != len(args.experiments) or sum((args.smoke, args.preflight, args.report_only)) > 1:
         parser.error("Use distinct experiments and at most one of --smoke/--preflight/--report-only")
     args.experiments = [exp for exp in ("E1", "E2", "E3", "E4", "E5") if exp in args.experiments]
+    joint = args.init_joint or args.joint_manifest is not None
+    if args.init_joint and (args.joint_manifest or args.smoke or args.preflight or args.report_only or args.resume or args.benchmark):
+        parser.error("--init-joint only writes skeleton reports; incompatible execution flags")
+    if (args.r is None) != (args.d is None) or any(v is not None and v <= 0 for v in (args.r, args.d)):
+        parser.error("--r and --d must be positive integers supplied together")
+    if not joint and any((args.r is not None, args.fusions is not None, args.benchmark)):
+        parser.error("Joint candidate/benchmark flags require --joint-manifest")
+    if args.benchmark_warmup < 0 or args.benchmark_repeats < 1:
+        parser.error("Benchmark warmup >= 0 and repeats >= 1")
+    if joint:
+        args.experiments = ["E5"]
+        if args.output_root == "outputs/G2/evaluation":
+            args.output_root = "outputs/G2/D9"
     if args.smoke or args.preflight:
         args.output_root = str(Path(args.output_root) / ("smoke" if args.smoke else "preflight"))
     output = Path(args.output_root).resolve()
@@ -526,6 +770,13 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.init_joint or args.joint_manifest:
+        try:
+            return run_joint(args)
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            status = "BLOCKED" if isinstance(exc, (Blocked, OSError, KeyError)) else "FAIL"
+            print(json.dumps(dict(status=status, reason=str(exc)), indent=2))
+            return 2 if status == "BLOCKED" else 1
     directory = Path(args.output_root)
     directory.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(directory / "eval.log", encoding="utf-8")
