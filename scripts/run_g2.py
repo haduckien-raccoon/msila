@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""G2 TV1: one backbone, 72 Adapter screens, then 8 locked E2/E3/E4 runs.
+"""G2 TV1: D6 technical preflight; E2 debug smoke; main selection pending D10.
 
 Examples (paths/checkpoints configured in YAML):
-  python scripts/run_g2.py --stage adapter_screen --categories all --device cuda --resume
-  python scripts/run_g2.py --stage E2 --categories all --device cuda --resume
-  python scripts/run_g2.py --stage E3 --categories all --device cuda --resume
-  python scripts/run_g2.py --stage E4 --categories all --device cuda --resume
-  python scripts/run_g2.py --stage E4 --categories all --device cuda --inference
+  python scripts/run_g2.py --stage adapter_preflight --device cpu
+  python scripts/run_g2.py --stage E2 --smoke --debug-pair 128 512 --device cuda
 
 Smoke uses a separate namespace and never supplies selection evidence.
-No E5 or fusion grid is scheduled. Run each study with a single runner process.
+The old adapter_screen CLI is a CPU-preflight alias, never 72 training jobs.
+Legacy selection readers remain for historical audit, not new selection.
 """
 from __future__ import annotations
 
@@ -52,6 +50,8 @@ SELECTION_RULE = dict(metric="macro_synthetic_dev_aupro_0_05", direction="max",
                       expected_screen_runs=72, expected_main_runs=8,
                       require_all_categories=True, require_full_budget=True,
                       checkpoint_tie_break="earliest_epoch")
+PENDING_SELECTION = dict(status="pending_joint_selection_D10", method="joint_rd_fusion",
+                         legacy_adapter_lock="audit_only")
 
 # Audited D6/D7 implementations whose E2/E3 paths this E4 extension preserves.
 # Other dependency/source changes still block reuse; E4 hashes its own sources.
@@ -82,7 +82,9 @@ def absolute(value):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/g2_runner.yaml")
-    parser.add_argument("--stage", required=True, choices=("adapter_screen", "E2", "E3", "E4"))
+    parser.add_argument("--stage", required=True, choices=("adapter_preflight", "adapter_screen", "E2", "E3", "E4"))
+    parser.add_argument("--debug-pair", nargs=2, type=int, metavar=("R", "D"),
+                        help="E2 smoke: explicit provisional widths; no selection evidence")
     parser.add_argument("--inference", action="store_true", help="E4: restore best.pt, export native DEV maps")
     parser.add_argument("--categories", nargs="+", default=["all"], help="all, names or comma-separated names")
     parser.add_argument("--resume", action="store_true")
@@ -94,19 +96,21 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.inference and args.stage != "E4":
         parser.error("--inference is supported for --stage E4")
+    if args.debug_pair and (args.stage != "E2" or not args.smoke):
+        parser.error("--debug-pair requires --stage E2 --smoke")
     return args
 
 
 def selected_pairs(cfg, runner):
     name = cfg["backbone"]["name"]
     if name not in runner["adapter_grids"]:
-        raise ValueError(f"Declare a 3 x 3 adapter_grids entry for {name} before screening")
+        raise ValueError(f"Declare a 3 x 3 adapter_grids entry for {name} before preflight")
     grid = runner["adapter_grids"][name]
     r_values, d_values = grid["r_values"], grid["d_values"]
     if name in GRIDS and (r_values, d_values) != GRIDS[name]:
         raise ValueError(f"Expected the declared D6 r/d grid for {name}: {GRIDS[name]}")
     if len(r_values) != 3 or len(d_values) != 3:
-        raise ValueError("Adapter screening requires exactly three r and three d values")
+        raise ValueError("Adapter preflight requires exactly three r and three d values")
     return adapter_pairs(cfg["backbone"]["channels"], {
         "pairs": [[r, d] for r in r_values for d in d_values],
     })
@@ -119,8 +123,8 @@ def positive_int(value, label):
 
 def load_config(args):
     runner = read_yaml(absolute(args.config))
-    if runner.get("version") != "g2_runner_v1" or runner.get("selection") != SELECTION_RULE:
-        raise ValueError("Expected g2_runner_v1 and the predeclared D6 selection rule")
+    if runner.get("version") != "g2_runner_v2" or runner.get("selection") != PENDING_SELECTION:
+        raise ValueError("Expected g2_runner_v2: D6 preflight, pending joint selection D10")
     cfg = read_yaml(absolute(runner["model_config"]))
     if cfg["categories"] != list(CATEGORIES):
         raise ValueError("D6 requires the eight canonical categories in declared order")
@@ -131,6 +135,9 @@ def load_config(args):
         if value:
             cfg[section][key] = value
     cfg = resolve_g2_config(cfg, root=ROOT)
+    if args.debug_pair:
+        cfg["adapter"].update(r=args.debug_pair[0], d=args.debug_pair[1])
+        cfg = resolve_g2_config(cfg, root=ROOT)
     cfg["data"]["root"] = str(absolute(cfg["data"]["root"]))
     cfg["data"].setdefault("max_train_sources", None)
     cfg["data"].setdefault("max_dev_sources", 4)
@@ -337,6 +344,9 @@ def make_context(study, category, pair, stage, *, smoke=False, selection_sha256=
     cfg.update(stage=stage, mode="smoke" if smoke else "full", sources=manifest,
                study_sha256=study["sha256"], selection_sha256=selection_sha256, expected_steps=expected)
     cfg["adapter"].update(r=pair[0], d=pair[1])
+    if stage == "E2" and study["protocol"]["selection"].get("status") == "pending_joint_selection_D10":
+        cfg["selection_status"] = "pending_joint_selection_D10"
+        cfg["adapter_pair_role"] = "debug_pair"
     if stage in {"E3", "E4"}:
         if selection_sha256 is None:
             raise G2Blocked(f"BLOCKED: {stage} requires the Adapter selection lock hash")
@@ -497,21 +507,11 @@ def selection_payload(study, rows):
 
 
 def publish_selection(study):
-    rows, _ = collect_results(study, "adapter_screen")
-    if len(rows) != 72:
-        return None
-    payload = selection_payload(study, rows)
-    record = dict(payload=payload, sha256=sha256_json(payload))
-    path = study["root"] / "full" / "adapter_selection_lock.json"
-    if path.exists():
-        if json.loads(path.read_text()) != record:
-            raise G2Blocked("BLOCKED: existing selection lock differs from current evidence")
-    else:
-        save_json(record, path)
-    return record
+    raise G2Blocked("BLOCKED: D6 does not publish selection locks; pending joint selection D10")
 
 
 def validate_selection(study):
+    """Legacy/E2-only lock reader for audit, never called by the D6-v3 CLI."""
     path = study["root"] / "full" / "adapter_selection_lock.json"
     if not path.is_file():
         raise G2Blocked("BLOCKED: adapter_selection_lock.json is missing; complete 72 screening runs first")
@@ -601,6 +601,12 @@ def export_comparison(study, lock, *, smoke=False, experiments=("E2", "E3")):
 
 
 def summarize(study, stage, outcomes, *, smoke, lock=None):
+    if stage == "E2" and lock is None:
+        all_jobs = bool(outcomes) and all(row["status"] in {"PASS", "SKIP"} for row in outcomes)
+        return dict(status="SMOKE_PASS" if smoke and all_jobs else "INCOMPLETE", stage=stage,
+                    mode="smoke" if smoke else "full", outcomes=outcomes, real_E2_pass=0,
+                    selection_status="pending_joint_selection_D10", adapter_pair_role="debug_pair",
+                    selection_lock=None, study_sha256=study["sha256"], counts_verified=True)
     screen, _ = collect_results(study, "adapter_screen")
     main, e3, e4 = [], [], []
     if lock:
@@ -626,17 +632,27 @@ def main(argv=None):
     summary_path = None
     try:
         cfg, runner, root = load_config(args)
+        if args.stage in {"adapter_preflight", "adapter_screen"}:
+            from scripts.g2_adapter_preflight import run_cpu
+            result = run_cpu(cfg, root.parent)
+            result.update(stage="adapter_preflight", operation="technical_check")
+            print(json.dumps(result, indent=2))
+            return 0 if result["cpu_pass"] == 9 else 1
         mode = "smoke" if args.smoke else "full"
+        # Isolate v3 debug runs from immutable historical training artifacts.
+        if args.stage == "E2" and args.smoke:
+            root = root / "debug_d6_v3"
         summary_path = root / mode / f"{args.stage}{'_inference' if args.inference else ''}_summary.json"
-        if args.stage in {"E2", "E3", "E4"} and not (root / "full" / "adapter_selection_lock.json").is_file():
-            raise G2Blocked("BLOCKED: adapter_selection_lock.json is missing; complete 72 screening runs first")
+        if not (args.stage == "E2" and args.smoke):
+            raise G2Blocked("BLOCKED: pending joint selection D10; official main awaits joint_selection_lock.json "
+                            "and D11 protocol integration. A legacy D6 Adapter lock is audit-only. "
+                            "E2 debug remains available with --smoke [--debug-pair R D].")
         if not args.smoke and (torch.device(args.device).type != "cuda" or not torch.cuda.is_available()):
             raise FileNotFoundError("G2 NOT RUN: full D6 requires a usable CUDA device; smoke may use CPU")
         study = prepare_study(cfg, runner, root, device=args.device)
         enforce_lock(root / mode, study["protocol"])
-        lock = validate_selection(study) if args.stage in {"E2", "E3", "E4"} else None
-        pairs = study["pairs"] if lock is None else [(lock["payload"]["selected_pair"]["r"],
-                                                     lock["payload"]["selected_pair"]["d"])]
+        lock = None
+        pairs = [(cfg["adapter"]["r"], cfg["adapter"]["d"])]
         outcomes = []
         for pair in pairs:
             for category in args.categories:
@@ -651,8 +667,6 @@ def main(argv=None):
                     save_json(row, run_directory(study, category, pair, args.stage, args.smoke) / "failure.json")
                     logging.error("%s", row)
                 outcomes.append(row)
-        if args.stage == "adapter_screen" and not args.smoke:
-            lock = publish_selection(study)
         result = summarize(study, args.stage, outcomes, smoke=args.smoke, lock=lock)
         if lock is not None and args.stage in {"E2", "E3", "E4"}:
             experiments = ("E3", "E4") if args.stage == "E4" else ("E2", "E3")
@@ -664,8 +678,9 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         status = "BLOCKED" if "BLOCKED" in str(exc) else ("NOT RUN" if isinstance(exc, FileNotFoundError) else "FAIL")
         result = dict(status=status, stage=args.stage, mode="smoke" if args.smoke else "full", reason=str(exc),
-                      real_adapter_screen_pass=0, expected_adapter_screen=72,
+                      real_adapter_screen_pass=0, expected_adapter_screen=0,
                       real_E2_pass=0, expected_E2=8, counts_verified=False)
+        result["selection_status"] = "pending_joint_selection_D10"
         result.update(real_E3_pass=0, expected_E3=8)
         result.update(real_E4_pass=0, expected_E4=8)
     result["operation"] = "inference" if args.inference else "train"
