@@ -1,5 +1,6 @@
 """TV1 six-source factory using the existing TV2 modules and canonical IDs."""
 from collections.abc import Mapping
+import logging
 
 import torch
 from torch import Tensor, nn
@@ -31,6 +32,7 @@ class SixSourceFusion(nn.Module):
             raise ValueError("dim must be a positive integer")
         self.method, self.dim = canonical_fusion_method(method), dim
         self.source_names, self.num_sources = MULTIVIEW_FEATURE_KEYS, 6
+        self._reported_amp_cast = None
         types = dict(weighted_sum=WeightedSumFusion, concat=ConcatFusion,
                      gated=GatedFusion, attention=PositionAwareAttentionFusion)
         # Outer boundary validates once before handing off to TV2 modules.
@@ -46,6 +48,20 @@ class SixSourceFusion(nn.Module):
             fused = diagnostics.pop("feature")
         else:
             fused = self.module(ordered)
+        reference = ordered[self.source_names[0]]
+        if (isinstance(fused, Tensor) and fused.device == reference.device
+                and fused.dtype != reference.dtype
+                and torch.is_autocast_enabled(reference.device.type)):
+            # CUDA AMP promotes reductions such as sum to FP32. Decoder's
+            # shared tensor boundary still requires the projected source dtype.
+            # Cast retains gradients; never move an output to another device or
+            # hide a dtype error outside an autocast forward.
+            signature = (fused.dtype, reference.dtype)
+            if self._reported_amp_cast != signature:
+                logging.getLogger(__name__).info('Fusion dtype under AMP (%s): %s -> %s',
+                                                 self.method, *signature)
+                self._reported_amp_cast = signature
+            fused = fused.to(dtype=reference.dtype)
         validate_g2_fused_feature(fused, ordered, expected_channels=self.dim)
         if not return_trace:
             return fused

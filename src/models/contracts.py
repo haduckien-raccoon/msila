@@ -461,5 +461,8 @@ def validate_g2_fused_feature(
     if fused.shape != reference.shape:
         raise ContractError("G2 Fusion output must preserve [B,C,H,W]")
     if fused.device != reference.device or fused.dtype != reference.dtype:
-        raise ContractError("G2 Fusion output device or dtype mismatch")
+        raise ContractError(
+            f"G2 Fusion output device or dtype mismatch: got {fused.device}/{fused.dtype}, "
+            f"expected {reference.device}/{reference.dtype}"
+        )
 
