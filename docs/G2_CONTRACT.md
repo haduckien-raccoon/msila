@@ -116,6 +116,43 @@ hoặc nhận `MVTEC_AD2_ROOT`, `DINOV3_REPO`, `DINOV3_WEIGHTS` (tùy chọn
 hiện có và một optimizer step. Thiếu asset: SKIP/**NOT RUN**; đường explicit sai:
 FAIL. Không chạy full training trong D5-TV1.
 
+## D6-TV1: Colab Adapter screening
+
+`notebooks/G2_02_Adapter_Screening.ipynb` có năm phần: Setup, Preflight,
+Smoke một cặp/category, Full screening và xuất kết quả. Notebook gọi
+`scripts/g2_colab_screening.py`, dùng lại `run_g2.execute_job`, trainer E2,
+validator và selector hiện có. Không chạy E2 main, không đọc TEST để lựa chọn.
+
+Batch mặc định trong YAML vẫn là 4. Notebook có tùy chọn đo batch trên T4/L4/A100
+bằng hai TRAIN steps của cặp ViT-B lớn nhất (256,768), giữ 20% VRAM dự phòng.
+Batch được khóa chung cho toàn bộ study trong `colab_batch_profile.json` trước
+khi chạy; batch lớn đổi số optimizer updates trong 20 epochs, được ghi trong
+budget plan. Đặt `BATCH_SIZE=4` để giữ batch của contract. Không đổi batch sau
+một run hoặc khi resume; tăng batch/đổi config hoặc commit phải dùng RUN_ID mới.
+Capacity probe và smoke không tính vào PASS/72. Preflight trên Colab chưa chạy
+thì ghi NOT RUN, kể cả khi kiểm tra CPU fixture đã PASS.
+
+Factory cache chỉ giữ DINO frozen/eval; Adapter, Decoder, optimizer mới cho
+mỗi category/r/d. CPU RNG sau khởi tạo DINO được replay để giữ cùng seeded
+head initialization với factory không cache. API optional `extractor`,
+`model_factory`, `on_checkpoint` phục vụ screening; đường CLI cũ vẫn giữ mặc
+định. Checkpoint callback backup best/last + SHA256, log và config sang Drive
+mỗi lần trainer lưu (20 steps, cuối epoch); cuối run sync cả metrics và report.
+
+Chọn nhóm bằng `RUN_CATEGORIES` và `RUN_PAIRS=['64:256', '128:512']`; all/all
+là 72 jobs và chỉ chạy khi bật riêng `RUN_FULL_SCREENING=True`. Validator
+xác minh completed runs trước khi skip; run bị ngắt resume optimizer/RNG/cursor.
+Report luôn có 72 hàng và 9 macro; metric thiếu là null, không điền 0.
+`adapter_selection_lock.json` chỉ được selector hiện có tạo sau đủ 72 real
+full CUDA kết quả hợp lệ. Tie-break: macro cao nhất, ít Adapter parameters,
+r nhỏ hơn, d nhỏ hơn. Artifacts/checkpoint được lưu từng run lên Drive.
+
+Kiểm tra code bằng CPU (fixture không phải chứng cứ thực nghiệm):
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila_g2_mpl .venv/bin/python -m pytest -q tests/test_g2_colab_screening.py tests/test_g2_tv1_runner.py tests/test_g2_tv1_model.py tests/test_g2_tv1_contract.py
+```
+
 ## D7: E3 và dữ liệu cho TV2
 
 E3: một ảnh Local → frozen DINOv3 (ba layer) → ba ResidualAdapter2d độc lập

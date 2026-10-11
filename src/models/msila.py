@@ -357,6 +357,7 @@ def resolve_g2_config(
 
 def build_g2_model(
     config: Mapping[str, Any], experiment: str = "E2", *, root: str | Path | None = None,
+    extractor: DINOv3FeatureExtractor | None = None,
 ) -> E1 | E3:
     """Build E1--E4 from one backbone selector; E5 remains unimplemented."""
     if experiment not in {"E1", "E2", "E3", "E4"}:
@@ -365,11 +366,19 @@ def build_g2_model(
     backbone, adapter = resolved["backbone"], resolved["adapter"]
     if not Path(backbone["weights"]).is_file():
         raise FileNotFoundError(f"DINOv3 checkpoint not found: {backbone['weights']}")
-    extractor = DINOv3FeatureExtractor(
-        repo_dir=backbone["repo_dir"], weights=backbone["weights"],
-        model_name=backbone["name"], norm=backbone.get("norm", True),
-        feature_mode="multilayer" if experiment in {"E3", "E4"} else "deepest", check_finite=True,
-    )
+    if extractor is None:
+        extractor = DINOv3FeatureExtractor(
+            repo_dir=backbone["repo_dir"], weights=backbone["weights"],
+            model_name=backbone["name"], norm=backbone.get("norm", True),
+            feature_mode="multilayer" if experiment in {"E3", "E4"} else "deepest", check_finite=True,
+        )
+    elif (experiment != "E2" or extractor.model_name != backbone["name"]
+          or extractor.feature_mode != "deepest" or extractor.training
+          or extractor.repo_dir != Path(backbone["repo_dir"]).resolve()
+          or Path(extractor.weights).resolve() != Path(backbone["weights"]).resolve()
+          or extractor.norm != backbone.get("norm", True)
+          or any(p.requires_grad or p.grad is not None for p in extractor.parameters())):
+        raise ValueError("Only a matching frozen/eval deepest E2 extractor may be reused")
     hidden_channels = resolved["decoder"]["hidden_channels"]
     deterministic_resize = resolved["decoder"].get("deterministic_resize", False)
     if experiment == "E1":
