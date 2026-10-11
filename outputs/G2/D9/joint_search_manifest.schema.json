@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "g2_joint_search_v1",
+  "type": "object",
+  "required": [
+    "category",
+    "r",
+    "d",
+    "fusion",
+    "seed",
+    "budget",
+    "checkpoint",
+    "config_hash",
+    "git_sha",
+    "status",
+    "aupro_005",
+    "tiny",
+    "mixed",
+    "dice",
+    "p99",
+    "params",
+    "latency",
+    "peak_vram",
+    "run_id",
+    "reason",
+    "evaluation_json",
+    "checkpoint_sha256",
+    "protocol_hash",
+    "dev_hash",
+    "benchmark_status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "enum": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice",
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ]
+    },
+    "r": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "d": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fusion": {
+      "enum": [
+        "mean",
+        "weighted_sum",
+        "concat",
+        "gated",
+        "attention"
+      ]
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "budget": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "epochs",
+        "batch_size",
+        "max_steps",
+        "max_minutes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "epochs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_steps": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_minutes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "checkpoint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "config_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "git_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "status": {
+      "enum": [
+        "NOT RUN",
+        "BLOCKED",
+        "FAIL",
+        "PASS",
+        "CPU_PASS",
+        "SMOKE_PASS",
+        "READY",
+        "INFEASIBLE_ON_HARDWARE"
+      ]
+    },
+    "aupro_005": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "tiny": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "mixed": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "dice": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "p99": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "params": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "latency": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0
+    },
+    "peak_vram": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evaluation_json": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checkpoint_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "protocol_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dev_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "benchmark_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "arguments": {
+    "experiments": [
+      "E5"
+    ],
+    "categories": [
+      "can",
+      "fabric",
+      "fruit_jelly",
+      "rice",
+      "sheet_metal",
+      "vial",
+      "wallplugs",
+      "walnuts"
+    ],
+    "e1_root": "outputs/G1/E1",
+    "e2_root": "outputs/G2/E2",
+    "data_root": null,
+    "repo_dir": null,
+    "weights": null,
+    "output_root": "outputs/G2/D9",
+    "device": "cpu",
+    "resume": false,
+    "smoke": false,
+    "preflight": false,
+    "report_only": false,
+    "init_joint": true,
+    "joint_manifest": null,
+    "joint_model_config": "configs/g2_experiments.yaml",
+    "joint_runner_config": "configs/g2_runner.yaml",
+    "integration_ref": "g2/integration",
+    "r": null,
+    "d": null,
+    "fusions": null,
+    "benchmark": false,
+    "benchmark_warmup": 1,
+    "benchmark_repeats": 5
+  },
+  "git_commit": "33254e45ceffa5c0905ad47fb97a3e3facb14350",
+  "integration_sha": "f0c51c883c5e9bdd3740cf5e323cb6a29460b10e",
+  "torch": "2.6.0+cpu",
+  "cuda_available": false,
+  "mode": "skeleton",
+  "training_performed": false,
+  "metrics_from_untrained_models": false
+}
