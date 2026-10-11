@@ -1,0 +1,17 @@
+# D10 screening only. User-declared budget: 20 epochs, batch 32, AdamW.
+version: g2_d10_runner_v1
+base_config: configs/g2_runner.yaml
+output_root: outputs/G2/D10
+run_id: e5_screen_e20_b32_v1
+screening_budget:
+  epochs: 20
+  batch_size: 32
+  max_steps: null
+  max_minutes: null
+batch_policy: fixed_for_all_candidates
+oom_policy: record_failure_no_automatic_batch_change
+drive_sync: epoch_and_job_end
+paired_strategy: sequential  # One frozen backbone forward per view, batch B each.
+num_workers: 2
+d9_preflight: outputs/G2/D9/fusion_preflight_45.csv
+d6_preflight: outputs/G2/D6/adapter_preflight.csv

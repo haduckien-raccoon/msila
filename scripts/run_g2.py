@@ -88,7 +88,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/g2_runner.yaml")
     parser.add_argument("--stage", required=True,
-                        choices=("adapter_preflight", "adapter_screen", "fusion_preflight", "E2", "E3", "E4", "E5"))
+                        choices=("adapter_preflight", "adapter_screen", "fusion_preflight", "joint_search", "E2", "E3", "E4", "E5"))
     parser.add_argument("--debug-pair", nargs=2, type=int, metavar=("R", "D"),
                         help="E2/E3/E4 debug: explicit provisional widths; no selection evidence")
     parser.add_argument("--prepare", action="store_true",
@@ -99,15 +99,33 @@ def parse_args(argv=None):
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--backbone", choices=tuple(BACKBONES))
+    parser.add_argument("--owner", choices=("tv1", "tv2"), default="tv1")
+    parser.add_argument("--run-id", help="D10 protocol namespace; changing a budget creates a new protocol directory")
+    parser.add_argument("--r", type=int)
+    parser.add_argument("--d", type=int)
+    parser.add_argument("--fusions", nargs="+", help="D10 candidate filter; average/weighted aliases accepted")
+    parser.add_argument("--max-jobs", type=int, help="D10: bound jobs per invocation; coverage still retains all 180 cells")
+    parser.add_argument("--drive-output", help="D10 Drive mirror; sync after epochs, job completion and errors")
+    parser.add_argument("--preflight", action="store_true", help="D10 asset/config preflight without training")
+    parser.add_argument("--report-only", action="store_true", help="D10 audit existing coverage without training")
     for flag in ("data-root", "repo-dir", "weights", "output-root"):
         parser.add_argument(f"--{flag}")
     args = parser.parse_args(argv)
     if args.inference and args.stage != "E4":
         parser.error("--inference is supported for --stage E4")
-    if args.prepare and (args.stage not in {"E3", "E4"} or args.smoke or args.inference or args.resume):
-        parser.error("--prepare requires --stage E3/E4 and cannot train, infer or resume")
+    if args.prepare and (args.stage not in {"E3", "E4", "joint_search"} or args.smoke or args.inference or args.resume):
+        parser.error("--prepare requires --stage E3/E4/joint_search and cannot train, infer or resume")
     if args.debug_pair and not (args.stage in {"E2", "E3", "E4"} and (args.smoke or args.prepare)):
         parser.error("--debug-pair requires --stage E2/E3/E4 --smoke, or --stage E3/E4 --prepare")
+    if (args.r is None) != (args.d is None) or any(v is not None and v < 1 for v in (args.r, args.d)):
+        parser.error("D10 --r and --d must be positive integers supplied together")
+    if args.max_jobs is not None and args.max_jobs < 1:
+        parser.error("--max-jobs must be positive")
+    if sum((args.prepare, args.preflight, args.report_only, args.smoke)) > 1:
+        parser.error("Use at most one of --prepare/--preflight/--report-only/--smoke")
+    if args.stage != "joint_search" and any((args.preflight, args.report_only, args.run_id,
+                                              args.r is not None, args.fusions, args.max_jobs, args.drive_output)):
+        parser.error("Joint-search flags require --stage joint_search")
     return args
 
 
@@ -726,6 +744,9 @@ def summarize(study, stage, outcomes, *, smoke, lock=None):
 def main(argv=None):
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.stage == "joint_search":
+        from src.train.g2_joint_search import run_from_cli
+        return run_from_cli(args)
     summary_path = None
     try:
         cfg, runner, root = load_config(args)

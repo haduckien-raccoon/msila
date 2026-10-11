@@ -1,0 +1,86 @@
+{
+  "task": "D10-TV1",
+  "code_status": "PASS",
+  "experiment_status": "NOT RUN",
+  "real_pass": 0,
+  "expected": 180,
+  "full_search_expected": 360,
+  "training_performed": false,
+  "gpu_training": "NOT RUN",
+  "screening_budget": {
+    "epochs": 20,
+    "batch_size": 32,
+    "max_steps": null,
+    "max_minutes": null
+  },
+  "budget_source": "User: approximately 20 epochs, AdamW, batch 32 or 64; default 32",
+  "drive_sync": "after_epoch_and_job_end_or_failure",
+  "main_training_performed": false,
+  "selection_performed": false,
+  "selection_lock": null,
+  "tested_worktree_base_sha": "ab64c0d1b7133815a94dbbb0826196e75bdc9f2b",
+  "tested_git_dirty": true,
+  "tests": {
+    "tests": 587,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 4,
+    "passed": 583,
+    "duration_seconds": 119.042,
+    "junit": "targeted_tests.xml",
+    "skips": [
+      {
+        "test": "test_real_debug_e4_one_batch_checkpoint_if_explicitly_enabled",
+        "reason": "NOT RUN: E4 real GPU batch is opt-in on Colab, never required locally"
+      },
+      {
+        "test": "test_real_debug_e3_one_batch_checkpoint_if_explicitly_enabled",
+        "reason": "NOT RUN: real E3 GPU batch is opt-in on Colab, never required locally"
+      },
+      {
+        "test": "test_real_e2_one_train_batch_when_assets_available",
+        "reason": "NOT RUN: real E2 batch requires MVTEC_AD2_ROOT, DINOV3_REPO, DINOV3_WEIGHTS"
+      },
+      {
+        "test": "test_optional_real_dinov3_smoke",
+        "reason": "Set DINOV3_REPO and DINOV3_WEIGHTS for real-backbone smoke test."
+      }
+    ]
+  },
+  "notebook": {
+    "path": "notebooks/G2_03_Training.ipynb",
+    "status": "VALID",
+    "cells": 14,
+    "outputs_empty": true
+  },
+  "python_compile": "PASS",
+  "git_diff_check": "PASS",
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.6.0+cpu",
+    "device": "cpu",
+    "CUDA_VISIBLE_DEVICES": ""
+  },
+  "changed_code_files": [
+    "scripts/run_g2.py",
+    "src/models/msila.py",
+    "src/train/g2_e2.py",
+    "src/train/g2_joint_search.py",
+    "configs/g2_joint_search.yaml",
+    "notebooks/G2_03_Training.ipynb",
+    "tests/test_g2_tv1_d10.py"
+  ],
+  "source_sha256": {
+    "scripts/run_g2.py": "3c7c4d9d9eb172ab13daf78fa7c00d345fa6cc77c1ffeed64173a7e7fb3cf556",
+    "src/models/msila.py": "b9de2a92b409d47e40cd69172c32df5733a11179ccbf59cea1deffda4583a847",
+    "src/train/g2_e2.py": "56bd6db1cae34915b217af3234a511ca72c43922d415ccbd935b64148f70a43a",
+    "src/train/g2_joint_search.py": "7cc349cbb7a67853320406e4d9aa1fe6eab29bbc9812daf3311ae229c819e6b0",
+    "configs/g2_joint_search.yaml": "701c3d26fa6300ec457f9854a6696d45af399c6d13e1d8d816f09079f76b889b",
+    "notebooks/G2_03_Training.ipynb": "21df5fae582989184dab87711a66a94ba93e7503854d54dab53476336b564085",
+    "tests/test_g2_tv1_d10.py": "ca05c0c33d6258bfee8720a9b81889240eaf3b7e8bf2366b6cd109b3701cb276"
+  },
+  "evaluator_tv2_modified": false,
+  "data_tv2_modified": false,
+  "fusion_tv2_modules_modified": false,
+  "report": "docs/D10_TV1_JOINT_SEARCH.md"
+}

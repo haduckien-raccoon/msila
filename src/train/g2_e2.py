@@ -1,4 +1,4 @@
-"""E2/E3/E4 training with existing G1 data, loss, train step and synthetic DEV.
+"""E2--E5 training with existing G1 data, loss, train step and synthetic DEV.
 
 Checkpoints contain Adapter + Decoder + optimizer + RNG; frozen DINO weights
 are identified by checksum rather than duplicated in every checkpoint.
@@ -40,6 +40,24 @@ def train_e3(context, pools, output_dir, *, device, resume=False):
 
 def train_e4(context, pools, output_dir, *, device, resume=False):
     return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E4")
+
+
+def train_e5(context, pools, output_dir, *, device, resume=False, model_factory=None, on_epoch=None):
+    from src.eval.g2_joint import validate_budget, FUSIONS
+    cfg = context["config"]
+    validate_budget(cfg["screening_budget"])
+    budget = {k: cfg["training"][k] for k in cfg["screening_budget"]}
+    if (cfg.get("stage") != "E5" or cfg.get("mode") not in {"screening", "smoke"}
+            or cfg.get("adapter_pair_role") != "joint_candidate"
+            or cfg.get("selection_status") != "pending_joint_selection_D10"
+            or cfg.get("selection_sha256") is not None
+            or cfg["fusion"]["method"] not in FUSIONS or budget != cfg["screening_budget"]):
+        raise RuntimeError("BLOCKED: E5 requires a declared joint screening protocol; no main training")
+    if cfg["mode"] == "smoke" and not (budget["epochs"] == 1 and type(budget["max_steps"]) is int
+                                        and 1 <= budget["max_steps"] <= 2 and context["expected_steps"] <= 2):
+        raise RuntimeError("BLOCKED: E5 smoke is limited to one epoch and two updates")
+    return _train_segmentation(context, pools, output_dir, device=device, resume=resume, experiment="E5",
+                               model_factory=model_factory, on_epoch=on_epoch)
 
 
 def _require_debug_context(context, experiment):
@@ -116,6 +134,9 @@ def trainable_modules(model, experiment):
         return nn.ModuleDict({"adapter": model.adapter, "decoder": model.decoder})
     if experiment in {"E3", "E4"}:
         return nn.ModuleDict({"adapters": model.adapters, "projection": model.projection, "decoder": model.decoder})
+    if experiment == "E5":
+        return nn.ModuleDict({"adapters": model.adapters, "projection": model.projection,
+                              "decoder": model.decoder, "fusion": model.fusion})
     raise ValueError(f"Unsupported experiment {experiment}")
 
 
@@ -126,7 +147,10 @@ class FrozenE2Factory:
     No optimizer or trained head is retained between candidates/categories.
     """
 
-    def __init__(self, cfg, *, device):
+    def __init__(self, cfg, *, device, experiment="E2"):
+        if experiment not in {"E2", "E5"}:
+            raise ValueError("Frozen factory supports only E2 or E5")
+        self.experiment = experiment
         self.seed = cfg["training"]["seed"]
         b = cfg["backbone"]
         self.identity = {k: b[k] for k in ("name", "repo_dir", "weights", "norm")}
@@ -136,7 +160,7 @@ class FrozenE2Factory:
             torch.manual_seed(self.seed)
             self.extractor = DINOv3FeatureExtractor(
                 b["repo_dir"], b["weights"], model_name=b["name"], norm=b["norm"],
-                feature_mode="deepest", check_finite=True,
+                feature_mode="multilayer" if experiment == "E5" else "deepest", check_finite=True,
             )
             self.initialization_rng = torch.get_rng_state().clone()
         self.extractor.to(device).eval()
@@ -148,18 +172,26 @@ class FrozenE2Factory:
                 or b.get("checkpoint_sha256", self.weights_sha256) != self.weights_sha256):
             raise ValueError("Cached E2 backbone/seed/checkpoint provenance mismatch")
         torch.set_rng_state(self.initialization_rng)
-        return build_g2_model(cfg, experiment="E2", extractor=self.extractor)
+        self.extractor.eval()
+        return build_g2_model(cfg, experiment=self.experiment, extractor=self.extractor)
+
+
+class FrozenE5Factory(FrozenE2Factory):
+    """Cache the frozen multilayer backbone only; every job gets fresh heads."""
+
+    def __init__(self, cfg, *, device):
+        super().__init__(cfg, device=device, experiment="E5")
 
 
 def _train_segmentation(context, pools, output_dir, *, device, resume, experiment,
-                        model_factory=None, on_checkpoint=None):
+                        model_factory=None, on_checkpoint=None, on_epoch=None):
     """Complete the declared update budget or save INCOMPLETE for --resume.
 
     Cursor checkpoints keep the final batch of an epoch uncommitted until DEV
     and best.pt are durable. Resuming there evaluates DEV without another step.
     """
     cfg, digest = context["config"], context["config_sha256"]
-    if experiment != "E2" and (model_factory is not None or on_checkpoint is not None):
+    if experiment not in {"E2", "E5"} and (model_factory is not None or on_checkpoint is not None):
         raise ValueError("Colab callbacks are supported only for E2 Adapter screening")
     if experiment in {"E3", "E4"}:
         _require_debug_context(context, experiment)
@@ -176,17 +208,25 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         raise RuntimeError("BLOCKED: metrics exist without a resumable checkpoint")
 
     seed_everything(t["seed"], deterministic=True, warn_only=False)
+    if experiment == "E5":
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
     model = (build_g2_model(cfg, experiment=experiment) if model_factory is None
              else model_factory(cfg)).to(device)
     trainable = trainable_modules(model, experiment)
-    adapter_module = model.adapters if experiment in {"E3", "E4"} else model.adapter
+    adapter_module = model.adapters if experiment in {"E3", "E4", "E5"} else model.adapter
+    optimizer_modules = dict(trainable.items())
+    if experiment == "E5" and not any(True for _ in model.fusion.parameters()):
+        optimizer_modules.pop("fusion")  # Average has no learned parameters.
     optimizer, report = build_optimizer(
-        dict(trainable.items()), frozen_modules={"backbone": model.extractor},
+        optimizer_modules, frozen_modules={"backbone": model.extractor},
         learning_rate=t["learning_rate"], weight_decay=t["weight_decay"],
     )
     decoder_initial_sha = module_sha256(model.decoder)
     # All nine candidates share this category lock, including decoder init.
     fairness_root = output_dir.parent.parent if cfg["stage"] == "adapter_screen" else output_dir.parent
+    if experiment == "E5":
+        fairness_root = Path(context["fairness_root"])
     enforce_protocol_lock(fairness_root / "_fairness", category=cfg["category"], payload={
         "study_sha256": cfg["study_sha256"], "mode": cfg["mode"],
         "sources": cfg["sources"], "training": t,
@@ -196,9 +236,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                                    seed=t["seed"], role="train",
                                    variants=d["train_variants_per_image"], fixed=False)
     tiles = G1TileDataset(native_train, tile_size=d["tile_size"], overlap=d["overlap"])
-    if experiment == "E4":
+    if experiment in {"E4", "E5"}:
         tiles = PairedG2Tiles(tiles, context_size=cfg["paired_views"]["context_size"])
-    dev_kwargs = {"predict_fn": predict_native_e4} if experiment == "E4" else {}
+    dev_kwargs = {"predict_fn": predict_native_e4} if experiment in {"E4", "E5"} else {}
     native_dev = G1NativeDataset(pools["dev"], cfg["synthetic_protocol"],
                                  seed=t["dev_seed"], role="dev",
                                  variants=d["dev_variants_per_image"], fixed=True)
@@ -206,7 +246,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         model=model, criterion=AnomalySegmentationLoss(**cfg["loss"]),
         optimizer=optimizer, device=device, frozen_modules={"backbone": model.extractor},
         max_grad_norm=t["max_grad_norm"],
-        model_forward=paired_model_forward if experiment == "E4" else None,
+        model_forward=paired_model_forward if experiment in {"E4", "E5"} else None,
     )
     history, best, best_epoch, step = [], None, None, 0
     start_epoch, start_batch, latest_dev, dev_step = 0, 0, None, 0
@@ -229,14 +269,18 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                  cfg["adapter"]["r"], cfg["adapter"]["d"], report.to_dict())
     frozen_before = module_sha256(model.extractor)
     adapter_before, decoder_before = module_sha256(adapter_module), module_sha256(model.decoder)
-    projection_before = module_sha256(model.projection) if experiment in {"E3", "E4"} else None
+    projection_before = module_sha256(model.projection) if experiment in {"E3", "E4", "E5"} else None
+    fusion_before = module_sha256(model.fusion) if experiment == "E5" else None
+    fusion_updated = False
     projection_updated = False
     adapter_source_before = ({key: module_sha256(module) for key, module in model.adapters.items()}
-                             if experiment in {"E3", "E4"} else {})
+                             if experiment in {"E3", "E4", "E5"} else {})
     adapters_updated = {key: False for key in adapter_source_before}
-    if last_path.exists() and experiment in {"E3", "E4"}:
+    if last_path.exists() and experiment in {"E3", "E4", "E5"}:
         projection_updated = state["projection_updated"]
         adapters_updated = state["adapters_updated"]
+        if experiment == "E5":
+            fusion_updated = state["fusion_updated"]
     started, stopped = time.monotonic(), False
     stop_reason = "budget_completed"
 
@@ -246,10 +290,13 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
                     decoder_initial_sha256=decoder_initial_sha,
                     adapter_updated=adapter_updated or module_sha256(adapter_module) != adapter_before,
                     decoder_updated=decoder_updated or module_sha256(model.decoder) != decoder_before)
-        if experiment in {"E3", "E4"}:
+        if experiment in {"E3", "E4", "E5"}:
             result.update(projection_updated=projection_updated or module_sha256(model.projection) != projection_before,
                           adapters_updated={key: adapters_updated[key] or module_sha256(module) != adapter_source_before[key]
                                             for key, module in model.adapters.items()})
+        if experiment == "E5":
+            result.update(fusion_updated=fusion_updated or module_sha256(model.fusion) != fusion_before,
+                          git_sha=cfg["git_sha"], run_id=cfg["run_id"])
         return result
 
     def checkpoint(path, epoch, next_epoch, next_batch):
@@ -261,7 +308,7 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     for epoch in range(start_epoch, t["epochs"]):
         native_train.set_epoch(epoch)
         batches = DataLoader(tiles, batch_size=t["batch_size"], shuffle=True,
-                             num_workers=d["num_workers"], collate_fn=paired_tile_collate if experiment == "E4" else g1_tile_collate,
+                             num_workers=d["num_workers"], collate_fn=paired_tile_collate if experiment in {"E4", "E5"} else g1_tile_collate,
                              generator=torch.Generator().manual_seed(t["seed"] + epoch))
         next_batch = start_batch if epoch == start_epoch else 0
         for batch_index, batch in enumerate(batches):
@@ -306,6 +353,9 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
         if is_best:
             checkpoint(best_path, epoch, next_epoch, cursor_batch)
         checkpoint(last_path, epoch, next_epoch, cursor_batch)
+        if on_epoch is not None:
+            save_json(history, output_dir / "loss_history.json")
+            on_epoch(output_dir, epoch + 1)
         if step >= context["expected_steps"]:
             break
 
@@ -315,12 +365,16 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
     complete = step == context["expected_steps"]
     if not frozen_unchanged or (complete and not (adapter_updated and decoder_updated)):
         raise RuntimeError("Backbone changed or trainable modules failed to update")
-    if experiment in {"E3", "E4"}:
+    if experiment in {"E3", "E4", "E5"}:
         projection_updated |= module_sha256(model.projection) != projection_before
         adapters_updated = {key: adapters_updated[key] or module_sha256(module) != adapter_source_before[key]
                             for key, module in model.adapters.items()}
         if complete and (not projection_updated or not all(adapters_updated.values())):
             raise RuntimeError(f"{experiment} projection or a source Adapter failed to update")
+    if experiment == "E5":
+        fusion_updated |= module_sha256(model.fusion) != fusion_before
+        if complete and any(p.requires_grad for p in model.fusion.parameters()) and not fusion_updated:
+            raise RuntimeError("E5 learned Fusion failed to update")
     best_dev = None
     if best_path.is_file():
         payload, _ = load_checkpoint_payload(best_path, require_sha256=True)
@@ -349,15 +403,23 @@ def _train_segmentation(context, pools, output_dir, *, device, resume, experimen
               for name, module in trainable.items()}
     result.update(parameter_report=dict(groups=groups, trainable_total=sum(groups.values()),
                                         frozen_backbone=sum(p.numel() for p in model.extractor.parameters())),
-                  feature_sources=model.num_sources if experiment in {"E3", "E4"} else 1,
-                  source_blocks=list(model.source_blocks) if experiment in {"E3", "E4"} else [model.extractor.depth],
+                  feature_sources=model.num_sources if experiment in {"E3", "E4", "E5"} else 1,
+                  source_blocks=list(model.source_blocks) if experiment in {"E3", "E4", "E5"} else [model.extractor.depth],
                   feature_width=model.decoder.head[0].in_channels)
-    if experiment in {"E3", "E4"}:
+    if experiment in {"E3", "E4", "E5"}:
         result.update(projection_updated=projection_updated, adapters_updated=adapters_updated,
-                      source_block_map=model.source_block_map, fusion="mean", context=experiment == "E4")
+                      source_block_map=model.source_block_map,
+                      fusion=cfg["fusion"]["method"] if experiment == "E5" else "mean", context=experiment in {"E4", "E5"})
         result.update(selection_status=cfg["selection_status"], adapter_pair_role=cfg["adapter_pair_role"],
-                      debug_pair=cfg["debug_pair"], scientific_evidence=False)
-        if experiment == "E4":
+                      scientific_evidence=experiment == "E5" and cfg["mode"] == "screening"
+                      and result["verification_scope"] == "real_pretrained" and device.type == "cuda")
+        if experiment != "E5":
+            result["debug_pair"] = cfg["debug_pair"]
+        else:
+            result.update(fusion_updated=fusion_updated, git_sha=cfg["git_sha"], run_id=cfg["run_id"],
+                          screening_budget=cfg["screening_budget"])
+            save_json(history, output_dir / "loss_history.json")
+        if experiment in {"E4", "E5"}:
             result.update(context_aligned=True, adapter_sharing="shared_across_views_per_layer",
                           projection_sharing="shared_across_views_per_layer",
                           pair_strategy=model.pair_strategy)
