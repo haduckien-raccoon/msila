@@ -388,7 +388,7 @@ def build_g2_model(
     projection = {"fusion_dim": resolved["fusion"]["dim"]} if experiment in {"E3", "E4"} else {}
     if experiment == "E4":
         options = resolved.get("paired_views", {})
-        projection.update(pair_strategy=options.get("strategy", "concat"),
+        projection.update(pair_strategy=options.get("pair_strategy", options.get("strategy", "concat")),
                           deterministic_sampling=options.get("deterministic_sampling", True))
     return model_class(
         extractor, adapter_bottleneck_dim=adapter["r"], adapter_projection_dim=adapter["d"],
