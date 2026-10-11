@@ -1,9 +1,5 @@
-"""D8 E4 acceptance: paired native views, alignment, gradients, resume and export.
-
-Fixture training/selection is explicitly not real pretrained PASS/8 evidence.
-"""
+"""D8-v3 E4 Mean(6) baseline: CPU integration, named debug pairs, no selection."""
 from copy import deepcopy
-import csv
 import json
 import os
 from pathlib import Path
@@ -28,7 +24,7 @@ from src.train.g2_context import (PairedG2Tiles, paired_model_forward, paired_ti
 from src.utils.checkpoint import save_training_checkpoint
 from src.utils.resume import load_checkpoint_payload
 from tests.test_g2_tv1_e3 import LayerBackboneFixture
-from tests.test_g2_tv1_runner import setup, cpu_determinism, runner, virtual_ledger, assert_nested_equal
+from tests.test_g2_tv1_runner import setup, cpu_determinism, runner, assert_nested_equal
 
 
 def pair_batch(count=2):
@@ -51,8 +47,12 @@ def test_six_sources_same_e3_parameters_decoder_and_gradient(setup, tmp_path, mo
     torch.save(LayerBackboneFixture(name).state_dict(), weights)
     cfg = deepcopy(setup["cfg"])
     cfg["backbone"].update(name=name, weights=str(weights))
-    cfg["adapter"].update(r=8, d=12)
-    cfg["fusion"]["dim"] = 8
+    pair = (128, 512) if name == "dinov3_vitb16" else (8, 12)
+    cfg.update(adapter_pair_role="debug_pair", debug_pair=runner.debug_pair(pair),
+               selection_status="pending_joint_selection_D10")
+    cfg["adapter"].update(r=pair[0], d=pair[1])
+    fusion_dim = 64 if name == "dinov3_vitb16" else 8
+    cfg["fusion"]["dim"] = fusion_dim
     cfg["decoder"]["deterministic_resize"] = True
     torch.manual_seed(2026)
     e3 = build_g2_model(cfg, "E3")
@@ -72,9 +72,12 @@ def test_six_sources_same_e3_parameters_decoder_and_gradient(setup, tmp_path, mo
     optimizer = torch.optim.AdamW(groups.parameters(), lr=.01, weight_decay=0)
     model.train()
     logits, trace = model(batch, return_trace=True)
-    assert logits.shape == (2, 1, 512, 512)
+    assert logits.shape == (2, 1, 512, 512) and torch.isfinite(logits).all()
     assert model.extractor.backbone.requested == [tuple(b-1 for b in backbone_spec(name).blocks)]
     assert trace["source_keys"] == MULTIVIEW_FEATURE_KEYS and trace["num_sources"] == 6
+    assert tuple(trace["projected"]) == MULTIVIEW_FEATURE_KEYS
+    assert all(value.shape == (2, fusion_dim, 32, 32) and torch.isfinite(value).all()
+               for value in trace["projected"].values())
     assert trace["source_blocks"] == dict(zip(MULTIVIEW_FEATURE_KEYS, backbone_spec(name).blocks * 2))
     for slot, block in zip((4, 8, 12), backbone_spec(name).blocks):
         assert torch.equal(trace["adapted"][f"local_b{slot}"], trace["dino"][f"L{block}"])
@@ -88,12 +91,15 @@ def test_six_sources_same_e3_parameters_decoder_and_gradient(setup, tmp_path, mo
         assert torch.equal(expected, trace["projected"][f"context_b{slot}"])
     assert torch.equal(trace["decoder_feature"], torch.stack([
         trace["projected"][key] for key in MULTIVIEW_FEATURE_KEYS]).mean(0))
-    assert trace["decoder_feature"].shape == (2, 8, 32, 32)
+    assert trace["decoder_feature"].shape == (2, fusion_dim, 32, 32)
     for value in trace["adapted"].values():
         value.retain_grad()
     criterion = AnomalySegmentationLoss()
-    criterion(logits, batch["mask"])["loss"].backward()
-    assert all(value.grad is not None and value.grad.abs().sum() > 0 for value in trace["adapted"].values())
+    loss = criterion(logits, batch["mask"])["loss"]
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert all(value.grad is not None and torch.isfinite(value.grad).all() and value.grad.abs().sum() > 0
+               for value in trace["adapted"].values())
     assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in groups.parameters())
     for adapter in model.adapters.values():
         assert adapter.gamma.grad.abs() > 0
@@ -102,7 +108,10 @@ def test_six_sources_same_e3_parameters_decoder_and_gradient(setup, tmp_path, mo
     optimizer.zero_grad(set_to_none=True)
     criterion(model(batch), batch["mask"])["loss"].backward()
     for adapter in model.adapters.values():
-        assert any(torch.count_nonzero(p.grad) > 0 for key, p in adapter.named_parameters() if key != "gamma")
+        assert all(torch.isfinite(p.grad).all() and torch.count_nonzero(p.grad) > 0
+                   for key, p in adapter.named_parameters() if key != "gamma")
+    assert all(torch.isfinite(p.grad).all() and torch.count_nonzero(p.grad) > 0
+               for module in (model.projection, model.decoder) for p in module.parameters())
     assert g2_e2.module_sha256(model.extractor) == frozen
     assert not model.extractor.training and all(p.grad is None for p in model.extractor.parameters())
 
@@ -123,6 +132,55 @@ def test_geometry_coordinate_ramp_and_alignment_gradient():
     sum(value.sum() for value in result.values()).backward()
     assert context_ramp.grad is not None and torch.isfinite(context_ramp.grad).all()
     assert context_ramp.grad.sum() == pytest.approx(3*32*32)
+
+
+@pytest.mark.parametrize("position", ["center", "top_left", "bottom_right", "padded_small_native"])
+def test_center_and_padded_edge_alignment_uses_native_coordinates(position):
+    hw = (73, 101) if position == "padded_small_native" else (1536, 1600)
+    records = generate_tile_records(*hw)
+    if position == "center":
+        record = next(r for r in records if r.local_xyxy[:2] == (384, 384))
+    else:
+        record = records[-1] if position == "bottom_right" else records[0]
+    _, _, meta = prepare_pair(torch.rand(3, *hw), record, sample_id="one-native")
+    # Context feature encodes native coordinates. Aligning must recover the
+    # Local feature centers even when the crop uses a virtual padded canvas.
+    centers = (torch.arange(32, dtype=torch.float64) + .5) * 16
+    y, x = torch.meshgrid(centers, centers, indexing="ij")
+    cx, cy, _, _ = record.context_xyxy
+    lx, ly, _, _ = record.local_xyxy
+    context_ramp = ((x * 1.5 + cx) + 2 * (y * 1.5 + cy))[None, None].requires_grad_()
+    aligner = ContextToLocalAligner(deterministic_sampling=True, check_finite=True, check_bounds=True)
+    aligned = aligner(dict.fromkeys(("C4", "C8", "C12"), context_ramp), meta["geometry"], target_hw=(32, 32))
+    expected = ((x + lx) + 2 * (y + ly))[None, None]
+    for value in aligned.values():
+        torch.testing.assert_close(value, expected, atol=1e-9, rtol=1e-12)
+    sum(value.sum() for value in aligned.values()).backward()
+    assert torch.isfinite(context_ramp.grad).all() and context_ramp.grad.sum() == pytest.approx(3*32*32)
+    assert aligner.align_corners is False
+    if position == "center":
+        assert meta["padding_ltrb"] == (0, 0, 0, 0)
+    else:
+        assert any(meta["padding_ltrb"])
+
+
+@pytest.mark.parametrize("strategy,calls", [("concat", 1), ("sequential", 2)])
+def test_builder_respects_configured_pair_strategy(setup, strategy, calls):
+    cfg = deepcopy(setup["cfg"])
+    cfg["adapter"].update(r=8, d=12)
+    cfg["paired_views"]["pair_strategy"] = strategy
+    model = build_g2_model(cfg, "E4")
+    assert model.pair_strategy == strategy
+    logits = model(pair_batch(1))
+    assert logits.shape == (1, 1, 512, 512) and torch.isfinite(logits).all()
+    assert len(model.extractor.backbone.requested) == calls
+
+
+def test_builder_preserves_legacy_strategy_alias(setup):
+    cfg = deepcopy(setup["cfg"])
+    cfg["paired_views"].pop("pair_strategy")
+    cfg["paired_views"]["strategy"] = "sequential"
+    assert build_g2_model(cfg, "E4").pair_strategy == "sequential"
 
 
 def test_concat_and_sequential_share_backbone_and_context_changes_logits(setup):
@@ -149,7 +207,8 @@ def test_old_model_config_uses_existing_context_defaults(setup):
     assert cfg["paired_views"] == dict(context_size=768, pair_strategy="concat", deterministic_sampling=True)
 
 
-@pytest.mark.parametrize("case", ["tensor", "missing_context", "missing_geometry", "singular", "wrong_size", "outside", "different_sample"])
+@pytest.mark.parametrize("case", ["tensor", "missing_context", "missing_geometry", "singular", "wrong_size", "outside",
+                                 "different_sample", "nan_context", "context_dtype", "empty_view_meta"])
 def test_invalid_e4_pair_rejected(setup, case):
     model = build_g2_model(setup["cfg"], "E4")
     batch = pair_batch(1)
@@ -161,6 +220,12 @@ def test_invalid_e4_pair_rejected(setup, case):
         del batch["view_meta"]
     elif case == "different_sample":
         batch["view_meta"][0]["context_sample_id"] = "different-native"
+    elif case == "nan_context":
+        batch["context"][0, 0, 0, 0] = float("nan")
+    elif case == "context_dtype":
+        batch["context"] = batch["context"].double()
+    elif case == "empty_view_meta":
+        batch["view_meta"] = []
     else:
         geom = batch["view_meta"][0]["geometry"]
         if case == "singular":
@@ -175,7 +240,7 @@ def test_invalid_e4_pair_rejected(setup, case):
 
 def test_paired_tiles_reuse_one_native_synthetic_and_exact_e3_local_mask(setup):
     study = setup["study"]()
-    context, pools = runner.make_context(study, "rice", (32, 128), "E4", selection_sha256="fixture-lock")
+    context, pools = runner.make_context(study, "rice", (32, 128), "E4", smoke=True)
     cfg = context["config"]
     native = G1NativeDataset(pools["train"], cfg["synthetic_protocol"], seed=cfg["training"]["seed"],
                              role="train", variants=2, fixed=False)
@@ -255,12 +320,13 @@ def test_hann_overlap_uses_window_weights_instead_of_plain_average():
 
 def test_e4_resume_exact_checkpoint_and_inference_without_training(setup, monkeypatch):
     study = setup["study"]()
-    context, pools = runner.make_context(study, "rice", (32, 128), "E4", selection_sha256="fixture-lock")
-    e3_context, _ = runner.make_context(study, "rice", (32, 128), "E3", selection_sha256="fixture-lock")
-    assert runner.comparison_identity(context["config"]) == runner.comparison_identity(e3_context["config"])
+    context, pools = runner.make_context(study, "rice", (32, 128), "E4", smoke=True)
+    e3_context, _ = runner.make_context(study, "rice", (32, 128), "E3", smoke=True)
+    for key in ("training", "data", "sources", "loss", "synthetic_protocol", "adapter"):
+        assert context["config"][key] == e3_context["config"][key]
     control = study["root"] / "control" / "rice"
     g2_e2.train_e4(context, pools, control, device="cpu")
-    path = runner.run_directory(study, "rice", (32, 128), "E4")
+    path = runner.run_directory(study, "rice", (32, 128), "E4", smoke=True)
     original = g2_e2.Overfit16Trainer.train_step
     def interrupt(self, batch, *, step, epoch):
         if step == 2:
@@ -271,7 +337,8 @@ def test_e4_resume_exact_checkpoint_and_inference_without_training(setup, monkey
         g2_e2.train_e4(context, pools, path, device="cpu")
     monkeypatch.setattr(g2_e2.Overfit16Trainer, "train_step", original)
     result = g2_e2.train_e4(context, pools, path, device="cpu", resume=True)
-    assert result["global_step"] == context["expected_steps"] == 4
+    assert result["global_step"] == context["expected_steps"] == 2
+    assert result["debug_pair"]["name"] == "debug_pair_r32_d128" and not result["scientific_evidence"]
     assert runner.read_valid_result(path, context) and result["feature_sources"] == 6
     assert result["context_aligned"] and result["projection_updated"] and all(result["adapters_updated"].values())
     assert not runner.real_evidence(result)
@@ -279,18 +346,48 @@ def test_e4_resume_exact_checkpoint_and_inference_without_training(setup, monkey
     expected, _ = load_checkpoint_payload(control / "last.pt")
     for key in ("model_state", "optimizer_state"):
         assert_nested_equal(expected[key], actual[key])
+    assert {key.split(".")[0] for key in actual["model_state"]} == {"adapters", "projection", "decoder"}
+    assert actual["config"] == expected["config"] == context["config"]
+    assert runner.read_yaml(path / "resolved_config.yaml") == context["config"]
+    assert actual["training_state"] == expected["training_state"]
+    for key in ("next_epoch", "next_batch", "dev_step"):
+        assert actual["metadata"][key] == expected["metadata"][key]
+    assert_nested_equal({k: v for k, v in expected["rng_state"].items() if k != "numpy"},
+                        {k: v for k, v in actual["rng_state"].items() if k != "numpy"})
+    np.testing.assert_array_equal(expected["rng_state"]["numpy"][1], actual["rng_state"]["numpy"][1])
+    assert expected["rng_state"]["numpy"][0] == actual["rng_state"]["numpy"][0]
+    assert expected["rng_state"]["numpy"][2:] == actual["rng_state"]["numpy"][2:]
+    # Actual E4 checkpoint loading reproduces logits before native inference.
+    restored = build_g2_model(context["config"], "E4").eval()
+    best, _ = load_checkpoint_payload(path / "best.pt")
+    g2_e2.trainable_modules(restored, "E4").load_state_dict(best["model_state"], strict=True)
+    batch = pair_batch(1)
+    control_model = build_g2_model(context["config"], "E4").eval()
+    control_best, _ = load_checkpoint_payload(control / "best.pt")
+    g2_e2.trainable_modules(control_model, "E4").load_state_dict(control_best["model_state"], strict=True)
+    with torch.no_grad():
+        assert torch.equal(restored(batch), control_model(batch))
     before = runner.sha256_file(path / "best.pt")
     monkeypatch.setattr(g2_e2.Overfit16Trainer, "train_step", lambda *a, **k: pytest.fail("Inference trained"))
     inference = g2_e2.infer_e4(context, pools, path, device="cpu")
     assert inference["metrics"] == result["best_synthetic_dev"]
     assert runner.sha256_file(path / "best.pt") == before and inference["optimizer_steps"] == 0
+    assert not inference["scientific_evidence"] and inference["debug_pair"] == context["config"]["debug_pair"]
     for record in inference["predictions"]:
         assert np.load(record["score"]).shape == np.load(record["mask"]).shape == tuple(record["original_hw"])
+    changed = deepcopy(context)
+    changed["config"]["paired_views"]["pair_strategy"] = "sequential"
+    changed["config_sha256"] = runner.sha256_json(changed["config"])
+    last_before = runner.sha256_file(path / "last.pt")
+    monkeypatch.setattr(g2_e2, "build_g2_model", lambda *a, **k: pytest.fail("Config drift must reject before model load"))
+    with pytest.raises(ValueError, match="provenance mismatch"):
+        g2_e2.train_e4(changed, pools, path, device="cpu", resume=True)
+    assert runner.sha256_file(path / "last.pt") == last_before
 
 
 def test_e4_resume_final_batch_retries_dev_without_optimizer_update(setup, monkeypatch):
     study = setup["study"]()
-    context, pools = runner.make_context(study, "rice", (32, 128), "E4", smoke=True, selection_sha256="fixture-lock")
+    context, pools = runner.make_context(study, "rice", (32, 128), "E4", smoke=True)
     path = runner.run_directory(study, "rice", (32, 128), "E4", True)
     evaluate = g2_e2.evaluate_dev
     def crash(*args, **kwargs):
@@ -307,96 +404,112 @@ def test_e4_resume_final_batch_retries_dev_without_optimizer_update(setup, monke
     assert runner.read_valid_result(path, context)
 
 
-def test_all_eight_fixture_smoke_skip_inference_and_tv2_comparison(setup, monkeypatch):
-    study = setup["study"]()
-    virtual_ledger(study, monkeypatch)  # Mock only the selection unit boundary in tmp_path.
-    runner.publish_selection(study)
-    common = ["--config", str(setup["path"]), "--categories", "all", "--device", "cpu", "--smoke"]
-    assert runner.main([*common, "--stage", "E3"]) == 0
-    assert runner.main([*common, "--stage", "E4"]) == 0
-    path = study["root"] / "smoke"
+def test_e4_debug_cli_resume_inference_without_selection_or_comparison(setup, monkeypatch):
+    common = ["--config", str(setup["path"]), "--stage", "E4", "--categories", "rice",
+              "--device", "cpu", "--smoke", "--debug-pair", "32", "128", "--output-root", str(setup["root"])]
+    assert runner.main(common) == 0
+    path = setup["root"] / "dinov3_vits16" / "debug_d8_v3" / "debug_pair_r32_d128" / "smoke"
     summary = json.loads((path / "E4_summary.json").read_text())
     assert summary["status"] == "SMOKE_PASS" and summary["real_E4_pass"] == 0
-    assert len(summary["outcomes"]) == 8 and all(row["status"] == "PASS" for row in summary["outcomes"])
-    comparison = json.loads((path / "E4_minus_E3_inputs.json").read_text())
-    assert comparison["status"] == "SMOKE_READY" and comparison["ready_pairs"] == 8
-    assert comparison["real_ready_pairs"] == 0 and comparison["experiments"] == ["E3", "E4"]
-    with (path / "E4_minus_E3_inputs.csv").open() as handle:
-        assert len(list(csv.DictReader(handle))) == 8
-    for row in comparison["records"]:
-        assert row["e3"]["parameter_report"]["groups"] == row["e4"]["parameter_report"]["groups"]
-        assert row["e3"]["sources_sha256"] == row["e4"]["sources_sha256"]
-        for experiment in ("e3", "e4"):
-            assert Path(row[experiment]["checkpoint"]).is_file()
+    assert len(summary["outcomes"]) == 1 and summary["outcomes"][0]["status"] == "PASS"
+    assert summary["selection_lock"] is None and summary["E4_minus_E3"].startswith("NOT RUN")
+    assert not list(setup["root"].rglob("*selection_lock.json"))
+    assert not list(setup["root"].rglob("E4_minus_E3_inputs.*"))
     monkeypatch.setattr(runner, "train_e4", lambda *a, **k: pytest.fail("Completed E4 trained again"))
-    assert runner.main([*common, "--stage", "E4", "--resume"]) == 0
+    assert runner.main([*common, "--resume"]) == 0
     assert {row["status"] for row in json.loads((path / "E4_summary.json").read_text())["outcomes"]} == {"SKIP"}
-    assert runner.main([*common, "--stage", "E4", "--inference"]) == 0
+    assert runner.main([*common, "--inference"]) == 0
     inference = json.loads((path / "E4_inference_summary.json").read_text())
-    assert inference["operation"] == "inference" and len(inference["outcomes"]) == 8
-    baseline_metrics = path / "E3" / "walnuts" / "metrics.json"
-    saved = baseline_metrics.read_bytes()
-    baseline_metrics.unlink()
-    lock = json.loads((study["root"] / "full" / "adapter_selection_lock.json").read_text())
-    assert runner.export_comparison(study, lock, smoke=True, experiments=("E3", "E4"))["status"] == "INCOMPLETE"
-    # Leave a complete, checksummed fixture handoff available for inspection.
-    baseline_metrics.write_bytes(saved)
-    assert runner.export_comparison(study, lock, smoke=True, experiments=("E3", "E4"))["status"] == "SMOKE_READY"
+    assert inference["operation"] == "inference" and len(inference["outcomes"]) == 1
+    checkpoint = path / "E4" / "rice" / "best.pt"
+    before = runner.sha256_file(checkpoint)
+    corrupted = checkpoint.read_bytes() + b"corrupt-checkpoint-fixture"
+    checkpoint.write_bytes(corrupted)
+    assert runner.main([*common, "--inference"]) == 2
+    assert runner.sha256_file(checkpoint) != before and checkpoint.read_bytes() == corrupted
 
 
-def test_e4_missing_lock_and_incomplete_inference_block(setup, monkeypatch):
-    monkeypatch.setattr(runner, "train_e4", lambda *a, **k: pytest.fail("Missing lock trained"))
-    assert runner.main(["--config", str(setup["path"]), "--stage", "E4", "--smoke", "--device", "cpu"]) == 2
+def test_e4_main_pending_d10_and_incomplete_inference_block(setup, monkeypatch):
+    check_assets = runner.check_assets
+    monkeypatch.setattr(runner, "train_e4", lambda *a, **k: pytest.fail("Main must not train before D10"))
+    monkeypatch.setattr(runner, "check_assets", lambda *a, **k: pytest.fail("Main must block before assets"))
     path = setup["root"] / "dinov3_vits16"
-    result = json.loads((path / "smoke" / "E4_summary.json").read_text())
-    assert result["status"] == "BLOCKED" and result["real_E4_pass"] == 0
-    assert runner.main(["--config", str(setup["path"]), "--stage", "E4", "--device", "cpu"]) == 2
+    assert runner.main(["--config", str(setup["path"]), "--stage", "E4", "--device", "cpu",
+                        "--output-root", str(setup["root"])]) == 2
     result = json.loads((path / "full" / "E4_summary.json").read_text())
     assert result["status"] == "BLOCKED" and result["real_E4_pass"] == 0
+    assert "pending joint selection D10" in result["reason"]
+    monkeypatch.setattr(runner, "check_assets", check_assets)
     study = setup["study"]()
     with pytest.raises(runner.G2Blocked, match="completed training"):
         runner.execute_job(study, "rice", (32, 128), "E4", smoke=True, resume=False,
-                           device="cpu", selection_sha256="fixture-lock", inference=True)
+                           device="cpu", inference=True)
     with pytest.raises(SystemExit):
         runner.parse_args(["--stage", "E3", "--inference"])
 
 
-@pytest.mark.parametrize("smoke", [False, True])
-def test_d7_checkpoint_config_survives_e4_extension_and_rejects_drift(setup, smoke):
-    study = setup["study"]()
-    historical = deepcopy(study["protocol"])
-    for name in historical["source_code_sha256"]:
-        if name in runner.D7_SOURCE_BASELINE:
-            historical["source_code_sha256"][name] = runner.D7_SOURCE_BASELINE[name]
-    runner.enforce_lock(study["root"] / "full", historical)
-    study = setup["study"]()
-    context, pools = runner.make_context(study, "rice", (32, 128), "E3", smoke=smoke, selection_sha256="fixture-lock")
-    for name in context["config"]["architecture"]["implementation_sha256"]:
-        if name in runner.D7_SOURCE_BASELINE:
-            context["config"]["architecture"]["implementation_sha256"][name] = runner.D7_SOURCE_BASELINE[name]
-    context["config_sha256"] = runner.sha256_json(context["config"])
-    path = runner.run_directory(study, "rice", (32, 128), "E3", smoke)
-    g2_e2.train_e3(context, pools, path, device="cpu")
-    reloaded = setup["study"]()
-    restored, _ = runner.make_context(reloaded, "rice", (32, 128), "E3", smoke=smoke, selection_sha256="fixture-lock")
-    assert restored == context and runner.read_valid_result(path, restored)
-    assert runner.execute_job(reloaded, "rice", (32, 128), "E3", smoke=smoke, resume=True,
-                              device="cpu", selection_sha256="fixture-lock") == "SKIP"
-    architecture = reloaded["e3_smoke"] if smoke else reloaded["e3"]
-    changed = deepcopy(architecture)
-    changed["feature_width"] += 1
-    with pytest.raises(runner.G2Blocked, match="scientific E3 architecture"):
-        runner.reuse_e3_architecture(changed, study["root"], study["sha256"], mode="smoke" if smoke else "full")
-    changed = deepcopy(architecture)
-    changed["implementation_sha256"]["src/models/feature_projection.py"] = "unaudited"
-    with pytest.raises(runner.G2Blocked, match="unaudited implementation"):
-        runner.reuse_e3_architecture(changed, study["root"], study["sha256"], mode="smoke" if smoke else "full")
+def test_e4_main_preserves_legacy_checkpoints_and_adapter_lock(setup, monkeypatch):
+    root = setup["root"] / "dinov3_vits16" / "full"
+    files = [root / "E3" / "rice" / "last.pt", root / "E4" / "rice" / "last.pt",
+             root / "adapter_selection_lock.json"]
+    for path in files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"legacy fixture: preserve exactly; never evidence for new selection")
+    before = {path: path.read_bytes() for path in files}
+    monkeypatch.setattr(runner, "prepare_study", lambda *a, **k: pytest.fail("Main must not inspect legacy checkpoints"))
+    assert runner.main(["--config", str(setup["path"]), "--stage", "E4", "--resume", "--device", "cpu",
+                        "--output-root", str(setup["root"])]) == 2
+    assert all(path.read_bytes() == data for path, data in before.items())
 
 
-def test_real_locked_e4_one_batch_checkpoint_if_available(tmp_path):
-    if not torch.cuda.is_available():
-        pytest.skip("NOT RUN: real E4 batch/checkpoint requires CUDA and a full Adapter selection lock")
-    argv = ["--stage", "E4", "--device", "cuda"]
+def test_e4_prepared_manifest_without_assets_or_selection(setup, monkeypatch):
+    monkeypatch.setattr(runner, "prepare_study", lambda *a, **k: pytest.fail("Prepare must not load assets"))
+    monkeypatch.setattr(torch.hub, "load", lambda *a, **k: pytest.fail("Prepare must not load backbone"))
+    args = ["--config", str(setup["path"]), "--stage", "E4", "--prepare", "--backbone", "dinov3_vitb16",
+            "--debug-pair", "128", "512", "--device", "cpu", "--output-root", str(setup["root"])]
+    assert runner.main(args) == 0
+    path = setup["root"] / "dinov3_vitb16" / "debug_pair_r128_d512" / "E4_prepared_manifest.json"
+    manifest = json.loads(path.read_text())
+    assert manifest["status"] == "PREPARED" and manifest["experiment"] == "E4"
+    assert manifest["config_sha256"] == runner.sha256_json(manifest["config"])
+    assert manifest["architecture"]["num_sources"] == 6 and manifest["architecture"]["fusion"] == "mean"
+    assert manifest["architecture"]["projected_shape"] == [None, 64, 32, 32]
+    assert manifest["architecture"]["source_blocks"] == dict(zip(MULTIVIEW_FEATURE_KEYS, (4, 8, 12) * 2))
+    assert manifest["architecture"]["context_alignment"] == "before_projection_and_fusion"
+    assert manifest["architecture"]["native_synthetic"] == "one_sample_for_both_views"
+    assert manifest["gpu_smoke"] == manifest["main_training"] == "NOT RUN"
+    assert manifest["E4_minus_E3"].startswith("NOT RUN") and manifest["selection_lock"] is None
+    assert manifest["debug_pair"] == runner.debug_pair((128, 512))
+    assert runner.main(args) == 0
+    assert not list(setup["root"].rglob("*.pt")) and not list(setup["root"].rglob("*selection_lock.json"))
+
+
+@pytest.mark.parametrize("mutation", ["full", "missing_debug_pair", "legacy_lock", "too_many_steps", "too_many_epochs"])
+def test_e4_rejects_unselected_main_unbounded_smoke_before_loading(setup, monkeypatch, mutation):
+    study = setup["study"]()
+    context, pools = runner.make_context(study, "rice", (32, 128), "E4", smoke=True)
+    cfg = context["config"]
+    if mutation == "full":
+        cfg["mode"] = "full"
+    elif mutation == "missing_debug_pair":
+        cfg.pop("debug_pair")
+    elif mutation == "legacy_lock":
+        cfg["selection_sha256"] = "legacy-adapter-lock"
+    elif mutation == "too_many_steps":
+        cfg["training"]["max_steps"] = 3
+    else:
+        cfg["training"]["epochs"] = 2
+    monkeypatch.setattr(g2_e2, "build_g2_model", lambda *a, **k: pytest.fail("Reject before model/checkpoint load"))
+    for operation in (g2_e2.train_e4, g2_e2.infer_e4):
+        with pytest.raises(RuntimeError, match="main awaits joint selection D10"):
+            operation(context, pools, study["root"] / "rejected", device="cpu")
+    assert not (study["root"] / "rejected").exists()
+
+
+def test_real_debug_e4_one_batch_checkpoint_if_explicitly_enabled(tmp_path):
+    if os.getenv("MSILA_RUN_E4_GPU_SMOKE") != "1" or not torch.cuda.is_available():
+        pytest.skip("NOT RUN: E4 real GPU batch is opt-in on Colab, never required locally")
+    argv = ["--stage", "E4", "--device", "cuda", "--smoke", "--debug-pair", "128", "512"]
     for flag, variable in (("--data-root", "MVTEC_AD2_ROOT"), ("--repo-dir", "DINOV3_REPO"),
                            ("--weights", "DINOV3_WEIGHTS"), ("--backbone", "DINOV3_MODEL"),
                            ("--output-root", "G2_OUTPUT_ROOT")):
@@ -404,12 +517,9 @@ def test_real_locked_e4_one_batch_checkpoint_if_available(tmp_path):
             argv.extend([flag, os.environ[variable]])
     args = runner.parse_args(argv)
     cfg, config, root = runner.load_config(args)
-    if not (root / "full" / "adapter_selection_lock.json").is_file():
-        pytest.skip("NOT RUN: real E4 integration has no Adapter selection lock")
     study = runner.prepare_study(cfg, config, root, device="cuda")
-    lock = runner.validate_selection(study)
-    pair = tuple(lock["payload"]["selected_pair"][key] for key in ("r", "d"))
-    context, pools = runner.make_context(study, os.getenv("G2_CATEGORY", "rice"), pair, "E4", selection_sha256=lock["sha256"])
+    pair = (128, 512)
+    context, pools = runner.make_context(study, os.getenv("G2_CATEGORY", "rice"), pair, "E4", smoke=True)
     cfg = context["config"]
     native = G1NativeDataset(pools["train"], cfg["synthetic_protocol"], seed=cfg["training"]["seed"],
                              role="train", variants=cfg["data"]["train_variants_per_image"], fixed=False)

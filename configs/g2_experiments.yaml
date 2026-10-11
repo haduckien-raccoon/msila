@@ -68,7 +68,8 @@ experiments:
     implementation: src.models.msila.E4
     feature_mode: multilayer
     blocks: registry
-    adapter: shared_across_views_per_layer_same_locked_rd
+    # Named debug_pair for CPU/smoke; main r/d await joint selection D10.
+    adapter: shared_across_views_per_layer_same_rd
     projection: shared_across_views_per_layer_to_fusion.dim
     context: true
     context_alignment: before_projection_and_fusion
