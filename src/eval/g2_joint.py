@@ -255,7 +255,8 @@ def write_manifest(path, rows, spec):
     temporary.replace(path)
 
 
-def read_manifest(path, spec):
+def read_manifest(path, spec, *, categories=None):
+    """Read the full grid, or an exact owner partition from the same schema."""
     path = Path(path).resolve()
     rows = []
     with path.open(newline="", encoding="utf-8") as handle:
@@ -276,7 +277,21 @@ def read_manifest(path, spec):
                     file = Path(row[key]).expanduser()
                     row[key] = str(file if file.is_absolute() else path.parent / file)
             rows.append(row)
-    return validate_manifest(rows, spec)
+    if categories is None:
+        return validate_manifest(rows, spec)
+    categories = tuple(categories)
+    if not categories or len(set(categories)) != len(categories) or set(categories) - set(CATEGORIES):
+        raise ManifestError("Invalid owner categories")
+    expected = {run_id(c, r, d, f, spec["seed"])
+                for r, d in validate_spec(spec) for f in FUSIONS for c in categories}
+    for row in rows:
+        validate_row(row, spec)
+    actual = Counter(row["run_id"] for row in rows)
+    if set(actual) != expected or any(n != 1 for n in actual.values()):
+        raise ManifestError(f"Owner requires {len(expected)} unique cells: "
+                            f"duplicates={sorted(k for k, n in actual.items() if n != 1)}, "
+                            f"missing={sorted(expected - set(actual))}, extra={sorted(set(actual) - expected)}")
+    return rows
 
 
 def validate_checkpoint_record(row, payload, spec):

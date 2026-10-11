@@ -1,0 +1,120 @@
+{
+  "task": "D10-TV2",
+  "code_status": "PASS",
+  "integration_base": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "branch": "g2/member2",
+  "git_commit": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "git_dirty": true,
+  "scope": "CPU_tests_and_asset_free_preparation",
+  "training_performed": false,
+  "user_deferred_gpu_run_until_code_complete": true,
+  "gpu_status": "NOT RUN",
+  "torch": "2.6.0+cpu",
+  "cuda_available": false,
+  "real_checkpoints": 0,
+  "owner_coverage": {
+    "tv1": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice"
+      ]
+    },
+    "tv2": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ]
+    }
+  },
+  "rows": 360,
+  "matrix_rows": 45,
+  "macro_rows": 45,
+  "valid_metric_cells": 0,
+  "accounted_final_cells": 0,
+  "eligible_candidates": 0,
+  "metric_values": "null_or_empty_not_generated",
+  "selection_status": "BLOCKED",
+  "selection_lock": null,
+  "benchmark_status": "NOT RUN",
+  "tests": {
+    "tests": 161,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "test_file_counts": {
+    "tests.test_g2_tv2_d10_selection": 37,
+    "tests.test_g2_tv2_joint_search": 57,
+    "tests.test_g2_tv1_d10": 31,
+    "tests.test_g2_tv2_evaluator": 33,
+    "tests.test_g2_tv2_evaluation_notebook": 3
+  },
+  "executed_commands": [
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python -m pytest -q tests/test_g2_tv2_d10_selection.py tests/test_g2_tv2_joint_search.py tests/test_g2_tv1_d10.py tests/test_g2_tv2_evaluator.py tests/test_g2_tv2_evaluation_notebook.py --junitxml=outputs/G2/D10/tv2_acceptance/targeted_tests.xml",
+      "exit_code": 0,
+      "status": "PASS",
+      "tests": 161
+    },
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python scripts/run_g2.py --stage joint_search --config configs/g2_joint_search.yaml --prepare --owner tv1 --device cpu --output-root outputs/G2/D10/tv2_acceptance",
+      "exit_code": 0,
+      "status": "PREPARED",
+      "gpu_experiment_status": "NOT RUN",
+      "log": "prepare_tv1.log"
+    },
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python scripts/run_g2.py --stage joint_search --config configs/g2_joint_search.yaml --prepare --owner tv2 --device cpu --output-root outputs/G2/D10/tv2_acceptance",
+      "exit_code": 0,
+      "status": "PREPARED",
+      "gpu_experiment_status": "NOT RUN",
+      "log": "prepare_tv2.log"
+    },
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python scripts/summarize_g2_joint.py --manifest outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv2/joint_search_360.csv --declare-rule --rule outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/selection/joint_selection_rule.json --resource-config configs/g2_joint_search.yaml",
+      "exit_code": 0,
+      "status": "DECLARED",
+      "scope": "prepared_spec_only",
+      "log": "declare_rule.log"
+    },
+    {
+      "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 MPLCONFIGDIR=/tmp/msila-mpl .venv/bin/python scripts/summarize_g2_joint.py --tv1-manifest outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv1/tv1_joint_search_180.csv --tv2-manifest outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv2/tv2_joint_search_180.csv --rule outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/selection/joint_selection_rule.json --output-root outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/selection --lock",
+      "exit_code": 2,
+      "status": "INCOMPLETE",
+      "selection_status": "BLOCKED",
+      "log": "merge_and_selection.log"
+    }
+  ],
+  "protected_tv1_files_unchanged": true,
+  "protected_source_sha256": {
+    "scripts/run_g2.py": "3c7c4d9d9eb172ab13daf78fa7c00d345fa6cc77c1ffeed64173a7e7fb3cf556",
+    "src/train/g2_joint_search.py": "7cc349cbb7a67853320406e4d9aa1fe6eab29bbc9812daf3311ae229c819e6b0",
+    "src/train/g2_e2.py": "56bd6db1cae34915b217af3234a511ca72c43922d415ccbd935b64148f70a43a",
+    "src/models/msila.py": "b9de2a92b409d47e40cd69172c32df5733a11179ccbf59cea1deffda4583a847",
+    "configs/g2_experiments.yaml": "e0c0e9a1736357ed0d01f2ed65f156455ee716d19693e59483b8329a67c0beb9",
+    "configs/g2_runner.yaml": "bb9d0ba092c3c409f7ee4a068506d750daa16781335378e57e5a1c641f6491e4",
+    "configs/g2_joint_search.yaml": "701c3d26fa6300ec457f9854a6696d45af399c6d13e1d8d816f09079f76b889b",
+    "notebooks/G2_03_Training.ipynb": "21df5fae582989184dab87711a66a94ba93e7503854d54dab53476336b564085"
+  },
+  "output_root": "outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/selection",
+  "limitations": [
+    "Screening budget and one seed can rank candidates differently from full training.",
+    "Synthetic DEV is reused for checkpoint and joint selection; selection bias remains.",
+    "Multi-seed confirmation, if performed, must be reported separately without changing this rule.",
+    "No TEST scores are used. GPU latency/VRAM require named hardware and measurement conditions; they are not tie-break variables."
+  ]
+}

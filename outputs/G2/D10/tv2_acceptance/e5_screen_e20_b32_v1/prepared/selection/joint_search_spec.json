@@ -1,0 +1,200 @@
+{
+  "version": "g2_joint_search_v1",
+  "categories": [
+    "can",
+    "fabric",
+    "fruit_jelly",
+    "rice",
+    "sheet_metal",
+    "vial",
+    "wallplugs",
+    "walnuts"
+  ],
+  "pairs": [
+    [
+      64,
+      256
+    ],
+    [
+      64,
+      512
+    ],
+    [
+      64,
+      768
+    ],
+    [
+      128,
+      256
+    ],
+    [
+      128,
+      512
+    ],
+    [
+      128,
+      768
+    ],
+    [
+      256,
+      256
+    ],
+    [
+      256,
+      512
+    ],
+    [
+      256,
+      768
+    ]
+  ],
+  "fusions": [
+    "mean",
+    "weighted_sum",
+    "concat",
+    "gated",
+    "attention"
+  ],
+  "seed": 2026,
+  "budget": {
+    "epochs": 20,
+    "batch_size": 32,
+    "max_steps": null,
+    "max_minutes": null
+  },
+  "backbone": "dinov3_vitb16",
+  "protocol_template": {
+    "backbone": {
+      "name": "dinov3_vitb16",
+      "checkpoint_sha256": null,
+      "norm": true,
+      "source_sha256": null
+    },
+    "decoder": {
+      "hidden_channels": 64,
+      "deterministic_resize": true
+    },
+    "data": {
+      "tile_size": 512,
+      "overlap": 128,
+      "max_train_sources": null,
+      "max_dev_sources": 4,
+      "train_variants_per_image": 2,
+      "dev_variants_per_image": 6
+    },
+    "synthetic_protocol": {
+      "version": "native_tiny_proxy_v2",
+      "locked_before_evaluation": true,
+      "basis": "synthetic_proxy_no_real_defect_calibration",
+      "area_unit": "native_pixels",
+      "connectivity": 8,
+      "rationale": "Proxy bins declared before evaluating models. 4-32 pixels probe sub-patch defects; 33-128 pixels probe small regions within a 16x16 DINO patch; 129-2048 pixels provide a mixed-size control. These are foreground areas, not bounding-box areas and not a fitted distribution of real TEST defects.",
+      "size_bins": {
+        "sub_patch": [
+          4,
+          32
+        ],
+        "small": [
+          33,
+          128
+        ],
+        "mixed_control": [
+          129,
+          2048
+        ]
+      },
+      "dev_tiny_bins": [
+        "sub_patch",
+        "small"
+      ],
+      "dev_mixed_bins": [
+        "sub_patch",
+        "small",
+        "mixed_control"
+      ],
+      "train_core_bins": [
+        "sub_patch",
+        "small",
+        "mixed_control"
+      ],
+      "defect_types": [
+        "pinhole",
+        "thin_scratch",
+        "texture",
+        "contamination"
+      ],
+      "placements": [
+        "interior",
+        "image_boundary"
+      ],
+      "contrast_range": [
+        0.04,
+        0.12
+      ],
+      "min_mean_abs_change": 0.015,
+      "boundary_band_px": 2,
+      "prediction_threshold": 0.5,
+      "contour_tolerance_px": 2,
+      "scratch_width_px": [
+        1,
+        4
+      ]
+    },
+    "training": {
+      "seed": 2026,
+      "dev_seed": 17017,
+      "epochs": 20,
+      "batch_size": 32,
+      "max_steps": null,
+      "max_minutes": null,
+      "max_grad_norm": null,
+      "optimizer": "AdamW",
+      "learning_rate": 0.001,
+      "weight_decay": 0.0001,
+      "amp": false,
+      "scheduler": null,
+      "train_synthetic_by_epoch": true,
+      "dev_synthetic_fixed": true
+    },
+    "loss": {
+      "bce_weight": 1.0,
+      "dice_weight": 1.0,
+      "dice_eps": 1e-06
+    },
+    "metrics": {
+      "max_fpr": 0.05,
+      "score_transform": "sigmoid",
+      "stitching": "hann_native_coordinates",
+      "dice_threshold": 0.5
+    },
+    "shared_architecture": {
+      "adapter": {
+        "kernel_size": 3,
+        "gamma_init": 0.0,
+        "bias": true
+      },
+      "fusion_dim": 64,
+      "feature_order": [
+        "local_b4",
+        "local_b8",
+        "local_b12",
+        "context_b4",
+        "context_b8",
+        "context_b12"
+      ],
+      "context_size": 768,
+      "pair_strategy": "sequential",
+      "deterministic_sampling": true
+    }
+  },
+  "model_config_hash": "b898fd3a04f851e5d0df7558379b9dec41ee09c6d70c49cfc80168b19548a425",
+  "runner_config_hash": "a74ddcd18c5b3176493b38f36590a627adc2b61cf4cd8c0d7f5287b06ec6809a",
+  "integration_sha": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "budget_status": "LOCKED",
+  "budget_reason": null,
+  "units": {
+    "aupro_005": "normalized AU-PRO, FPR <= 0.05",
+    "latency": "median milliseconds, native inference on named CUDA GPU",
+    "peak_vram": "peak allocated CUDA bytes, including resident model"
+  }
+}

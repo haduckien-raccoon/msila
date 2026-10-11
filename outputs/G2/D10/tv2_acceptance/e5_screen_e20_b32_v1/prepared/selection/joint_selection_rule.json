@@ -1,0 +1,58 @@
+{
+  "rule": {
+    "version": "g2_joint_selection_rule_v1",
+    "spec_sha256": "8d8baa87561bacde97105fc88f02043e2555ae53931051fd069e43eba317d48c",
+    "seed": 2026,
+    "budget": {
+      "epochs": 20,
+      "batch_size": 32,
+      "max_steps": null,
+      "max_minutes": null
+    },
+    "metric": "macro_synthetic_dev_aupro_0_05",
+    "required_categories": [
+      "can",
+      "fabric",
+      "fruit_jelly",
+      "rice",
+      "sheet_metal",
+      "vial",
+      "wallplugs",
+      "walnuts"
+    ],
+    "expected_candidates": 45,
+    "expected_cells": 360,
+    "ordering": [
+      "macro_aupro_005_desc",
+      "trainable_params_asc",
+      "r_asc",
+      "d_asc",
+      "fusion_order"
+    ],
+    "fusion_order": [
+      "mean",
+      "weighted_sum",
+      "concat",
+      "gated",
+      "attention"
+    ],
+    "tie_precision": "exact_float_no_tolerance",
+    "resource_policy": {
+      "batch_policy": "fixed_for_all_candidates",
+      "oom_policy": "record_failure_no_automatic_batch_change"
+    },
+    "terminal_statuses": [
+      "PASS"
+    ],
+    "infeasible_exclusions_allowed": false,
+    "params": "identical_trainable_count_across_8_categories"
+  },
+  "rule_sha256": "aae7226bd4abf6e1783f0167edeed8ed1024601abd29f4a21a97b72b0e9488a0",
+  "declaration": {
+    "utc": "2026-10-11T06:41:56.405145+00:00",
+    "initial_status_counts": {
+      "NOT RUN": 360
+    },
+    "results_observed": 0
+  }
+}

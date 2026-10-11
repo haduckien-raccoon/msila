@@ -1,0 +1,26 @@
+{
+  "status": "BLOCKED",
+  "search_status": "INCOMPLETE",
+  "accounted_cells": 0,
+  "expected_cells": 360,
+  "valid_metric_cells": 0,
+  "eligible_candidates": 0,
+  "expected_candidates": 45,
+  "scope": "provisional_incomplete_search",
+  "reasons": [
+    "Incomplete search: 0/360 terminal audited cells; FAIL/OOM/INFEASIBLE are not terminal under the predeclared TV1 resource policy"
+  ],
+  "excluded_infeasible_candidates": [],
+  "unresolved_infeasible_run_ids": [],
+  "ranking": [],
+  "selected": null,
+  "rule_sha256": "aae7226bd4abf6e1783f0167edeed8ed1024601abd29f4a21a97b72b0e9488a0",
+  "limitations": [
+    "Screening budget and one seed can rank candidates differently from full training.",
+    "Synthetic DEV is reused for checkpoint and joint selection; selection bias remains.",
+    "Multi-seed confirmation, if performed, must be reported separately without changing this rule.",
+    "No TEST scores are used. GPU latency/VRAM require named hardware and measurement conditions; they are not tie-break variables."
+  ],
+  "selection_performed": false,
+  "selection_lock": null
+}

@@ -1,0 +1,3330 @@
+{
+  "version": "g2_joint_search_v1",
+  "status": "INCOMPLETE",
+  "expected_candidates": 45,
+  "expected_categories": 8,
+  "expected_cells": 360,
+  "unique_cells": 360,
+  "duplicate_ids": [],
+  "missing_ids": [],
+  "real_pass": 0,
+  "status_counts": {
+    "NOT RUN": 360
+  },
+  "complete_candidates": 0,
+  "gpu_benchmark_pass": 0,
+  "gpu_benchmark_status_counts": {
+    "NOT RUN": 360
+  },
+  "macro_requires_categories": 8,
+  "budget_status": "LOCKED",
+  "integration_sha": "bb2df3a911fb5725bcd7b59ef8618691162a264c",
+  "units": {
+    "aupro_005": "normalized AU-PRO, FPR <= 0.05",
+    "latency": "median milliseconds, native inference on named CUDA GPU",
+    "peak_vram": "peak allocated CUDA bytes, including resident model"
+  },
+  "records": [
+    {
+      "run_id": "E5/r64_d256/mean/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d256/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d512/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/can/seed2026",
+      "category": "can",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/rice/seed2026",
+      "category": "rice",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/vial/seed2026",
+      "category": "vial",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r64_d768/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 64,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d256/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d512/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/can/seed2026",
+      "category": "can",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/rice/seed2026",
+      "category": "rice",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/vial/seed2026",
+      "category": "vial",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r128_d768/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 128,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 256,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 256,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 256,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 256,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d256/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 256,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 512,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 512,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 512,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 512,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d512/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 512,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/mean/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 768,
+      "fusion": "mean",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/weighted_sum/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 768,
+      "fusion": "weighted_sum",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/concat/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 768,
+      "fusion": "concat",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/gated/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 768,
+      "fusion": "gated",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/can/seed2026",
+      "category": "can",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/fabric/seed2026",
+      "category": "fabric",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/fruit_jelly/seed2026",
+      "category": "fruit_jelly",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/rice/seed2026",
+      "category": "rice",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/sheet_metal/seed2026",
+      "category": "sheet_metal",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/vial/seed2026",
+      "category": "vial",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/wallplugs/seed2026",
+      "category": "wallplugs",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    },
+    {
+      "run_id": "E5/r256_d768/attention/walnuts/seed2026",
+      "category": "walnuts",
+      "r": 256,
+      "d": 768,
+      "fusion": "attention",
+      "status": "NOT RUN",
+      "reason": "D10 training not run"
+    }
+  ],
+  "owner_coverage": {
+    "tv1": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice"
+      ]
+    },
+    "tv2": {
+      "expected": 180,
+      "real_pass": 0,
+      "status_counts": {
+        "NOT RUN": 180
+      },
+      "categories": [
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ]
+    }
+  },
+  "accounted_cells": 0,
+  "search_status": "INCOMPLETE",
+  "selection_status": "BLOCKED",
+  "selection_performed": false,
+  "selection_lock": null,
+  "excluded_infeasible_candidates": [],
+  "unresolved_infeasible_run_ids": [],
+  "owner_provenance": {
+    "tv1": {
+      "manifest": "/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv1/tv1_joint_search_180.csv",
+      "manifest_sha256": "4c9de7970582fea75b30feb29d2ab2071999b3b900e07ee418d73dda2e8790d9",
+      "categories": [
+        "can",
+        "fabric",
+        "fruit_jelly",
+        "rice"
+      ],
+      "cells": 180,
+      "protocol_sha256": null
+    },
+    "tv2": {
+      "manifest": "/media/haduckien/E/Studying/HK7/ComputerVision /projects/msila/outputs/G2/D10/tv2_acceptance/e5_screen_e20_b32_v1/prepared/tv2/tv2_joint_search_180.csv",
+      "manifest_sha256": "71d772c283effd2a936b7b0359ec5a19802a964509605f0d6d5f1241eefad187",
+      "categories": [
+        "sheet_metal",
+        "vial",
+        "wallplugs",
+        "walnuts"
+      ],
+      "cells": 180,
+      "protocol_sha256": null
+    }
+  }
+}
